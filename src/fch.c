@@ -54,7 +54,17 @@ void fch_hash_512(
     size_t length,
     uint8_t output[64]
 ) {
-    (void)input;
-    (void)length;
-    (void)output;
+    size_t padded_len = 0;
+    uint8_t *padded =
+        fch_pad(input, length, &padded_len);
+
+    fch_state_t root =
+        fch_process(padded, padded_len, 0, FCH_512_STATE_WORDS);
+
+    for (size_t i = 0; i < FCH_512_STATE_WORDS; i++) {
+        memcpy(output + i * 8, &root.state[i], 8);
+    }
+
+    free(root.state);
+    free(padded);
 }
