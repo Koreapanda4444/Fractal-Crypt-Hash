@@ -7,7 +7,16 @@
 #define MAX_INPUT 4096
 #define ROUNDS 128
 
-static void test_length(size_t len) {
+typedef enum {
+    FLIP_SINGLE = 0,
+    FLIP_SWEEP = 1
+} flip_mode_t;
+
+static const char *flip_mode_name(flip_mode_t mode) {
+    return mode == FLIP_SINGLE ? "single" : "sweep";
+}
+
+static void test_length(size_t len, flip_mode_t mode) {
     uint8_t base[MAX_INPUT];
     uint8_t mod[MAX_INPUT];
     memset(base, 0xA5, len);
@@ -17,8 +26,13 @@ static void test_length(size_t len) {
 
     for (int r = 0; r < ROUNDS; r++) {
         memcpy(mod, base, len);
-        if (len > 0)
-            mod[r % len] ^= (1 << (r % 8));
+        if (len > 0) {
+            if (mode == FLIP_SINGLE) {
+                mod[0] ^= 1;
+            } else {
+                mod[r % len] ^= (1 << (r % 8));
+            }
+        }
 
         uint8_t a256[32], b256[32];
         uint8_t a512[64], b512[64];
@@ -44,23 +58,37 @@ static void test_length(size_t len) {
     avg512 /= ROUNDS;
 
     printf(
-        "[len=%4I64u] FCH-256 avg %.2f%% (min %.2f / max %.2f) | "
-        "FCH-512 avg %.2f%% (min %.2f / max %.2f)\n",
+        "[baseline=v1][len=%4I64u][mode=%s] "
+        "f256 avg=%.2f min=%.2f max=%.2f spread=%.2f | "
+        "f512 avg=%.2f min=%.2f max=%.2f spread=%.2f\n",
         (unsigned long long)len,
-        avg256 * 100, min256 * 100, max256 * 100,
-        avg512 * 100, min512 * 100, max512 * 100
+        flip_mode_name(mode),
+        avg256 * 100, min256 * 100, max256 * 100, (max256 - min256) * 100,
+        avg512 * 100, min512 * 100, max512 * 100, (max512 - min512) * 100
     );
 }
 
 int main(void) {
     size_t lengths[] = {
         0, 1, 8, 32,
-        64, 128, 512,
-        1024, 4096
+        63, 64, 65,
+        127, 128, 129,
+        255, 257,
+        512, 1024, 4096
     };
 
+    printf("FCH baseline avalanche report (v1)\n");
+    printf("lengths:");
     for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
-        test_length(lengths[i]);
+        printf(" %I64u", (unsigned long long)lengths[i]);
+        if (i + 1 < sizeof(lengths) / sizeof(lengths[0]))
+            printf(",");
+    }
+    printf("\n");
+
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        test_length(lengths[i], FLIP_SINGLE);
+        test_length(lengths[i], FLIP_SWEEP);
     }
 
     return 0;
