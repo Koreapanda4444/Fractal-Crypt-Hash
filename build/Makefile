@@ -18,3 +18,14 @@ fch: $(OBJ)
 
 clean:
 	rm -f $(OBJ) fch
+
+test:
+      $(CC) $(CFLAGS) \
+            ../tests/test_statistics.c \
+            ../src/*.c \
+            -o test_statistics
+
+      $(CC) $(CFLAGS) \
+            ../tests/test_consistency.c \
+            ../src/*.c \
+            -o test_consistency
