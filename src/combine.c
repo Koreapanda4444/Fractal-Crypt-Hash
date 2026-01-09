@@ -53,6 +53,26 @@ fch_state_t fch_combine(
     int d = depth;
     if (d < 0) d = 0;
 
+    {
+        const int rounds = 1;
+        uint64_t acc = 0xD6E8FEB86659FD93ULL ^ (uint64_t)count;
+        acc ^= ((uint64_t)state_words << 32) ^ (uint64_t)(unsigned)d;
+
+        for (int r = 0; r < rounds; r++) {
+            for (size_t i = 0; i < state_words; i++) {
+                uint64_t a = out.state[i];
+                uint64_t b = out.state[(i + 1) % state_words];
+
+                acc ^= a + 0x9E3779B97F4A7C15ULL + (uint64_t)i + (uint64_t)(r * 0x10007);
+
+                a ^= rotl64(acc, (int)(((i * 7u) + (unsigned)d + (unsigned)r) % 63u + 1u));
+                a += rotl64(b ^ 0xA5A5A5A5A5A5A5A5ULL,
+                           (int)(((i * 11u) + (unsigned)count + (unsigned)r) % 63u + 1u));
+                out.state[i] = rotl64(a, (int)(((i * 5u) + 17u + (unsigned)r) % 63u + 1u));
+            }
+        }
+    }
+
     int extra_passes = 0;
     if (d >= 2) extra_passes = 1;
     if (d >= 4) extra_passes = 2;
