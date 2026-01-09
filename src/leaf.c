@@ -14,6 +14,11 @@ void fch_leaf_compress(
     size_t length,
     fch_state_t *out
 ) {
+    if (!out || !out->state || out->words == 0)
+        return;
+    if (!data && length > 0)
+        return;
+
     size_t S = out->words;
     uint64_t *state = out->state;
 

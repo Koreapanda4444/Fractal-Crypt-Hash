@@ -15,9 +15,11 @@ fch_state_t fch_process(
     fch_state_t result;
     result.words = state_words;
 
-    if (depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
+    if (!data || depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
-        fch_leaf_compress(data, length, &result);
+        if (result.state) {
+            fch_leaf_compress(data, length, &result);
+        }
         return result;
     }
 
@@ -26,8 +28,24 @@ fch_state_t fch_process(
         data, length, depth, blocks, FCH_N_MAX
     );
 
+    if (n == 0) {
+        result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
+        if (result.state) {
+            fch_leaf_compress(data, length, &result);
+        }
+        return result;
+    }
+
     fch_state_t *children =
         (fch_state_t *)calloc(n, sizeof(fch_state_t));
+
+    if (!children) {
+        result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
+        if (result.state) {
+            fch_leaf_compress(data, length, &result);
+        }
+        return result;
+    }
 
     for (size_t i = 0; i < n; i++) {
         const uint8_t *sub =

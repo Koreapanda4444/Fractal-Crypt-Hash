@@ -18,6 +18,10 @@ fch_state_t fch_combine(
     out.words = state_words;
     out.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
 
+    if (!out.state || !children || count == 0 || state_words == 0) {
+        return out;
+    }
+
     for (size_t i = 0; i < state_words; i++) {
         out.state[i] = 0xA5A5A5A5A5A5A5A5ULL ^ (uint64_t)(i * 0x1234567);
     }
@@ -25,6 +29,9 @@ fch_state_t fch_combine(
     for (size_t c = 0; c < count; c++) {
         fch_state_t *child = &children[c];
         size_t cw = child->words;
+
+        if (!child->state || cw == 0)
+            continue;
 
         for (size_t i = 0; i < cw; i++) {
             size_t idx = (c + i) % state_words;

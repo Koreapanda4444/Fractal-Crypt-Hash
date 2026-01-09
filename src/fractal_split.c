@@ -6,6 +6,9 @@ static size_t determine_n(
     size_t length,
     int depth
 ) {
+    if (!data || length == 0)
+        return 0;
+
     if (length < FCH_MIN_BLOCK_SIZE * 2)
         return 2;
 
@@ -26,7 +29,17 @@ size_t fch_fractal_split(
     fch_block_t *blocks,
     size_t max_blocks
 ) {
+    if (!blocks || max_blocks == 0)
+        return 0;
+    if (!data || length == 0) {
+        blocks[0].offset = 0;
+        blocks[0].length = length;
+        return 1;
+    }
+
     size_t n = determine_n(data, length, depth);
+    if (n == 0)
+        return 0;
     if (n > max_blocks)
         n = max_blocks;
 
@@ -35,8 +48,16 @@ size_t fch_fractal_split(
 
     for (size_t i = 0; i < n; i++) {
         size_t pos = (i * length) / n;
+        if (pos >= length)
+            pos = length - 1;
         weights[i] = 1 + (data[pos] & 0x0F);
         total_weight += weights[i];
+    }
+
+    if (total_weight == 0) {
+        blocks[0].offset = 0;
+        blocks[0].length = length;
+        return 1;
     }
 
     size_t offset = 0;

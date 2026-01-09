@@ -10,6 +10,8 @@ static uint8_t *fch_pad(
     size_t length,
     size_t *out_len
 ) {
+    if (!out_len) return NULL;
+
     size_t min_len = length + 1 + 8;
     size_t padded_len = min_len;
 
@@ -18,7 +20,20 @@ static uint8_t *fch_pad(
 
     uint8_t *buf = (uint8_t *)calloc(padded_len, 1);
 
-    memcpy(buf, input, length);
+    if (!buf) {
+        *out_len = 0;
+        return NULL;
+    }
+
+    if (length > 0 && !input) {
+        free(buf);
+        *out_len = 0;
+        return NULL;
+    }
+
+    if (length > 0) {
+        memcpy(buf, input, length);
+    }
 
     buf[length] = 0x80;
 
@@ -34,12 +49,25 @@ void fch_hash_256(
     size_t length,
     uint8_t output[32]
 ) {
+    if (!output) return;
+
     size_t padded_len = 0;
     uint8_t *padded =
         fch_pad(input, length, &padded_len);
 
+    if (!padded) {
+        memset(output, 0, 32);
+        return;
+    }
+
     fch_state_t root =
         fch_process(padded, padded_len, 0, FCH_256_STATE_WORDS);
+
+    if (!root.state) {
+        memset(output, 0, 32);
+        free(padded);
+        return;
+    }
 
     for (size_t i = 0; i < FCH_256_STATE_WORDS; i++) {
         memcpy(output + i * 8, &root.state[i], 8);
@@ -54,12 +82,25 @@ void fch_hash_512(
     size_t length,
     uint8_t output[64]
 ) {
+    if (!output) return;
+
     size_t padded_len = 0;
     uint8_t *padded =
         fch_pad(input, length, &padded_len);
 
+    if (!padded) {
+        memset(output, 0, 64);
+        return;
+    }
+
     fch_state_t root =
         fch_process(padded, padded_len, 0, FCH_512_STATE_WORDS);
+
+    if (!root.state) {
+        memset(output, 0, 64);
+        free(padded);
+        return;
+    }
 
     for (size_t i = 0; i < FCH_512_STATE_WORDS; i++) {
         memcpy(output + i * 8, &root.state[i], 8);
