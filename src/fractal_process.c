@@ -57,7 +57,7 @@ fch_state_t fch_process(
         );
     }
 
-    result = fch_combine(children, n, state_words);
+    result = fch_combine(children, n, state_words, depth);
 
     for (size_t i = 0; i < n; i++) {
         free(children[i].state);
