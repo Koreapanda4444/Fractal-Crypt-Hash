@@ -21,11 +21,21 @@ clean:
 
 test:
       $(CC) $(CFLAGS) \
-            ../tests/test_statistics.c \
+            ../tests/test_avalanche.c \
             ../src/*.c \
-            -o test_statistics
+            -o test_avalanche
 
       $(CC) $(CFLAGS) \
             ../tests/test_consistency.c \
             ../src/*.c \
             -o test_consistency
+
+      $(CC) $(CFLAGS) \
+            ../tests/test_boundaries.c \
+            ../src/*.c \
+            -o test_boundaries
+
+      $(CC) $(CFLAGS) \
+            ../tests/test_invariants.c \
+            ../src/*.c \
+            -o test_invariants

@@ -52,5 +52,37 @@ fch_hash_512(data, len, out512);
 
 구현에는 다음 테스트가 포함됩니다:
 
-- Avalanche 통계 테스트(평균 비트 확산)
+- Avalanche 통계 테스트(길이/비트 확산)
 - 결정성 테스트(동일 입력 → 동일 출력)
+- 경계값/예외 입력 테스트
+- 구조 불변성 테스트(split coverage)
+
+이 레퍼런스 구현은 결정성, 경계 조건, 구조적 불변성,
+그리고 통계적 확산 동작에 대한 테스트를 포함합니다.
+
+테스트 프로그램:
+
+- `tests/test_avalanche.c`
+- `tests/test_consistency.c`
+- `tests/test_boundaries.c`
+- `tests/test_invariants.c`
+
+빌드/실행:
+
+```sh
+cd build
+make test
+./test_consistency
+./test_boundaries
+./test_invariants
+./test_avalanche
+```
+
+Windows에서 `make`가 없다면 `gcc`로 직접 컴파일할 수 있습니다:
+
+```sh
+gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_consistency.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+```

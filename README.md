@@ -53,5 +53,38 @@ fch_hash_512(data, len, out512);
 
 The implementation includes:
 
-- Statistical avalanche tests (average bit diffusion)
+- Statistical avalanche tests (length/bit diffusion)
 - Determinism tests (same input → same output)
+- Boundary condition tests
+- Structural invariant tests (split coverage)
+
+The reference implementation includes extensive tests for
+determinism, boundary conditions, structural invariants,
+and statistical diffusion behavior.
+
+Test programs:
+
+- `tests/test_avalanche.c`
+- `tests/test_consistency.c`
+- `tests/test_boundaries.c`
+- `tests/test_invariants.c`
+
+Build/run:
+
+```sh
+cd build
+make test
+./test_consistency
+./test_boundaries
+./test_invariants
+./test_avalanche
+```
+
+If `make` is unavailable (Windows), you can compile directly with `gcc`:
+
+```sh
+gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_consistency.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+```

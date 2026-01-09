@@ -4,26 +4,34 @@
 #include "fch.h"
 
 int main(void) {
-    const char *msg = "fractal-crypt-hash";
-    uint8_t out1[32], out2[32];
+    const char *msgs[] = {
+        "",
+        "a",
+        "fractal",
+        "fractal-crypt-hash",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    };
 
-    fch_hash_256(
-        (const uint8_t *)msg,
-        strlen(msg),
-        out1
-    );
+    for (size_t i = 0; i < sizeof(msgs) / sizeof(msgs[0]); i++) {
+        uint8_t a[32], b[32];
 
-    fch_hash_256(
-        (const uint8_t *)msg,
-        strlen(msg),
-        out2
-    );
+        fch_hash_256(
+            (const uint8_t *)msgs[i],
+            strlen(msgs[i]),
+            a
+        );
+        fch_hash_256(
+            (const uint8_t *)msgs[i],
+            strlen(msgs[i]),
+            b
+        );
 
-    if (memcmp(out1, out2, 32) != 0) {
-        printf("FAIL: inconsistent hash output\n");
-        return 1;
+        if (memcmp(a, b, 32) != 0) {
+            printf("FAIL: non-deterministic output\n");
+            return 1;
+        }
     }
 
-    printf("PASS: consistent hash output\n");
+    printf("PASS: deterministic behavior\n");
     return 0;
 }
