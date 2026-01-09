@@ -18,7 +18,7 @@ fch_state_t fch_process(
     if (!data || depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
-            fch_leaf_compress(data, length, &result);
+            fch_leaf_compress(data, length, &result, depth);
         }
         return result;
     }
@@ -31,7 +31,7 @@ fch_state_t fch_process(
     if (n == 0) {
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
-            fch_leaf_compress(data, length, &result);
+            fch_leaf_compress(data, length, &result, depth);
         }
         return result;
     }
@@ -42,7 +42,7 @@ fch_state_t fch_process(
     if (!children) {
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
-            fch_leaf_compress(data, length, &result);
+            fch_leaf_compress(data, length, &result, depth);
         }
         return result;
     }

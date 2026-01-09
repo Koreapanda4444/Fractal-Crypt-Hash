@@ -12,7 +12,8 @@ static inline uint64_t rotl64(uint64_t x, int r) {
 void fch_leaf_compress(
     const uint8_t *data,
     size_t length,
-    fch_state_t *out
+    fch_state_t *out,
+    int depth
 ) {
     if (!out || !out->state || out->words == 0)
         return;
@@ -42,10 +43,18 @@ void fch_leaf_compress(
         }
     }
 
-    size_t half = S / 2;
-    for (size_t i = 0; i < half; i++) {
-        state[i] ^= state[i + half];
-    }
+    int d = depth;
+    if (d < 0) d = 0;
 
-    out->words = half;
+    int do_fold = 1;
+    if (d < 2)
+        do_fold = 0;
+
+    if (do_fold) {
+        size_t half = S / 2;
+        for (size_t i = 0; i < half; i++) {
+            state[i] ^= state[i + half];
+        }
+        out->words = half;
+    }
 }

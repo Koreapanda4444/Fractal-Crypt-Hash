@@ -6,7 +6,8 @@
 void fch_leaf_compress(
 	const uint8_t *data,
 	size_t length,
-	fch_state_t *out
+	fch_state_t *out,
+	int depth
 );
 
 #endif
