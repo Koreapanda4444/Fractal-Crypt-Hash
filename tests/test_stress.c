@@ -3,23 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*
- * Stress & robustness test
- *
- * Goals:
- * - Very large inputs
- * - Depth cap near maximum (compile-time variants)
- * - Repeated execution
- * - Detect obvious instability (crash/stack/memory churn)
- *
- * Notes:
- * - For leak detection, run under ASan (if available) or external tools.
- *   Example (GCC):
- *     gcc -O1 -g -fsanitize=address -fno-omit-frame-pointer -I"..\\include" "..\\tests\\test_stress.c" -o test_stress_asan.exe
- */
-
-/* -------- tiny RNG -------- */
-
 static uint32_t xorshift32(uint32_t *s) {
     uint32_t x = *s;
     x ^= x << 13;
@@ -40,14 +23,11 @@ static void mutate(uint8_t *buf, size_t len, uint32_t iter) {
     if (!buf || len == 0)
         return;
 
-    /* Flip a few bytes to avoid identical input every time. */
     size_t idx1 = (size_t)(iter * 1315423911u) % len;
     size_t idx2 = (size_t)(iter * 2654435761u) % len;
     buf[idx1] ^= (uint8_t)(iter & 0xFFu);
     buf[idx2] ^= (uint8_t)((iter >> 8) & 0xFFu);
 }
-
-/* -------- simple CLI -------- */
 
 typedef struct {
     size_t big_mb;
@@ -55,7 +35,7 @@ typedef struct {
     uint32_t iters_big;
     uint32_t iters_small;
     uint32_t seed;
-    int variant; /* 16 or 24 */
+    int variant;
     int quiet;
 } opts_t;
 
@@ -98,16 +78,9 @@ static void usage(void) {
 static volatile int g_max_depth_16 = 0;
 static volatile int g_max_depth_24 = 0;
 
-/* -------- include FCH implementation variants (single translation unit) -------- */
-
 #define FCH_PARAMS_ALLOW_REINCLUDE 1
 
-/* Prevent ../include/debug_hooks.h from being included by ../src/fractal_process.c.
- * We inject our own FCH_DEBUG_EMIT to track max depth without defining hook symbols.
- */
 #define FCH_DEBUG_HOOKS_H 1
-
-/* Keep these values aligned with include/debug_hooks.h */
 #ifndef FCH_HOOK_AFTER_LEAF
 #define FCH_HOOK_AFTER_LEAF 1
 #endif
@@ -118,9 +91,8 @@ static volatile int g_max_depth_24 = 0;
 #define FCH_HOOK_AFTER_ROOT 3
 #endif
 
-#include "../src/sbox.c" /* defines FCH_SBOX */
+#include "../src/sbox.c"
 
-/* ---- Variant D16 ---- */
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 16
 
@@ -163,7 +135,6 @@ static volatile int g_max_depth_24 = 0;
 #undef fch_combine
 #undef fch_debug_emit_root_if
 
-/* ---- Variant D24 ---- */
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 24
 
@@ -207,8 +178,6 @@ static volatile int g_max_depth_24 = 0;
 #undef fch_debug_emit_root_if
 #undef FCH_PARAMS_ALLOW_REINCLUDE
 
-/* -------- stress runner -------- */
-
 typedef void (*hash256_fn)(const uint8_t *input, size_t len, uint8_t out[32]);
 
 static void run_one_variant(
@@ -243,7 +212,6 @@ static void run_one_variant(
             name, cap, (unsigned)o->big_mb, (unsigned)o->iters_big, (unsigned)o->small_kb, (unsigned)o->iters_small);
     }
 
-    /* Phase A: big input (push recursion / allocations) */
     for (uint32_t i = 0; i < o->iters_big; i++) {
         mutate(big, big_len, i);
         fn(big, big_len, out);
@@ -254,7 +222,6 @@ static void run_one_variant(
         }
     }
 
-    /* Phase B: many small inputs (heap churn / long-run stability) */
     for (uint32_t i = 0; i < o->iters_small; i++) {
         mutate(small, small_len, 0xABC00000u ^ i);
         fn(small, small_len, out);
@@ -265,7 +232,6 @@ static void run_one_variant(
         }
     }
 
-    /* Summary (CSV-friendly) */
     printf(
         "SUMMARY,%s,cap=%d,max_depth=%d,cap_margin=%d,big_mb=%u,it_big=%u,small_kb=%u,it_small=%u,sink=%u\n",
         name,

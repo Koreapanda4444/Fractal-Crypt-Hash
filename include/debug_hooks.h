@@ -16,15 +16,15 @@ typedef enum {
 
 #ifdef FCH_DEBUG_HOOKS
 
-/*
- * Debug-only instrumentation hook.
- *
- * - point: which stage emitted the state
- * - depth: current fractal recursion depth
- * - state/state_words: current state snapshot
- *
- * Note: In non-debug builds this is compiled out.
- */
+
+
+
+
+
+
+
+
+
 void fch_debug_hook(
     fch_hook_point_t point,
     int depth,

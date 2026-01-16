@@ -2,18 +2,18 @@
 #include <string.h>
 #include <stdint.h>
 
-/*
- * Patterned input stress tests.
- *
- * Intended to be included by tests/test_avalanche.c so it can reuse:
- * - flip_mode_t + flip_mode_name
- * - avalanche_stats_t
- * - find_baseline
- * - regression_check_row
- * - MAX_INPUT / ROUNDS
- *
- * It does not define main().
- */
+
+
+
+
+
+
+
+
+
+
+
+
 
 typedef enum {
     PAT_ALL_ZERO = 0,
@@ -73,7 +73,7 @@ static void fill_pattern(uint8_t *buf, size_t len, pattern_t pat, uint32_t seed)
         return;
     }
 
-    /* random */
+    
     uint32_t s = seed ? seed : 0xC001D00Du;
     for (size_t i = 0; i < len; i++) {
         buf[i] = (uint8_t)(xorshift32(&s) & 0xFFu);
@@ -146,31 +146,31 @@ static int pattern_row(
 
     const regression_baseline_t *b = find_baseline(len, mode);
 
-    /* Reference-based limits: compare patterned vs random (attack perspective) */
+    
     double ref_avg_pct = sr.avg * 100.0;
     double ref_spread_pct = sr.spread * 100.0;
     double ref_avg_limit = ref_avg_pct * (1.0 - (AVG_DROP_PCT / 100.0));
 
-    /*
-     * Pattern stress: spread can legitimately vary more than random.
-     * Keep avg-drop strict, but allow wider spread envelope.
-     */
+    
+
+
+
     const double PATTERN_SPREAD_INCR_PCT = 150.0;
     const double SPREAD_ABS_SLACK_PCT = 5.0;
 
-    /* Baseline limits: logged for context only */
+    
     double base_avg_limit = 0.0, base_spread_limit = 0.0;
     (void)regression_check_row(b, hash_bits, &sp, &base_avg_limit, &base_spread_limit);
 
     double sp_avg_pct = sp.avg * 100.0;
     double sp_spread_pct = sp.spread * 100.0;
 
-    /* Use lenient avg bound (min of baseline/ref when baseline exists). */
+    
     double used_avg_limit = ref_avg_limit;
     if (b && base_avg_limit < used_avg_limit)
         used_avg_limit = base_avg_limit;
 
-    /* Use permissive spread bound (max of baseline/ref(pattern)+slack when baseline exists). */
+    
     double used_spread_limit = ref_spread_pct * (1.0 + (PATTERN_SPREAD_INCR_PCT / 100.0)) + SPREAD_ABS_SLACK_PCT;
     if (b && base_spread_limit > used_spread_limit)
         used_spread_limit = base_spread_limit;
@@ -203,7 +203,7 @@ static int pattern_row(
 }
 
 static int run_pattern_stress_tests(void) {
-    /* Use the same lengths as the main avalanche regression suite (skip tiny edge-cases). */
+    
     size_t lengths[] = { 64, 128, 255, 257, 512, 1024, 4096 };
     pattern_t pats[] = { PAT_ALL_ZERO, PAT_ALL_FF, PAT_ABAB, PAT_ABCABC, PAT_INC };
 

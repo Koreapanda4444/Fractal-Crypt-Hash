@@ -77,7 +77,7 @@ static uint8_t *pad_input(const uint8_t *input, size_t length, size_t min_block,
 
     buf[length] = 0x80;
 
-    /* keep same endianness behavior as existing fch_pad (native) */
+    
     uint64_t bit_len = (uint64_t)length * 8u;
     memcpy(buf + padded_len - 8, &bit_len, 8);
 
@@ -180,7 +180,7 @@ static stats_t measure_diffusion(
 }
 
 static double stability_score(const stats_t *s) {
-    /* higher is better: near 50% avg, low spread */
+    
     double avg_penalty = fabs(s->avg - 0.5);
     double spread_penalty = s->spread;
     return 1.0 - (avg_penalty * 2.0) - (spread_penalty * 1.0);
@@ -193,11 +193,11 @@ static int rounds_for_len(size_t len) {
     return 128;
 }
 
-/* ---------- Variant compilation (same input, different split params) ---------- */
 
-#include "../src/sbox.c"  /* shared constant table */
 
-/* N-range variants (depth cap fixed at 16) */
+#include "../src/sbox.c"  
+
+
 #define FCH_PARAMS_ALLOW_REINCLUDE 1
 #undef FCH_N_MIN
 #undef FCH_N_MAX
@@ -311,7 +311,7 @@ enum { MINBLOCK_N66 = FCH_MIN_BLOCK_SIZE };
 #undef fch_fractal_split
 #undef fch_process
 
-/* Depth-cap variants (n-range fixed at 2..6) */
+
 #undef FCH_N_MIN
 #undef FCH_N_MAX
 #undef FCH_MAX_DEPTH_CAP
@@ -422,7 +422,7 @@ int main(void) {
 
     printf("group,cfg,nmin,nmax,depthcap,len,pattern,avg,min,max,spread,score\n");
 
-    /* Track per-group best average score across patterns */
+    
     double best_score_n = -1e9;
     double best_score_d = -1e9;
     const cfg_t *best_n = NULL;

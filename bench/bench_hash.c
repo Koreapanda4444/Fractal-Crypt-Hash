@@ -11,7 +11,7 @@
 #include <windows.h>
 #endif
 
-/* -------- timing -------- */
+
 
 static uint64_t now_ns(void) {
 #if defined(_WIN32)
@@ -25,7 +25,7 @@ static uint64_t now_ns(void) {
     QueryPerformanceCounter(&t);
     return (uint64_t)((t.QuadPart * 1000000000ULL) / (uint64_t)freq.QuadPart);
 #else
-    /* Fallback: ISO C clock() (lower resolution), but keeps build portable. */
+    
     return (uint64_t)clock() * (1000000000ULL / (uint64_t)CLOCKS_PER_SEC);
 #endif
 }
@@ -46,7 +46,7 @@ static void fill_random(uint8_t *buf, size_t len, uint32_t seed) {
     }
 }
 
-/* -------- SHA-256 baseline (self-contained reference) -------- */
+
 
 typedef void (*hash256_fn)(const uint8_t *input, size_t len, uint8_t out[32]);
 
@@ -166,14 +166,14 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
     }
 }
 
-/* -------- depth-cap variants (single-TU, macro-based) -------- */
 
-/* Allow params reinclude in variants (added in commit 16). */
+
+
 #define FCH_PARAMS_ALLOW_REINCLUDE 1
 
-#include "../src/sbox.c" /* define FCH_SBOX once */
+#include "../src/sbox.c" 
 
-/* ---- Variant D4 ---- */
+
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 4
 #define fch_hash_256 fch_hash_256_D4
@@ -208,7 +208,7 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #undef fch_combine
 #undef fch_debug_emit_root_if
 
-/* ---- Variant D8 ---- */
+
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 8
 #define fch_hash_256 fch_hash_256_D8
@@ -243,7 +243,7 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #undef fch_combine
 #undef fch_debug_emit_root_if
 
-/* ---- Variant D16 ---- */
+
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 16
 #define fch_hash_256 fch_hash_256_D16
@@ -280,7 +280,7 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 
 #undef FCH_PARAMS_ALLOW_REINCLUDE
 
-/* -------- benchmark harness -------- */
+
 
 typedef struct {
     const char *name;
@@ -323,7 +323,7 @@ int main(void) {
         {"fch256_D16", fch_hash_256_D16},
     };
 
-    /* SHA-256 reference (self-contained, for relative comparison only) */
+    
     hash256_fn sha_fn = sha256_ref;
 
     uint8_t *buf = (uint8_t *)malloc(1024 * 1024);
@@ -347,7 +347,7 @@ int main(void) {
 
             double rel = 0.0;
             if (sha_msmb > 0.0 && msmb > 0.0) {
-                /* >1.0 means slower than SHA-256; <1.0 faster */
+                
                 rel = msmb / sha_msmb;
             }
 

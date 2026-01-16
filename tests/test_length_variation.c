@@ -67,7 +67,7 @@ static double hash_diff_ratio(const uint8_t *a, size_t alen, const uint8_t *b, s
 }
 
 static size_t build_padding_tail(size_t msg_len, uint8_t *out, size_t out_cap) {
-    /* Mirrors fch_pad() behavior: padded_len = max(len+1+8, 64) */
+    
     size_t min_len = msg_len + 1 + 8;
     size_t padded_len = (min_len < 64) ? 64 : min_len;
 
@@ -78,7 +78,7 @@ static size_t build_padding_tail(size_t msg_len, uint8_t *out, size_t out_cap) {
     memset(out, 0, tail_len);
     out[0] = 0x80;
 
-    /* Same as fch_pad(): writes native-endian bit length */
+    
     uint64_t bit_len = (uint64_t)msg_len * 8u;
     memcpy(out + tail_len - 8, &bit_len, 8);
 
@@ -141,14 +141,14 @@ static int require_threshold(const char *label, const stats_t *s, double min_req
 }
 
 int main(void) {
-    /* Pass criteria: no similarity under length-only variation */
-    const double MIN_DIFF = 0.35; /* 35% */
+    
+    const double MIN_DIFF = 0.35; 
 
-    /* Build a deterministic stream; messages are prefixes of this stream. */
+    
     uint8_t stream[MAX_INPUT];
     fill_deterministic(stream, sizeof(stream), 0x12345678u);
 
-    /* Select boundary pairs where padding/fractal decisions may shift. */
+    
     struct { size_t a, b; const char *id; } pairs[] = {
         { 0,    1,    "L0_vs_L1" },
         { 1,    2,    "L1_vs_L2" },
@@ -173,7 +173,7 @@ int main(void) {
 
     printf("kind,case,len_a,len_b,hash,diff_pct\n");
 
-    /* 1) Same prefix, length-only variation */
+    
     for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
         size_t la = pairs[i].a;
         size_t lb = pairs[i].b;
@@ -182,7 +182,7 @@ int main(void) {
         check_case("adj_len", pairs[i].id, stream, la, stream, lb, &adj256, &adj512);
     }
 
-    /* 2) prefix || padding || suffix vs prefix || suffix */
+    
     {
         uint8_t prefix[37];
         uint8_t suffix[29];
@@ -210,7 +210,7 @@ int main(void) {
 
         check_case("pad_inject", "prefix_suffix_vs_prefix_pad_suffix", a, alen, b, blen, &pad256, &pad512);
 
-        /* Also: prefix vs prefix||pad(prefix) */
+        
         uint8_t c[MAX_INPUT];
         size_t clen = 0;
         memcpy(c + clen, prefix, sizeof(prefix)); clen += sizeof(prefix);

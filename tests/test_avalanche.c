@@ -216,7 +216,7 @@ static int test_length_csv(size_t len, flip_mode_t mode) {
     return pass;
 }
 
-/* Patterned input stress suite (module, no main) */
+
 #include "test_patterns.c"
 
 int main(void) {

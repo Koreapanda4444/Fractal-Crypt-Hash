@@ -19,12 +19,12 @@ fch: $(OBJ)
 	$(CC) $(CFLAGS) -o fch $(OBJ)
 
 clean:
-      rm -f $(OBJ) fch test_avalanche test_consistency test_boundaries test_invariants bench_hash
+	rm -f $(OBJ) fch test_avalanche test_consistency test_boundaries test_invariants bench_hash
 
 bench: bench_hash
 
 bench_hash: ../bench/bench_hash.c
-      $(CC) $(CFLAGS) ../bench/bench_hash.c -o bench_hash $(BENCH_LDFLAGS)
+	$(CC) $(CFLAGS) ../bench/bench_hash.c -o bench_hash $(BENCH_LDFLAGS)
 
 test:
 	$(CC) $(CFLAGS) \
