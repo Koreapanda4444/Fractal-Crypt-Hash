@@ -11,6 +11,7 @@ extern "C" {
 /*
  * NOTE: This is a buffered streaming API: data is accumulated in memory and
  * hashed on finalization using the one-shot FCH functions.
+ * Memory usage is O(n) in total input size.
  */
 
 typedef struct {

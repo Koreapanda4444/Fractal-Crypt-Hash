@@ -64,6 +64,43 @@ fch_hash_256(data, len, out256);
 fch_hash_512(data, len, out512);
 ```
 
+### 버퍼드 스트리밍 API
+
+FCH는 **버퍼드(buffered)** 스트리밍 API도 제공합니다. 즉, 데이터를 메모리에 누적한 뒤 `final` 단계에서 원샷 해싱을 수행합니다.
+
+```c
+#include "fch_stream.h"
+
+fch256_ctx ctx;
+fch256_init(&ctx);
+fch256_update(&ctx, chunk1, chunk1_len);
+fch256_update(&ctx, chunk2, chunk2_len);
+fch256_final(&ctx, out256);
+fch256_free(&ctx);
+```
+
+### CLI
+
+CLI 빌드:
+
+```sh
+cd build
+make all
+```
+
+파일 해시:
+
+```sh
+./fch -256 path/to/file
+./fch -512 path/to/file
+```
+
+표준입력(stdin) 해시:
+
+```sh
+cat path/to/file | ./fch -256
+```
+
 ## 테스트
 
 구현에는 다음 테스트가 포함됩니다:
@@ -82,6 +119,7 @@ fch_hash_512(data, len, out512);
 - `tests/test_consistency.c`
 - `tests/test_boundaries.c`
 - `tests/test_invariants.c`
+- `tests/test_vectors.c`
 
 빌드/실행:
 
@@ -92,6 +130,7 @@ make test
 ./test_boundaries
 ./test_invariants
 ./test_avalanche
+./test_vectors
 ```
 
 Windows에서 `make`가 없다면 `gcc`로 직접 컴파일할 수 있습니다:
@@ -101,4 +140,9 @@ gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_c
 gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
+
+gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe
+
+build\\fch.exe -256 README.ko.md
 ```

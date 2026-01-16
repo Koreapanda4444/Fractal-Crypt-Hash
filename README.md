@@ -65,6 +65,43 @@ fch_hash_256(data, len, out256);
 fch_hash_512(data, len, out512);
 ```
 
+### Buffered streaming API
+
+FCH also provides a **buffered** streaming API: data is accumulated in memory and hashed on finalization.
+
+```c
+#include "fch_stream.h"
+
+fch256_ctx ctx;
+fch256_init(&ctx);
+fch256_update(&ctx, chunk1, chunk1_len);
+fch256_update(&ctx, chunk2, chunk2_len);
+fch256_final(&ctx, out256);
+fch256_free(&ctx);
+```
+
+### CLI
+
+Build the CLI:
+
+```sh
+cd build
+make all
+```
+
+Hash a file:
+
+```sh
+./fch -256 path/to/file
+./fch -512 path/to/file
+```
+
+Hash stdin:
+
+```sh
+cat path/to/file | ./fch -256
+```
+
 ## Testing
 
 The implementation includes:
@@ -84,6 +121,7 @@ Test programs:
 - `tests/test_consistency.c`
 - `tests/test_boundaries.c`
 - `tests/test_invariants.c`
+- `tests/test_vectors.c`
 
 Build/run:
 
@@ -94,6 +132,7 @@ make test
 ./test_boundaries
 ./test_invariants
 ./test_avalanche
+./test_vectors
 ```
 
 If `make` is unavailable (Windows), you can compile directly with `gcc`:
@@ -103,4 +142,9 @@ gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_c
 gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
+
+gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe
+
+build\\fch.exe -256 README.md
 ```
