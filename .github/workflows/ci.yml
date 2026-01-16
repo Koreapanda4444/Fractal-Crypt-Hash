@@ -17,4 +17,10 @@ jobs:
 
       - name: Tests
         working-directory: build
-        run: make test
+        run: |
+          make test
+          ./test_consistency
+          ./test_boundaries
+          ./test_invariants
+          ./test_avalanche
+          ./test_vectors

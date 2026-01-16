@@ -9,17 +9,18 @@ SRC = ../src/fch.c \
       ../src/leaf.c \
       ../src/combine.c \
       ../src/sbox.c \
-      ../src/bitops.c
+	../src/bitops.c \
+	../src/fch_stream.c
 
 OBJ = $(SRC:.c=.o)
 
 all: fch
 
-fch: $(OBJ)
-	$(CC) $(CFLAGS) -o fch $(OBJ)
+fch: $(OBJ) ../tools/fch.c
+	$(CC) $(CFLAGS) -o fch $(OBJ) ../tools/fch.c
 
 clean:
-	rm -f $(OBJ) fch test_avalanche test_consistency test_boundaries test_invariants bench_hash
+	rm -f $(OBJ) fch test_avalanche test_consistency test_boundaries test_invariants test_vectors bench_hash
 
 bench: bench_hash
 
@@ -46,3 +47,8 @@ test:
 		../tests/test_invariants.c \
 		../src/*.c \
 		-o test_invariants
+
+	$(CC) $(CFLAGS) \
+		../tests/test_vectors.c \
+		../src/*.c \
+		-o test_vectors
