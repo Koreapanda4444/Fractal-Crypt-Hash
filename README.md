@@ -6,6 +6,22 @@ traditional round-based compression.
 
 ---
 
+## Security Notice (Read First)
+
+FCH is a **research / experimental** hash design and reference implementation.
+It has **not** undergone broad public cryptanalysis or independent security review.
+
+Do **not** use FCH in production or for security-critical purposes, including (but not limited to):
+
+- authentication, signatures, tokens, or MACs
+- password hashing / key derivation
+- integrity checks where adversaries exist
+- any scenario where a broken hash causes harm
+
+This repository is intended for learning, experimentation, benchmarking, and discussion.
+
+---
+
 ## Overview
 
 Unlike conventional hash functions that rely on repeated rounds,

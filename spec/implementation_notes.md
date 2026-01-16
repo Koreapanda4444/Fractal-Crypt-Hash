@@ -32,3 +32,5 @@ This implementation prioritizes:
 - structural transparency
 
 Performance and cryptographic hardness are secondary.
+
+No cryptographic security claims are made for this design or implementation.

@@ -1,5 +1,13 @@
 # Fractal Crypt-Hash Specification
 
+## 0. Scope & Non-Goals
+
+This specification describes the **deterministic behavior** of the FCH reference design.
+It does **not** claim cryptographic security (collision resistance / preimage resistance / etc.),
+and it should not be used as a basis to deploy FCH in production security contexts.
+
+FCH is intended for research, experimentation, benchmarking, and discussion.
+
 ## 1. Input Padding
 
 Given input message M of length L bytes:
