@@ -5,6 +5,42 @@
 #include "leaf.h"
 #include "combine.h"
 #include "params.h"
+#include "debug_hooks.h"
+
+#ifdef FCH_DEBUG_HOOKS
+__attribute__((weak))
+void fch_debug_hook(
+    fch_hook_point_t point,
+    int depth,
+    const uint64_t *state,
+    size_t state_words
+) {
+    (void)point;
+    (void)depth;
+    (void)state;
+    (void)state_words;
+}
+
+static inline void fch_debug_emit_root_if(
+    int depth,
+    const uint64_t *state,
+    size_t state_words
+) {
+    if (depth == 0) {
+        FCH_DEBUG_EMIT(FCH_HOOK_AFTER_ROOT, depth, state, state_words);
+    }
+}
+#else
+static inline void fch_debug_emit_root_if(
+    int depth,
+    const uint64_t *state,
+    size_t state_words
+) {
+    (void)depth;
+    (void)state;
+    (void)state_words;
+}
+#endif
 
 fch_state_t fch_process(
     const uint8_t *data,
@@ -19,6 +55,8 @@ fch_state_t fch_process(
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
             fch_leaf_compress(data, length, &result, depth);
+            FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
+            fch_debug_emit_root_if(depth, result.state, result.words);
         }
         return result;
     }
@@ -32,6 +70,8 @@ fch_state_t fch_process(
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
             fch_leaf_compress(data, length, &result, depth);
+            FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
+            fch_debug_emit_root_if(depth, result.state, result.words);
         }
         return result;
     }
@@ -43,6 +83,8 @@ fch_state_t fch_process(
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
             fch_leaf_compress(data, length, &result, depth);
+            FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
+            fch_debug_emit_root_if(depth, result.state, result.words);
         }
         return result;
     }
@@ -58,6 +100,10 @@ fch_state_t fch_process(
     }
 
     result = fch_combine(children, n, state_words, depth);
+    if (result.state) {
+        FCH_DEBUG_EMIT(FCH_HOOK_AFTER_NODE, depth, result.state, result.words);
+        fch_debug_emit_root_if(depth, result.state, result.words);
+    }
 
     for (size_t i = 0; i < n; i++) {
         free(children[i].state);
