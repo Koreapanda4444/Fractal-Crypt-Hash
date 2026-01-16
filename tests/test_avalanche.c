@@ -187,9 +187,9 @@ static int test_length_csv(size_t len, flip_mode_t mode) {
     int pass = pass256 && pass512;
 
     printf(
-        "%s,%zu,%s,256,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s\n",
+        "%s,%u,%s,256,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s\n",
         baseline_id,
-        len,
+        (unsigned)len,
         flip_mode_name(mode),
         s256.avg * 100.0,
         s256.min * 100.0,
@@ -200,9 +200,9 @@ static int test_length_csv(size_t len, flip_mode_t mode) {
         pass256 ? "PASS" : "FAIL"
     );
     printf(
-        "%s,%zu,%s,512,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s\n",
+        "%s,%u,%s,512,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s\n",
         baseline_id,
-        len,
+        (unsigned)len,
         flip_mode_name(mode),
         s512.avg * 100.0,
         s512.min * 100.0,
@@ -215,6 +215,9 @@ static int test_length_csv(size_t len, flip_mode_t mode) {
 
     return pass;
 }
+
+/* Patterned input stress suite (module, no main) */
+#include "test_patterns.c"
 
 int main(void) {
     size_t lengths[] = {
@@ -245,6 +248,9 @@ int main(void) {
         if (!test_length_csv(lengths[i], FLIP_SWEEP))
             failures++;
     }
+
+    if (!run_pattern_stress_tests())
+        failures++;
 
     if (failures == 0) {
         printf("REGRESSION: PASS (avg_drop<=%.1f%% spread_incr<=%.1f%%)\n", AVG_DROP_PCT, SPREAD_INCR_PCT);
