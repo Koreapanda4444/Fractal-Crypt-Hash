@@ -73,6 +73,7 @@ check-extended: test-extended
 	./test_length_variation
 	./test_depth_diffusion
 	./test_stress --variant 16 --big-mb 1 --iters-big 1 --small-kb 4 --iters-small 16 --quiet
+	./test_split_sensitivity
 
 bench: bench_hash
 

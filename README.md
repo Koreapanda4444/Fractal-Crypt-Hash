@@ -38,9 +38,10 @@ A small change in the input propagates:
 ## Features
 
 - Fractal recursive hash structure
-- Variable n-way (2–6) pattern-based splitting
+- Variable n-way (2–6) splitting derived from the entire node input
 - Order-dependent tree recombination
-- Minimal non-linearity at leaf level (XOR / ADD / ROTATE / S-box)
+- Separate root, internal-node, leaf, and child domains
+- Full-width leaf states with XOR / ADD / ROTATE / S-box mixing
 - Recompression at each internal node
 - Deterministic, non-keyed hash function
 
@@ -114,6 +115,8 @@ The implementation includes:
 - Determinism tests (same input → same output)
 - Boundary condition tests
 - Structural invariant tests (split coverage)
+- Portability and domain-separation tests
+- Split-configuration sensitivity tests
 
 The reference implementation includes extensive tests for
 determinism, boundary conditions, structural invariants,
@@ -125,7 +128,9 @@ Test programs:
 - `tests/test_consistency.c`
 - `tests/test_boundaries.c`
 - `tests/test_invariants.c`
+- `tests/test_portability.c`
 - `tests/test_vectors.c`
+- `tests/test_split_sensitivity.c`
 
 Build/run:
 

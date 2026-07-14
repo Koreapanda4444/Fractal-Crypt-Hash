@@ -37,9 +37,10 @@ FCH는 **재귀적 프랙탈 분해**를 통해 확산을 얻습니다.
 ## 특징
 
 - 프랙탈 재귀 해시 구조
-- 패턴 기반 가변 n-way(2–6) 분할
+- 노드 전체 입력에서 유도되는 가변 n-way(2–6) 분할
 - 순서 의존(order-dependent) 트리 재결합
-- 리프 레벨의 최소 비선형성(XOR / ADD / ROTATE / S-box)
+- 루트·내부 노드·리프·자식 상태의 명시적 영역 분리
+- 전체 폭 리프 상태와 XOR / ADD / ROTATE / S-box 혼합
 - 내부 노드마다 재압축 수행
 - 결정적(deterministic) 비키(non-keyed) 해시 함수
 
@@ -112,6 +113,8 @@ cat path/to/file | ./fch -256
 - 결정성 테스트(동일 입력 → 동일 출력)
 - 경계값/예외 입력 테스트
 - 구조 불변성 테스트(split coverage)
+- 이식성과 영역 분리 테스트
+- 분할 설정 민감도 테스트
 
 이 레퍼런스 구현은 결정성, 경계 조건, 구조적 불변성,
 그리고 통계적 확산 동작에 대한 테스트를 포함합니다.
@@ -122,7 +125,9 @@ cat path/to/file | ./fch -256
 - `tests/test_consistency.c`
 - `tests/test_boundaries.c`
 - `tests/test_invariants.c`
+- `tests/test_portability.c`
 - `tests/test_vectors.c`
+- `tests/test_split_sensitivity.c`
 
 빌드/실행:
 

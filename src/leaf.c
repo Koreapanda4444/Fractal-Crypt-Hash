@@ -16,42 +16,70 @@ void fch_leaf_compress(
 
     size_t S = out->words;
     uint64_t *state = out->state;
+    unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
+    uint64_t domain = normalized_depth == 0u
+        ? UINT64_C(0x524F4F544C454146)
+        : UINT64_C(0x494E544C45414631);
+    uint64_t length_tag = (uint64_t)length;
 
     for (size_t i = 0; i < S; i++) {
-        state[i] = 0x9E3779B97F4A7C15ULL ^ (uint64_t)i;
+        state[i] = UINT64_C(0x9E3779B97F4A7C15);
+        state[i] ^= domain;
+        state[i] ^= length_tag * UINT64_C(0xD6E8FEB86659FD93);
+        state[i] ^= (uint64_t)normalized_depth * UINT64_C(0xA24BAED4963EE407);
+        state[i] ^= (uint64_t)S * UINT64_C(0x9FB21C651E98DF25);
+        state[i] ^= (uint64_t)i * UINT64_C(0xC2B2AE3D27D4EB4F);
+        state[i] = fch_sbox64(state[i]);
     }
 
     for (size_t i = 0; i < length; i++) {
         size_t idx = i % S;
-        uint64_t v = (uint64_t)data[i];
+        size_t next = (idx + 1u) % S;
+        size_t far = (idx + 2u) % S;
+        uint64_t message = (uint64_t)data[i];
+        message ^= (uint64_t)i * UINT64_C(0x9E3779B97F4A7C15);
+        message ^= length_tag * UINT64_C(0xA24BAED4963EE407);
 
-        state[idx] ^= v;
-        state[idx] += fch_rotl64(
-            state[(idx + 1) % S],
-            (unsigned int)((idx + 3u) * 7u)
-        );
-        state[(idx + 2) % S] ^= fch_rotl64(
+        state[idx] ^= message + UINT64_C(0xD6E8FEB86659FD93);
+        state[idx] = fch_rotl64(
             state[idx],
-            (unsigned int)((idx + 5u) * 11u)
+            (unsigned int)(((i + idx * 13u) % 63u) + 1u)
+        );
+        state[next] += state[idx] ^ fch_rotl64(
+            message,
+            (unsigned int)(((i * 7u + idx) % 63u) + 1u)
+        );
+        state[far] ^= fch_rotl64(
+            state[idx] + state[next],
+            (unsigned int)(((i * 11u + idx * 3u) % 63u) + 1u)
         );
     }
 
-    for (size_t i = 0; i < S; i++) {
-        state[i] = fch_sbox64(state[i]);
-    }
+    for (unsigned int round = 0; round < 4u; round++) {
+        for (size_t i = 0; i < S; i++) {
+            uint64_t left = state[(i + S - 1u) % S];
+            uint64_t current = state[i];
+            uint64_t right = state[(i + 1u) % S];
+            uint64_t mixed = current ^ domain;
 
-    int d = depth;
-    if (d < 0) d = 0;
-
-    int do_fold = 1;
-    if (d < 2)
-        do_fold = 0;
-
-    if (do_fold) {
-        size_t half = S / 2;
-        for (size_t i = 0; i < half; i++) {
-            state[i] ^= state[i + half];
+            mixed ^= length_tag * UINT64_C(0x9E3779B97F4A7C15);
+            mixed ^= (uint64_t)normalized_depth << 32u;
+            mixed ^= (uint64_t)round * UINT64_C(0xD6E8FEB86659FD93);
+            mixed += fch_rotl64(
+                left,
+                (unsigned int)(((i * 7u + round * 11u) % 63u) + 1u)
+            );
+            mixed ^= fch_rotl64(
+                right,
+                (unsigned int)(((i * 13u + round * 5u) % 63u) + 1u)
+            );
+            mixed = fch_sbox64(mixed);
+            state[i] = fch_rotl64(
+                mixed,
+                (unsigned int)(((i * 17u + round * 19u) % 63u) + 1u)
+            );
         }
-        out->words = half;
     }
+
+    out->words = S;
 }

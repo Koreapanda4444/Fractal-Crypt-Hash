@@ -38,17 +38,17 @@ static const double AVG_DROP_PCT = 5.0;
 static const double SPREAD_INCR_PCT = 25.0;
 
 static const regression_baseline_t BASELINES[] = {
-    { 63,   FLIP_SWEEP, 49.33, 25.78, 49.00, 28.52 },
-    { 64,   FLIP_SWEEP, 49.26, 30.47, 49.17, 28.71 },
-    { 65,   FLIP_SWEEP, 49.32, 21.88, 49.26, 33.59 },
-    { 127,  FLIP_SWEEP, 49.72, 14.84, 49.99, 10.74 },
-    { 128,  FLIP_SWEEP, 49.74, 17.58, 49.99, 10.16 },
-    { 129,  FLIP_SWEEP, 49.78, 17.97, 50.26, 10.16 },
-    { 255,  FLIP_SWEEP, 50.61, 18.75, 48.81, 17.97 },
-    { 257,  FLIP_SWEEP, 49.86, 12.50, 48.86, 17.58 },
-    { 512,  FLIP_SWEEP, 49.63, 16.41, 50.04, 12.30 },
-    { 1024, FLIP_SWEEP, 49.93, 17.97, 50.04, 12.30 },
-    { 4096, FLIP_SWEEP, 50.00, 15.23, 49.55, 11.91 },
+    { 63,   FLIP_SWEEP, 50.01, 18.36, 49.96, 10.74 },
+    { 64,   FLIP_SWEEP, 50.10, 14.84, 50.29, 8.98 },
+    { 65,   FLIP_SWEEP, 49.62, 16.41, 50.08, 12.11 },
+    { 127,  FLIP_SWEEP, 49.77, 18.75, 49.90, 11.13 },
+    { 128,  FLIP_SWEEP, 49.99, 15.62, 49.89, 9.18 },
+    { 129,  FLIP_SWEEP, 49.74, 16.02, 50.20, 10.94 },
+    { 255,  FLIP_SWEEP, 50.27, 16.80, 50.07, 9.38 },
+    { 257,  FLIP_SWEEP, 50.15, 16.02, 49.81, 11.52 },
+    { 512,  FLIP_SWEEP, 49.57, 17.19, 49.95, 9.96 },
+    { 1024, FLIP_SWEEP, 50.18, 15.62, 49.67, 11.72 },
+    { 4096, FLIP_SWEEP, 50.28, 14.84, 49.56, 10.35 },
 };
 
 static const regression_baseline_t *find_baseline(size_t len, flip_mode_t mode) {
@@ -172,7 +172,7 @@ static int regression_check_row(
 }
 
 static int test_length_csv(size_t len, flip_mode_t mode) {
-    const char *baseline_id = "regress-commit12";
+    const char *baseline_id = "domain-split-baseline";
     const regression_baseline_t *b = find_baseline(len, mode);
 
     avalanche_stats_t s256 = compute_stats(len, mode, 256);
@@ -260,4 +260,3 @@ int main(void) {
     printf("REGRESSION: FAIL rows=%d (avg_drop<=%.1f%% spread_incr<=%.1f%%)\n", failures, AVG_DROP_PCT, SPREAD_INCR_PCT);
     return 1;
 }
-

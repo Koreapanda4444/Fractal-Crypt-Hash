@@ -98,7 +98,14 @@ fch_state_t fch_process(
         }
     }
 
-    result = fch_combine(children, n, state_words, depth);
+    result = fch_combine(
+        children,
+        blocks,
+        n,
+        length,
+        state_words,
+        depth
+    );
     if (result.state) {
         FCH_DEBUG_EMIT(FCH_HOOK_AFTER_NODE, depth, result.state, result.words);
         fch_debug_emit_root_if(depth, result.state, result.words);

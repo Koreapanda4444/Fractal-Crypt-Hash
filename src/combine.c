@@ -1,108 +1,125 @@
 #include <stdlib.h>
+
 #include "combine.h"
-#include "params.h"
 #include "sbox.h"
 #include "bitops.h"
 
 fch_state_t fch_combine(
     fch_state_t *children,
+    const fch_block_t *blocks,
     size_t count,
+    size_t node_length,
     size_t state_words,
     int depth
 ) {
     fch_state_t out = { NULL, state_words };
 
-    if (!children || count == 0 || state_words == 0) {
+    if (!children || !blocks || count == 0 || state_words == 0)
         return out;
-    }
 
-    out.words = state_words;
+    unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
+    uint64_t domain = normalized_depth == 0u
+        ? UINT64_C(0x524F4F544E4F4445)
+        : UINT64_C(0x494E544E4F444531);
+
     out.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
-
-    if (!out.state) {
+    if (!out.state)
         return out;
-    }
 
     for (size_t i = 0; i < state_words; i++) {
-        out.state[i] = 0xA5A5A5A5A5A5A5A5ULL ^ (uint64_t)(i * 0x1234567);
+        out.state[i] = UINT64_C(0xA5A5A5A5A5A5A5A5);
+        out.state[i] ^= domain;
+        out.state[i] ^= (uint64_t)node_length * UINT64_C(0x9E3779B97F4A7C15);
+        out.state[i] ^= (uint64_t)count * UINT64_C(0xD6E8FEB86659FD93);
+        out.state[i] ^= (uint64_t)state_words * UINT64_C(0xA24BAED4963EE407);
+        out.state[i] ^= (uint64_t)normalized_depth << 32u;
+        out.state[i] ^= (uint64_t)i * UINT64_C(0xC2B2AE3D27D4EB4F);
+        out.state[i] = fch_sbox64(out.state[i]);
     }
 
-    for (size_t c = 0; c < count; c++) {
-        fch_state_t *child = &children[c];
-        size_t cw = child->words;
+    size_t covered = 0;
+    for (size_t child_index = 0; child_index < count; child_index++) {
+        fch_state_t *child = &children[child_index];
+        const fch_block_t *block = &blocks[child_index];
 
-        if (!child->state || cw == 0 || cw > state_words) {
+        if (!child->state || child->words != state_words ||
+            block->offset != covered || block->length == 0 ||
+            block->length > node_length - covered) {
             free(out.state);
             out.state = NULL;
             return out;
         }
 
-        for (size_t i = 0; i < cw; i++) {
-            size_t idx = (c + i) % state_words;
+        uint64_t child_domain = UINT64_C(0x4348494C44535431);
+        child_domain ^= (uint64_t)child_index * UINT64_C(0x9E3779B97F4A7C15);
+        child_domain ^= (uint64_t)block->offset * UINT64_C(0xD6E8FEB86659FD93);
+        child_domain ^= (uint64_t)block->length * UINT64_C(0xA24BAED4963EE407);
 
-            out.state[idx] ^= child->state[i];
-            out.state[idx] += fch_rotl64(
-                child->state[(i + 1) % cw],
-                (unsigned int)((i + c + 1u) * 9u)
+        for (size_t i = 0; i < state_words; i++) {
+            size_t index = (child_index + i) % state_words;
+            size_t next = (index + 1u) % state_words;
+            uint64_t value = child->state[i] ^ child_domain;
+            value ^= (uint64_t)i * UINT64_C(0x9FB21C651E98DF25);
+            value = fch_sbox64(value);
+
+            out.state[index] ^= fch_rotl64(
+                value,
+                (unsigned int)(((i * 11u + child_index * 7u) % 63u) + 1u)
+            );
+            out.state[next] += value ^ fch_rotl64(
+                out.state[index],
+                (unsigned int)(((i * 17u + child_index * 5u) % 63u) + 1u)
             );
         }
 
         for (size_t i = 0; i < state_words; i++) {
-            out.state[i] =
-                fch_rotl64(out.state[i], (unsigned int)((i + c) % 31u + 1u));
+            uint64_t left = out.state[(i + state_words - 1u) % state_words];
+            uint64_t right = out.state[(i + 1u) % state_words];
+            uint64_t mixed = out.state[i] ^ child_domain;
+            mixed += fch_rotl64(
+                left,
+                (unsigned int)(((i * 13u + child_index) % 63u) + 1u)
+            );
+            mixed ^= fch_rotl64(
+                right,
+                (unsigned int)(((i * 19u + child_index * 3u) % 63u) + 1u)
+            );
+            out.state[i] = fch_sbox64(mixed);
         }
+
+        covered += block->length;
     }
 
-    int d = depth;
-    if (d < 0) d = 0;
-
-    {
-        const int rounds = 1;
-        uint64_t acc = 0xD6E8FEB86659FD93ULL ^ (uint64_t)count;
-        acc ^= ((uint64_t)state_words << 32) ^ (uint64_t)(unsigned)d;
-
-        for (int r = 0; r < rounds; r++) {
-            for (size_t i = 0; i < state_words; i++) {
-                uint64_t a = out.state[i];
-                uint64_t b = out.state[(i + 1) % state_words];
-
-                acc ^= a + 0x9E3779B97F4A7C15ULL + (uint64_t)i + (uint64_t)(r * 0x10007);
-
-                a ^= fch_rotl64(acc, (unsigned int)(((i * 7u) + (unsigned)d + (unsigned)r) % 63u + 1u));
-                a += fch_rotl64(b ^ 0xA5A5A5A5A5A5A5A5ULL,
-                                (unsigned int)(((i * 11u) + (unsigned)count + (unsigned)r) % 63u + 1u));
-                out.state[i] = fch_rotl64(a, (unsigned int)(((i * 5u) + 17u + (unsigned)r) % 63u + 1u));
-            }
-        }
+    if (covered != node_length) {
+        free(out.state);
+        out.state = NULL;
+        return out;
     }
 
-    int extra_passes = 0;
-    if (d >= 2) extra_passes = 1;
-    if (d >= 4) extra_passes = 2;
-    if (d >= 6) extra_passes = 3;
-    if (extra_passes > 3) extra_passes = 3;
-
-    for (int p = 0; p < extra_passes; p++) {
+    for (unsigned int round = 0; round < 4u; round++) {
         for (size_t i = 0; i < state_words; i++) {
-            uint64_t a = out.state[i];
-            uint64_t b = out.state[(i + 1) % state_words];
-            uint64_t c = out.state[(i + state_words - 1) % state_words];
+            uint64_t left = out.state[(i + state_words - 1u) % state_words];
+            uint64_t current = out.state[i];
+            uint64_t right = out.state[(i + 1u) % state_words];
+            uint64_t mixed = current ^ domain;
 
-            a ^= fch_rotl64(
-                b + 0x9E3779B97F4A7C15ULL + (uint64_t)(d + p),
-                (unsigned int)(((i + (size_t)p) * 13u) % 63u + 1u)
+            mixed ^= (uint64_t)node_length * UINT64_C(0x9E3779B97F4A7C15);
+            mixed ^= (uint64_t)count * UINT64_C(0xD6E8FEB86659FD93);
+            mixed ^= (uint64_t)round * UINT64_C(0xA24BAED4963EE407);
+            mixed += fch_rotl64(
+                left,
+                (unsigned int)(((i * 7u + round * 13u) % 63u) + 1u)
             );
-            a += fch_rotl64(
-                c ^ (0xA5A5A5A5A5A5A5A5ULL + (uint64_t)count + (uint64_t)(p * 0x10001)),
-                (unsigned int)(((i + (size_t)p) * 17u) % 63u + 1u)
+            mixed ^= fch_rotl64(
+                right,
+                (unsigned int)(((i * 11u + round * 17u) % 63u) + 1u)
             );
-
-            out.state[i] = a;
+            mixed = fch_sbox64(mixed);
+            out.state[i] = fch_rotl64(
+                mixed,
+                (unsigned int)(((i * 19u + round * 23u) % 63u) + 1u)
+            );
         }
-    }
-
-    for (size_t i = 0; i < state_words; i++) {
-        out.state[i] = fch_sbox64(out.state[i]);
     }
 
     return out;

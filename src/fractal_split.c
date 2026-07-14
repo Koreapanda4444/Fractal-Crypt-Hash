@@ -1,5 +1,6 @@
 #include "fractal.h"
 #include "params.h"
+#include "bitops.h"
 
 static size_t scaled_length(
     size_t length,
@@ -14,21 +15,40 @@ static size_t scaled_length(
 static size_t determine_n(
     const uint8_t *data,
     size_t length,
-    int depth
+    int depth,
+    uint64_t *seed_out
 ) {
-    if (!data || length == 0)
+    if (seed_out)
+        *seed_out = 0;
+    if (!data || length == 0 || !seed_out)
         return 0;
+
+    unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
+    uint64_t seed = UINT64_C(0x243F6A8885A308D3);
+    seed ^= (uint64_t)length * UINT64_C(0x9E3779B97F4A7C15);
+    seed ^= (uint64_t)normalized_depth * UINT64_C(0xD6E8FEB86659FD93);
+
+    for (size_t i = 0; i < length; i++) {
+        uint64_t input_word = (uint64_t)data[i];
+        input_word ^= (uint64_t)i * UINT64_C(0xA24BAED4963EE407);
+        seed ^= input_word + UINT64_C(0x9E3779B97F4A7C15);
+        seed = fch_rotl64(seed, 27u);
+        seed *= UINT64_C(0x94D049BB133111EB);
+        seed ^= seed >> 29u;
+    }
+
+    seed ^= seed >> 30u;
+    seed *= UINT64_C(0xBF58476D1CE4E5B9);
+    seed ^= seed >> 27u;
+    seed *= UINT64_C(0x94D049BB133111EB);
+    seed ^= seed >> 31u;
+    *seed_out = seed;
 
     if (length < FCH_MIN_BLOCK_SIZE * 2)
         return 2;
 
-    uint8_t seed = 0;
-    seed ^= data[0];
-    seed ^= data[length / 2];
-    seed ^= data[length - 1];
-    seed ^= (uint8_t)depth;
-
-    size_t n = (seed % (FCH_N_MAX - FCH_N_MIN + 1)) + FCH_N_MIN;
+    size_t n = (size_t)(seed % (uint64_t)(FCH_N_MAX - FCH_N_MIN + 1))
+        + FCH_N_MIN;
     return n;
 }
 
@@ -47,7 +67,8 @@ size_t fch_fractal_split(
         return 1;
     }
 
-    size_t n = determine_n(data, length, depth);
+    uint64_t seed = 0;
+    size_t n = determine_n(data, length, depth, &seed);
     if (n == 0)
         return 0;
     if (n > max_blocks)
@@ -60,11 +81,14 @@ size_t fch_fractal_split(
     size_t weights[FCH_N_MAX] = {0};
     size_t total_weight = 0;
 
+    uint64_t stream = seed ^ ((uint64_t)n * UINT64_C(0xD6E8FEB86659FD93));
     for (size_t i = 0; i < n; i++) {
-        size_t pos = (i * length) / n;
-        if (pos >= length)
-            pos = length - 1;
-        weights[i] = 1 + (data[pos] & 0x0F);
+        stream += UINT64_C(0x9E3779B97F4A7C15) + (uint64_t)i;
+        uint64_t word = stream;
+        word = (word ^ (word >> 30u)) * UINT64_C(0xBF58476D1CE4E5B9);
+        word = (word ^ (word >> 27u)) * UINT64_C(0x94D049BB133111EB);
+        word ^= word >> 31u;
+        weights[i] = 1u + (size_t)(word & UINT64_C(0x0F));
         total_weight += weights[i];
     }
 

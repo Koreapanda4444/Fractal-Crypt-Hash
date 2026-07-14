@@ -6,6 +6,7 @@
 
 #include "fractal.h"
 #include "params.h"
+#include "bitops.h"
 
 typedef fch_state_t (*fch_process_fn)(
     const uint8_t *data,
@@ -79,7 +80,7 @@ static uint8_t *pad_input(const uint8_t *input, size_t length, size_t min_block,
 
     
     uint64_t bit_len = (uint64_t)length * 8u;
-    memcpy(buf + padded_len - 8, &bit_len, 8);
+    fch_store_le64(buf + padded_len - 8, bit_len);
 
     *out_len = padded_len;
     return buf;
@@ -440,6 +441,8 @@ int main(void) {
     
     double best_score_n = -1e9;
     double best_score_d = -1e9;
+    double default_score_n = -1e9;
+    double default_score_d = -1e9;
     const cfg_t *best_n = NULL;
     const cfg_t *best_d = NULL;
 
@@ -503,6 +506,10 @@ int main(void) {
         }
 
         if (is_default_cfg(cfg)) {
+            if (strcmp(cfg->group, "n-range") == 0)
+                default_score_n = avg_score;
+            else if (strcmp(cfg->group, "depthcap") == 0)
+                default_score_d = avg_score;
             fprintf(
                 stderr,
                 "INFO: default cfg avg_score=%.4f (group=%s)\n",
@@ -518,6 +525,23 @@ int main(void) {
     if (best_d) {
         fprintf(stderr, "BEST[depthcap]: %s (avg_score=%.4f)\n", best_d->id, best_score_d);
     }
+
+    if (default_score_n < 0.80 || default_score_d < 0.80) {
+        fprintf(
+            stderr,
+            "SPLIT_SENSITIVITY: FAIL (default scores %.4f, %.4f)\n",
+            default_score_n,
+            default_score_d
+        );
+        return 1;
+    }
+
+    fprintf(
+        stderr,
+        "SPLIT_SENSITIVITY: PASS (default scores %.4f, %.4f)\n",
+        default_score_n,
+        default_score_d
+    );
 
     return 0;
 }

@@ -38,8 +38,8 @@ At each node:
 ## 3. Variable n-Way Split
 
 - n ∈ [2, 6]
-- Determined by data pattern and recursion depth
-- Split sizes weighted by input byte values
+- A 64-bit split seed incorporates node length, depth, and every input byte
+- n and each split weight are derived from the mixed seed
 - Blocks cover the entire input without overlap
 
 ---
@@ -52,6 +52,7 @@ Leaf nodes apply:
 - ADD
 - ROTATE
 - 8×8 S-box substitution
+- Four cross-lane finalization passes
 
 All 64-bit rotations reduce the rotation count modulo 64. S-box substitution
 operates on bytes from least-significant to most-significant order, independent
@@ -59,8 +60,9 @@ of host byte order.
 
 After processing:
 
-- State is folded to half size
-- Produces reduced output for parent nodes
+- Root leaves and internal leaves use different domain constants
+- Length, depth, and state width are mixed into the state
+- The full state width is retained for parent nodes
 
 ---
 
@@ -69,9 +71,11 @@ After processing:
 Internal nodes:
 
 - Merge child states sequentially (order-dependent)
+- Mix node length, depth, child count, and state width
+- Mix each child's index, offset, and length
 - Apply arithmetic mixing and rotation
 - Apply S-box substitution
-- Output restored to full state width
+- Retain the full state width
 
 ---
 

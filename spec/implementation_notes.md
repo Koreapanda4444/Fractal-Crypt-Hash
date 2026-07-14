@@ -17,16 +17,17 @@ to:
 
 - space (recursive structure)
 
-Leaf compression is intentionally minimal;
-most diffusion arises from structural recombination.
+Diffusion is shared between full-width leaf mixing and structural
+recombination. Leaf and node processing use separate domain constants.
 
 ---
 
 ## Rationale
 
 - Variable n-way splitting prevents uniform structural assumptions
-- Pattern-based splits bind structure to input content
-- Order-dependent combine ensures positional sensitivity
+- Whole-input split seeds bind structure to all bytes in a node
+- Node, child, and leaf metadata provide explicit domain separation
+- Order-dependent combine retains child position and length information
 - Recompression prevents linear state growth
 
 ---
