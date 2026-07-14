@@ -21,7 +21,13 @@ static int read_all(FILE *fp, uint8_t **out, size_t *out_len) {
 
 	for (;;) {
 		if (*out_len == cap) {
-			size_t new_cap = (cap == 0) ? 4096 : cap * 2;
+			if (cap > SIZE_MAX / 2u) {
+				free(*out);
+				*out = NULL;
+				*out_len = 0;
+				return 0;
+			}
+			size_t new_cap = (cap == 0) ? 4096u : cap * 2u;
 			uint8_t *new_buf = (uint8_t *)realloc(*out, new_cap);
 			if (!new_buf) {
 				free(*out);
@@ -58,11 +64,19 @@ static int hash_stream(FILE *fp, int variant, const char *label) {
 	int rc = 0;
 	if (variant == 256) {
 		uint8_t out[32];
-		fch_hash_256(data, len, out);
+		if (!fch_hash_256_checked(data, len, out)) {
+			fprintf(stderr, "fch: failed to hash %s\n", label);
+			free(data);
+			return 2;
+		}
 		print_hex(out, sizeof(out));
 	} else {
 		uint8_t out[64];
-		fch_hash_512(data, len, out);
+		if (!fch_hash_512_checked(data, len, out)) {
+			fprintf(stderr, "fch: failed to hash %s\n", label);
+			free(data);
+			return 2;
+		}
 		print_hex(out, sizeof(out));
 	}
 

@@ -1,5 +1,13 @@
 # Implementation Notes
 
+## Portability and error handling
+
+- Rotation counts are defined modulo 64
+- Padding and digest serialization use explicit little-endian conversion
+- Recursive allocation failures propagate to the caller
+- Split arithmetic avoids size multiplication overflow
+- Checked one-shot and buffered-final APIs report failures
+
 ## Design Philosophy
 
 The core idea of FCH is to move diffusion from:

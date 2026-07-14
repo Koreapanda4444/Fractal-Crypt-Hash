@@ -17,6 +17,9 @@ Given input message M of length L bytes:
 3. Append 64-bit little-endian value of (L × 8)
 4. Ensure total length ≥ FCH_MIN_BLOCK_SIZE
 
+Inputs whose byte length cannot be represented safely by the 64-bit bit-length
+field are rejected by the checked API.
+
 ---
 
 ## 2. Fractal Processing
@@ -50,6 +53,10 @@ Leaf nodes apply:
 - ROTATE
 - 8×8 S-box substitution
 
+All 64-bit rotations reduce the rotation count modulo 64. S-box substitution
+operates on bytes from least-significant to most-significant order, independent
+of host byte order.
+
 After processing:
 
 - State is folded to half size
@@ -73,3 +80,6 @@ Internal nodes:
 - Root state serialized as little-endian bytes
 - FCH-256: 32 bytes
 - FCH-512: 64 bytes
+
+Allocation or validation failure does not produce an alternative tree. The
+checked API reports failure and clears the output buffer.

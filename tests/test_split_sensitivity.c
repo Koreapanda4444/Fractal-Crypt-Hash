@@ -195,7 +195,8 @@ static int rounds_for_len(size_t len) {
 
 
 
-#include "../src/sbox.c"  
+#include "../src/sbox.c"
+#include "../src/bitops.c"
 
 
 #define FCH_PARAMS_ALLOW_REINCLUDE 1
@@ -216,8 +217,10 @@ static int rounds_for_len(size_t len) {
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_N22
+#define scaled_length scaled_length_N22
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_N22
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if
@@ -244,8 +247,10 @@ enum { MINBLOCK_N22 = FCH_MIN_BLOCK_SIZE };
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_N26
+#define scaled_length scaled_length_N26
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_N26
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if
@@ -272,8 +277,10 @@ enum { MINBLOCK_N26 = FCH_MIN_BLOCK_SIZE };
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_N46
+#define scaled_length scaled_length_N46
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_N46
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if
@@ -300,8 +307,10 @@ enum { MINBLOCK_N46 = FCH_MIN_BLOCK_SIZE };
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_N66
+#define scaled_length scaled_length_N66
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_N66
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if
@@ -329,8 +338,10 @@ enum { MINBLOCK_N66 = FCH_MIN_BLOCK_SIZE };
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_D4
+#define scaled_length scaled_length_D4
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D4
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if
@@ -353,8 +364,10 @@ enum { MINBLOCK_D4 = FCH_MIN_BLOCK_SIZE };
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_D8
+#define scaled_length scaled_length_D8
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D8
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if
@@ -377,8 +390,10 @@ enum { MINBLOCK_D8 = FCH_MIN_BLOCK_SIZE };
 #include "../src/combine.c"
 #undef rotl64
 #define determine_n determine_n_D16
+#define scaled_length scaled_length_D16
 #include "../src/fractal_split.c"
 #undef determine_n
+#undef scaled_length
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D16
 #include "../src/fractal_process.c"
 #undef fch_debug_emit_root_if

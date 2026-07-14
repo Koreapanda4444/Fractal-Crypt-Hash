@@ -7,20 +7,34 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      CC: ${{ matrix.compiler }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build
-        working-directory: build
-        run: make all
-
-      - name: Tests
+      - name: Build and test
         working-directory: build
         run: |
-          make test
-          ./test_consistency
-          ./test_boundaries
-          ./test_invariants
-          ./test_avalanche
-          ./test_vectors
+          make clean
+          make all check check-extended CC="$CC"
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+      UBSAN_OPTIONS: halt_on_error=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run sanitizers
+        working-directory: build
+        run: |
+          make clean
+          make check \
+            CC=clang \
+            CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"

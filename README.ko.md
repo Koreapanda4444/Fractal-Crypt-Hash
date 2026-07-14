@@ -60,9 +60,12 @@ FCH는 **재귀적 프랙탈 분해**를 통해 확산을 얻습니다.
 uint8_t out256[32];
 uint8_t out512[64];
 
-fch_hash_256(data, len, out256);
-fch_hash_512(data, len, out512);
+int ok256 = fch_hash_256_checked(data, len, out256);
+int ok512 = fch_hash_512_checked(data, len, out512);
 ```
+
+checked 함수는 성공 시 `1`, 잘못된 입력·메모리 할당 실패·지원하지 않는
+입력 길이에서는 `0`을 반환합니다. 기존 `void` 함수는 호환용으로 유지됩니다.
 
 ### 버퍼드 스트리밍 API
 
@@ -75,7 +78,7 @@ fch256_ctx ctx;
 fch256_init(&ctx);
 fch256_update(&ctx, chunk1, chunk1_len);
 fch256_update(&ctx, chunk2, chunk2_len);
-fch256_final(&ctx, out256);
+int ok = fch256_final_checked(&ctx, out256);
 fch256_free(&ctx);
 ```
 
@@ -125,13 +128,11 @@ cat path/to/file | ./fch -256
 
 ```sh
 cd build
-make test
-./test_consistency
-./test_boundaries
-./test_invariants
-./test_avalanche
-./test_vectors
+make check
 ```
+
+CI에서는 GCC와 Clang으로 전체 테스트를 실행하며,
+AddressSanitizer와 UndefinedBehaviorSanitizer 검사도 수행합니다.
 
 Windows에서 `make`가 없다면 `gcc`로 직접 컴파일할 수 있습니다:
 

@@ -20,6 +20,18 @@ void fch_hash_512(
 	uint8_t output[64]
 );
 
+int fch_hash_256_checked(
+	const uint8_t *input,
+	size_t length,
+	uint8_t output[32]
+);
+
+int fch_hash_512_checked(
+	const uint8_t *input,
+	size_t length,
+	uint8_t output[64]
+);
+
 #ifdef __cplusplus
 }
 #endif

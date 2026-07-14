@@ -35,3 +35,4 @@ int main(void) {
 	vec("quick_brown_fox", (const uint8_t *)"The quick brown fox jumps over the lazy dog", 43);
 	return 0;
 }
+

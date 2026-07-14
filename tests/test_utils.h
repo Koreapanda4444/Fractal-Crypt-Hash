@@ -23,3 +23,4 @@ static inline int bit_diff(
 }
 
 #endif
+

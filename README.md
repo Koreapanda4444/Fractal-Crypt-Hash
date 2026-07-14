@@ -61,9 +61,13 @@ A small change in the input propagates:
 uint8_t out256[32];
 uint8_t out512[64];
 
-fch_hash_256(data, len, out256);
-fch_hash_512(data, len, out512);
+int ok256 = fch_hash_256_checked(data, len, out256);
+int ok512 = fch_hash_512_checked(data, len, out512);
 ```
+
+The checked functions return `1` on success and `0` on invalid input,
+allocation failure, or an unsupported input length. The original `void`
+functions remain available as compatibility wrappers.
 
 ### Buffered streaming API
 
@@ -76,7 +80,7 @@ fch256_ctx ctx;
 fch256_init(&ctx);
 fch256_update(&ctx, chunk1, chunk1_len);
 fch256_update(&ctx, chunk2, chunk2_len);
-fch256_final(&ctx, out256);
+int ok = fch256_final_checked(&ctx, out256);
 fch256_free(&ctx);
 ```
 
@@ -127,13 +131,11 @@ Build/run:
 
 ```sh
 cd build
-make test
-./test_consistency
-./test_boundaries
-./test_invariants
-./test_avalanche
-./test_vectors
+make check
 ```
+
+The CI workflow runs the suite with GCC and Clang and also runs
+AddressSanitizer and UndefinedBehaviorSanitizer.
 
 If `make` is unavailable (Windows), you can compile directly with `gcc`:
 

@@ -1,5 +1,13 @@
 # 구현 노트(Implementation Notes)
 
+## 이식성과 오류 처리
+
+- 회전 횟수를 64로 나눈 나머지로 정의
+- 패딩과 해시 출력에 명시적 little-endian 변환 사용
+- 재귀 처리 중 메모리 할당 실패를 호출자까지 전달
+- 분할 길이 계산에서 size 곱셈 overflow 방지
+- checked 원샷 및 버퍼드 final API로 실패 상태 전달
+
 ## 설계 철학(Design Philosophy)
 
 FCH의 핵심 아이디어는 확산(diffusion)을

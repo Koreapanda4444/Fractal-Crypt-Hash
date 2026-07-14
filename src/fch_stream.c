@@ -57,14 +57,18 @@ int fch256_update(fch256_ctx *ctx, const uint8_t *data, size_t len) {
 	return 1;
 }
 
-void fch256_final(fch256_ctx *ctx, uint8_t out[32]) {
-	if (!out) return;
+int fch256_final_checked(fch256_ctx *ctx, uint8_t out[32]) {
+	if (!out) return 0;
 	if (!ctx || ctx->failed) {
 		memset(out, 0, 32);
-		return;
+		return 0;
 	}
 
-	fch_hash_256(ctx->buffer, ctx->length, out);
+	return fch_hash_256_checked(ctx->buffer, ctx->length, out);
+}
+
+void fch256_final(fch256_ctx *ctx, uint8_t out[32]) {
+	(void)fch256_final_checked(ctx, out);
 }
 
 void fch256_free(fch256_ctx *ctx) {
@@ -95,14 +99,18 @@ int fch512_update(fch512_ctx *ctx, const uint8_t *data, size_t len) {
 	return 1;
 }
 
-void fch512_final(fch512_ctx *ctx, uint8_t out[64]) {
-	if (!out) return;
+int fch512_final_checked(fch512_ctx *ctx, uint8_t out[64]) {
+	if (!out) return 0;
 	if (!ctx || ctx->failed) {
 		memset(out, 0, 64);
-		return;
+		return 0;
 	}
 
-	fch_hash_512(ctx->buffer, ctx->length, out);
+	return fch_hash_512_checked(ctx->buffer, ctx->length, out);
+}
+
+void fch512_final(fch512_ctx *ctx, uint8_t out[64]) {
+	(void)fch512_final_checked(ctx, out);
 }
 
 void fch512_free(fch512_ctx *ctx) {

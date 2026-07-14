@@ -48,10 +48,13 @@ fch_state_t fch_process(
     int depth,
     size_t state_words
 ) {
-    fch_state_t result;
-    result.words = state_words;
+    fch_state_t result = { NULL, state_words };
 
-    if (!data || depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
+    if (state_words == 0 || (!data && length > 0)) {
+        return result;
+    }
+
+    if (depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
             fch_leaf_compress(data, length, &result, depth);
@@ -67,12 +70,6 @@ fch_state_t fch_process(
     );
 
     if (n == 0) {
-        result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
-        if (result.state) {
-            fch_leaf_compress(data, length, &result, depth);
-            FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
-            fch_debug_emit_root_if(depth, result.state, result.words);
-        }
         return result;
     }
 
@@ -80,12 +77,6 @@ fch_state_t fch_process(
         (fch_state_t *)calloc(n, sizeof(fch_state_t));
 
     if (!children) {
-        result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
-        if (result.state) {
-            fch_leaf_compress(data, length, &result, depth);
-            FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
-            fch_debug_emit_root_if(depth, result.state, result.words);
-        }
         return result;
     }
 
@@ -97,6 +88,14 @@ fch_state_t fch_process(
         children[i] = fch_process(
             sub, sub_len, depth + 1, state_words
         );
+
+        if (!children[i].state) {
+            for (size_t j = 0; j < i; j++) {
+                free(children[j].state);
+            }
+            free(children);
+            return result;
+        }
     }
 
     result = fch_combine(children, n, state_words, depth);

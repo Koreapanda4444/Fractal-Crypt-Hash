@@ -1,6 +1,16 @@
 #include "fractal.h"
 #include "params.h"
 
+static size_t scaled_length(
+    size_t length,
+    size_t weight,
+    size_t total_weight
+) {
+    size_t quotient = length / total_weight;
+    size_t remainder = length % total_weight;
+    return quotient * weight + (remainder * weight) / total_weight;
+}
+
 static size_t determine_n(
     const uint8_t *data,
     size_t length,
@@ -42,6 +52,10 @@ size_t fch_fractal_split(
         return 0;
     if (n > max_blocks)
         n = max_blocks;
+    if (n > length)
+        n = length;
+    if (n == 0)
+        return 0;
 
     size_t weights[FCH_N_MAX] = {0};
     size_t total_weight = 0;
@@ -62,18 +76,25 @@ size_t fch_fractal_split(
 
     size_t offset = 0;
     for (size_t i = 0; i < n; i++) {
-        size_t block_len = (length * weights[i]) / total_weight;
+        size_t remaining = length - offset;
+        size_t blocks_left = n - i - 1;
+        size_t block_len = scaled_length(length, weights[i], total_weight);
 
         if (block_len == 0)
             block_len = 1;
 
-        if (i == n - 1)
-            block_len = length - offset;
+        if (i == n - 1) {
+            block_len = remaining;
+        } else {
+            size_t max_len = remaining - blocks_left;
+            if (block_len > max_len)
+                block_len = max_len;
+        }
 
         blocks[i].offset = offset;
         blocks[i].length = block_len;
         offset += block_len;
     }
 
-    return n;
+    return offset == length ? n : 0;
 }

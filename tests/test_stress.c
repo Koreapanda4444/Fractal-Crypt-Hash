@@ -92,16 +92,20 @@ static volatile int g_max_depth_24 = 0;
 #endif
 
 #include "../src/sbox.c"
+#include "../src/bitops.c"
 
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 16
 
 #define fch_hash_256 fch_hash_256_D16
 #define fch_hash_512 fch_hash_512_D16
+#define fch_hash_256_checked fch_hash_256_checked_D16
+#define fch_hash_512_checked fch_hash_512_checked_D16
 #define fch_pad fch_pad_D16
 #define fch_process fch_process_D16
 #define fch_fractal_split fch_fractal_split_D16
 #define determine_n determine_n_D16
+#define scaled_length scaled_length_D16
 #define fch_leaf_compress fch_leaf_compress_D16
 #define fch_combine fch_combine_D16
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D16
@@ -127,10 +131,13 @@ static volatile int g_max_depth_24 = 0;
 
 #undef fch_hash_256
 #undef fch_hash_512
+#undef fch_hash_256_checked
+#undef fch_hash_512_checked
 #undef fch_pad
 #undef fch_process
 #undef fch_fractal_split
 #undef determine_n
+#undef scaled_length
 #undef fch_leaf_compress
 #undef fch_combine
 #undef fch_debug_emit_root_if
@@ -140,10 +147,13 @@ static volatile int g_max_depth_24 = 0;
 
 #define fch_hash_256 fch_hash_256_D24
 #define fch_hash_512 fch_hash_512_D24
+#define fch_hash_256_checked fch_hash_256_checked_D24
+#define fch_hash_512_checked fch_hash_512_checked_D24
 #define fch_pad fch_pad_D24
 #define fch_process fch_process_D24
 #define fch_fractal_split fch_fractal_split_D24
 #define determine_n determine_n_D24
+#define scaled_length scaled_length_D24
 #define fch_leaf_compress fch_leaf_compress_D24
 #define fch_combine fch_combine_D24
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D24
@@ -169,10 +179,13 @@ static volatile int g_max_depth_24 = 0;
 
 #undef fch_hash_256
 #undef fch_hash_512
+#undef fch_hash_256_checked
+#undef fch_hash_512_checked
 #undef fch_pad
 #undef fch_process
 #undef fch_fractal_split
 #undef determine_n
+#undef scaled_length
 #undef fch_leaf_compress
 #undef fch_combine
 #undef fch_debug_emit_root_if

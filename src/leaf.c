@@ -1,13 +1,7 @@
-#include <string.h>
-#include <stdlib.h>
-
 #include "leaf.h"
 #include "params.h"
 #include "sbox.h"
-
-static inline uint64_t rotl64(uint64_t x, int r) {
-    return (x << r) | (x >> (64 - r));
-}
+#include "bitops.h"
 
 void fch_leaf_compress(
     const uint8_t *data,
@@ -32,15 +26,18 @@ void fch_leaf_compress(
         uint64_t v = (uint64_t)data[i];
 
         state[idx] ^= v;
-        state[idx] += rotl64(state[(idx + 1) % S], (idx + 3) * 7);
-        state[(idx + 2) % S] ^= rotl64(state[idx], (idx + 5) * 11);
+        state[idx] += fch_rotl64(
+            state[(idx + 1) % S],
+            (unsigned int)((idx + 3u) * 7u)
+        );
+        state[(idx + 2) % S] ^= fch_rotl64(
+            state[idx],
+            (unsigned int)((idx + 5u) * 11u)
+        );
     }
 
     for (size_t i = 0; i < S; i++) {
-        uint8_t *b = (uint8_t *)&state[i];
-        for (int j = 0; j < 8; j++) {
-            b[j] = FCH_SBOX[b[j]];
-        }
+        state[i] = fch_sbox64(state[i]);
     }
 
     int d = depth;

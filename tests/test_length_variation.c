@@ -233,3 +233,4 @@ int main(void) {
     printf("LENGTH_VARIATION: FAIL (min_diff>=%.0f%%)\n", MIN_DIFF * 100.0);
     return 1;
 }
+

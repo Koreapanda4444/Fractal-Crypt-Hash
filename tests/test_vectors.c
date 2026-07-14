@@ -17,7 +17,10 @@ static int check_256(const unsigned char *msg, size_t len, const char *expected_
 	unsigned char out[32];
 	char hex[65];
 
-	fch_hash_256(msg, len, out);
+	if (!fch_hash_256_checked(msg, len, out)) {
+		printf("FAIL: FCH-256 hashing failed\n");
+		return 0;
+	}
 	to_hex(out, sizeof(out), hex);
 
 	if (strcmp(hex, expected_hex) != 0) {
@@ -33,7 +36,10 @@ static int check_512(const unsigned char *msg, size_t len, const char *expected_
 	unsigned char out[64];
 	char hex[129];
 
-	fch_hash_512(msg, len, out);
+	if (!fch_hash_512_checked(msg, len, out)) {
+		printf("FAIL: FCH-512 hashing failed\n");
+		return 0;
+	}
 	to_hex(out, sizeof(out), hex);
 
 	if (strcmp(hex, expected_hex) != 0) {

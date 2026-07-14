@@ -4,6 +4,7 @@
 #include "fch.h"
 #include "fractal.h"
 #include "params.h"
+#include "bitops.h"
 
 static uint8_t *fch_pad(
     const uint8_t *input,
@@ -11,6 +12,14 @@ static uint8_t *fch_pad(
     size_t *out_len
 ) {
     if (!out_len) return NULL;
+    *out_len = 0;
+
+    if (length > SIZE_MAX - 9u)
+        return NULL;
+    if (length > UINT64_MAX / 8u)
+        return NULL;
+    if (length > 0 && !input)
+        return NULL;
 
     size_t min_len = length + 1 + 8;
     size_t padded_len = min_len;
@@ -25,12 +34,6 @@ static uint8_t *fch_pad(
         return NULL;
     }
 
-    if (length > 0 && !input) {
-        free(buf);
-        *out_len = 0;
-        return NULL;
-    }
-
     if (length > 0) {
         memcpy(buf, input, length);
     }
@@ -38,18 +41,18 @@ static uint8_t *fch_pad(
     buf[length] = 0x80;
 
     uint64_t bit_len = (uint64_t)length * 8;
-    memcpy(buf + padded_len - 8, &bit_len, 8);
+    fch_store_le64(buf + padded_len - 8, bit_len);
 
     *out_len = padded_len;
     return buf;
 }
 
-void fch_hash_256(
+int fch_hash_256_checked(
     const uint8_t *input,
     size_t length,
     uint8_t output[32]
 ) {
-    if (!output) return;
+    if (!output) return 0;
 
     size_t padded_len = 0;
     uint8_t *padded =
@@ -57,7 +60,7 @@ void fch_hash_256(
 
     if (!padded) {
         memset(output, 0, 32);
-        return;
+        return 0;
     }
 
     fch_state_t root =
@@ -66,23 +69,24 @@ void fch_hash_256(
     if (!root.state) {
         memset(output, 0, 32);
         free(padded);
-        return;
+        return 0;
     }
 
     for (size_t i = 0; i < FCH_256_STATE_WORDS; i++) {
-        memcpy(output + i * 8, &root.state[i], 8);
+        fch_store_le64(output + i * 8, root.state[i]);
     }
 
     free(root.state);
     free(padded);
+    return 1;
 }
 
-void fch_hash_512(
+int fch_hash_512_checked(
     const uint8_t *input,
     size_t length,
     uint8_t output[64]
 ) {
-    if (!output) return;
+    if (!output) return 0;
 
     size_t padded_len = 0;
     uint8_t *padded =
@@ -90,7 +94,7 @@ void fch_hash_512(
 
     if (!padded) {
         memset(output, 0, 64);
-        return;
+        return 0;
     }
 
     fch_state_t root =
@@ -99,13 +103,30 @@ void fch_hash_512(
     if (!root.state) {
         memset(output, 0, 64);
         free(padded);
-        return;
+        return 0;
     }
 
     for (size_t i = 0; i < FCH_512_STATE_WORDS; i++) {
-        memcpy(output + i * 8, &root.state[i], 8);
+        fch_store_le64(output + i * 8, root.state[i]);
     }
 
     free(root.state);
     free(padded);
+    return 1;
+}
+
+void fch_hash_256(
+    const uint8_t *input,
+    size_t length,
+    uint8_t output[32]
+) {
+    (void)fch_hash_256_checked(input, length, output);
+}
+
+void fch_hash_512(
+    const uint8_t *input,
+    size_t length,
+    uint8_t output[64]
+) {
+    (void)fch_hash_512_checked(input, length, output);
 }

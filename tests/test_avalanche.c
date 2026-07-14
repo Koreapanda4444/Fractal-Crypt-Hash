@@ -260,3 +260,4 @@ int main(void) {
     printf("REGRESSION: FAIL rows=%d (avg_drop<=%.1f%% spread_incr<=%.1f%%)\n", failures, AVG_DROP_PCT, SPREAD_INCR_PCT);
     return 1;
 }
+

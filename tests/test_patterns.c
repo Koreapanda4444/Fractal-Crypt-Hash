@@ -227,3 +227,4 @@ static int run_pattern_stress_tests(void) {
     printf("PATTERNS: FAIL rows=%d\n", failures);
     return 0;
 }
+
