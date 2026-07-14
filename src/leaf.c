@@ -3,16 +3,19 @@
 #include "sbox.h"
 #include "bitops.h"
 
-void fch_leaf_compress(
-    const uint8_t *data,
+int fch_leaf_compress_reader(
+    const fch_reader_t *reader,
+    size_t offset,
     size_t length,
     fch_state_t *out,
     int depth
 ) {
     if (!out || !out->state || out->words == 0)
-        return;
-    if (!data && length > 0)
-        return;
+        return 0;
+    if (!reader || !reader->read)
+        return 0;
+    if (offset > SIZE_MAX - length)
+        return 0;
 
     size_t S = out->words;
     uint64_t *state = out->state;
@@ -32,27 +35,46 @@ void fch_leaf_compress(
         state[i] = fch_sbox64(state[i]);
     }
 
-    for (size_t i = 0; i < length; i++) {
-        size_t idx = i % S;
-        size_t next = (idx + 1u) % S;
-        size_t far = (idx + 2u) % S;
-        uint64_t message = (uint64_t)data[i];
-        message ^= (uint64_t)i * UINT64_C(0x9E3779B97F4A7C15);
-        message ^= length_tag * UINT64_C(0xA24BAED4963EE407);
+    uint8_t buffer[4096];
+    size_t processed = 0;
 
-        state[idx] ^= message + UINT64_C(0xD6E8FEB86659FD93);
-        state[idx] = fch_rotl64(
-            state[idx],
-            (unsigned int)(((i + idx * 13u) % 63u) + 1u)
-        );
-        state[next] += state[idx] ^ fch_rotl64(
-            message,
-            (unsigned int)(((i * 7u + idx) % 63u) + 1u)
-        );
-        state[far] ^= fch_rotl64(
-            state[idx] + state[next],
-            (unsigned int)(((i * 11u + idx * 3u) % 63u) + 1u)
-        );
+    while (processed < length) {
+        size_t chunk = length - processed;
+        if (chunk > sizeof(buffer))
+            chunk = sizeof(buffer);
+        if (!reader->read(
+                reader->context,
+                offset + processed,
+                buffer,
+                chunk
+            ))
+            return 0;
+
+        for (size_t j = 0; j < chunk; j++) {
+            size_t i = processed + j;
+            size_t idx = i % S;
+            size_t next = (idx + 1u) % S;
+            size_t far = (idx + 2u) % S;
+            uint64_t message = (uint64_t)buffer[j];
+            message ^= (uint64_t)i * UINT64_C(0x9E3779B97F4A7C15);
+            message ^= length_tag * UINT64_C(0xA24BAED4963EE407);
+
+            state[idx] ^= message + UINT64_C(0xD6E8FEB86659FD93);
+            state[idx] = fch_rotl64(
+                state[idx],
+                (unsigned int)(((i + idx * 13u) % 63u) + 1u)
+            );
+            state[next] += state[idx] ^ fch_rotl64(
+                message,
+                (unsigned int)(((i * 7u + idx) % 63u) + 1u)
+            );
+            state[far] ^= fch_rotl64(
+                state[idx] + state[next],
+                (unsigned int)(((i * 11u + idx * 3u) % 63u) + 1u)
+            );
+        }
+
+        processed += chunk;
     }
 
     for (unsigned int round = 0; round < 4u; round++) {
@@ -82,4 +104,19 @@ void fch_leaf_compress(
     }
 
     out->words = S;
+    return 1;
+}
+
+void fch_leaf_compress(
+    const uint8_t *data,
+    size_t length,
+    fch_state_t *out,
+    int depth
+) {
+    if (!data && length > 0)
+        return;
+
+    fch_memory_reader_t memory = { data, length };
+    fch_reader_t reader = { fch_memory_read, &memory };
+    (void)fch_leaf_compress_reader(&reader, 0, length, out, depth);
 }

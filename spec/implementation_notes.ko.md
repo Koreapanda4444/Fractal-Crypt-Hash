@@ -6,7 +6,9 @@
 - 패딩과 해시 출력에 명시적 little-endian 변환 사용
 - 재귀 처리 중 메모리 할당 실패를 호출자까지 전달
 - 분할 길이 계산에서 size 곱셈 overflow 방지
-- checked 원샷 및 버퍼드 final API로 실패 상태 전달
+- checked 원샷 및 스트리밍 final API로 실패 상태 전달
+- 리더 기반 재귀 처리로 원샷과 스트리밍 해시의 동일성 유지
+- 스트리밍 입력은 익명 임시 저장소와 고정 크기 RAM 버퍼 사용
 
 ## 설계 철학(Design Philosophy)
 

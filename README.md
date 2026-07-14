@@ -70,9 +70,12 @@ The checked functions return `1` on success and `0` on invalid input,
 allocation failure, or an unsupported input length. The original `void`
 functions remain available as compatibility wrappers.
 
-### Buffered streaming API
+### Bounded-memory streaming API
 
-FCH also provides a **buffered** streaming API: data is accumulated in memory and hashed on finalization.
+FCH provides a streaming API that writes incoming chunks to an anonymous
+temporary file. Finalization reads that data through fixed-size buffers, so RAM
+usage does not grow with the total input size. The digest is identical to the
+one-shot API. This mode requires temporary-file support and can be slower.
 
 ```c
 #include "fch_stream.h"
@@ -84,6 +87,9 @@ fch256_update(&ctx, chunk2, chunk2_len);
 int ok = fch256_final_checked(&ctx, out256);
 fch256_free(&ctx);
 ```
+
+After finalization, further updates and repeated finalization are rejected.
+The CLI uses the same bounded-memory path for files and standard input.
 
 ### CLI
 

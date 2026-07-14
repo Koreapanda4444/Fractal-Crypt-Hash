@@ -68,9 +68,12 @@ int ok512 = fch_hash_512_checked(data, len, out512);
 checked 함수는 성공 시 `1`, 잘못된 입력·메모리 할당 실패·지원하지 않는
 입력 길이에서는 `0`을 반환합니다. 기존 `void` 함수는 호환용으로 유지됩니다.
 
-### 버퍼드 스트리밍 API
+### 제한 메모리 스트리밍 API
 
-FCH는 **버퍼드(buffered)** 스트리밍 API도 제공합니다. 즉, 데이터를 메모리에 누적한 뒤 `final` 단계에서 원샷 해싱을 수행합니다.
+FCH 스트리밍 API는 입력 청크를 익명 임시 파일에 기록하고, `final` 단계에서
+고정 크기 버퍼로 다시 읽습니다. 따라서 전체 입력 크기에 비례해 RAM 사용량이
+증가하지 않으며 원샷 API와 같은 해시를 생성합니다. 임시 파일을 사용할 수
+있어야 하고 원샷 API보다 느릴 수 있습니다.
 
 ```c
 #include "fch_stream.h"
@@ -82,6 +85,9 @@ fch256_update(&ctx, chunk2, chunk2_len);
 int ok = fch256_final_checked(&ctx, out256);
 fch256_free(&ctx);
 ```
+
+final 이후의 추가 update와 final 재호출은 거부됩니다.
+CLI의 파일 및 표준입력 처리도 같은 제한 메모리 경로를 사용합니다.
 
 ### CLI
 

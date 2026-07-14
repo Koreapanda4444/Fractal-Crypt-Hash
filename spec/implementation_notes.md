@@ -6,7 +6,9 @@
 - Padding and digest serialization use explicit little-endian conversion
 - Recursive allocation failures propagate to the caller
 - Split arithmetic avoids size multiplication overflow
-- Checked one-shot and buffered-final APIs report failures
+- Checked one-shot and streaming-final APIs report failures
+- Reader-based recursion keeps one-shot and streaming digests identical
+- Streaming input uses anonymous temporary storage and fixed-size RAM buffers
 
 ## Design Philosophy
 

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "fch.h"
+#include "fch_stream.h"
 
 static void print_hex(const uint8_t *buf, size_t len) {
 	static const char hexdigits[] = "0123456789abcdef";
@@ -14,69 +15,62 @@ static void print_hex(const uint8_t *buf, size_t len) {
 	}
 }
 
-static int read_all(FILE *fp, uint8_t **out, size_t *out_len) {
-	*out = NULL;
-	*out_len = 0;
-	size_t cap = 0;
+static int hash_stream(FILE *fp, int variant, const char *label) {
+	uint8_t buffer[65536];
+	fch256_ctx ctx256;
+	fch512_ctx ctx512;
+
+	if (variant == 256)
+		fch256_init(&ctx256);
+	else
+		fch512_init(&ctx512);
 
 	for (;;) {
-		if (*out_len == cap) {
-			if (cap > SIZE_MAX / 2u) {
-				free(*out);
-				*out = NULL;
-				*out_len = 0;
-				return 0;
+		size_t count = fread(buffer, 1, sizeof(buffer), fp);
+		if (count > 0) {
+			int ok = variant == 256
+				? fch256_update(&ctx256, buffer, count)
+				: fch512_update(&ctx512, buffer, count);
+			if (!ok) {
+				fprintf(stderr, "fch: failed to buffer %s\n", label);
+				if (variant == 256)
+					fch256_free(&ctx256);
+				else
+					fch512_free(&ctx512);
+				return 2;
 			}
-			size_t new_cap = (cap == 0) ? 4096u : cap * 2u;
-			uint8_t *new_buf = (uint8_t *)realloc(*out, new_cap);
-			if (!new_buf) {
-				free(*out);
-				*out = NULL;
-				*out_len = 0;
-				return 0;
-			}
-			*out = new_buf;
-			cap = new_cap;
 		}
 
-		size_t space = cap - *out_len;
-		size_t n = fread(*out + *out_len, 1, space, fp);
-		*out_len += n;
-
-		if (n == 0) {
-			if (feof(fp)) return 1;
-			free(*out);
-			*out = NULL;
-			*out_len = 0;
-			return 0;
+		if (count < sizeof(buffer)) {
+			if (ferror(fp)) {
+				fprintf(stderr, "fch: failed to read %s\n", label);
+				if (variant == 256)
+					fch256_free(&ctx256);
+				else
+					fch512_free(&ctx512);
+				return 2;
+			}
+			break;
 		}
 	}
-}
 
-static int hash_stream(FILE *fp, int variant, const char *label) {
-	uint8_t *data = NULL;
-	size_t len = 0;
-	if (!read_all(fp, &data, &len)) {
-		fprintf(stderr, "fch: failed to read %s\n", label);
-		return 2;
-	}
-
-	int rc = 0;
 	if (variant == 256) {
 		uint8_t out[32];
-		if (!fch_hash_256_checked(data, len, out)) {
+		if (!fch256_final_checked(&ctx256, out)) {
 			fprintf(stderr, "fch: failed to hash %s\n", label);
-			free(data);
+			fch256_free(&ctx256);
 			return 2;
 		}
+		fch256_free(&ctx256);
 		print_hex(out, sizeof(out));
 	} else {
 		uint8_t out[64];
-		if (!fch_hash_512_checked(data, len, out)) {
+		if (!fch512_final_checked(&ctx512, out)) {
 			fprintf(stderr, "fch: failed to hash %s\n", label);
-			free(data);
+			fch512_free(&ctx512);
 			return 2;
 		}
+		fch512_free(&ctx512);
 		print_hex(out, sizeof(out));
 	}
 
@@ -85,8 +79,7 @@ static int hash_stream(FILE *fp, int variant, const char *label) {
 	}
 	putchar('\n');
 
-	free(data);
-	return rc;
+	return 0;
 }
 
 static void usage(const char *argv0) {

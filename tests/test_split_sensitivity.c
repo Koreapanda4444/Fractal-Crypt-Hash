@@ -208,9 +208,12 @@ static int rounds_for_len(size_t len) {
 #define FCH_N_MAX 2
 #define FCH_MAX_DEPTH_CAP 16
 #define fch_leaf_compress fch_leaf_compress_N22
+#define fch_leaf_compress_reader fch_leaf_compress_reader_N22
 #define fch_combine fch_combine_N22
 #define fch_fractal_split fch_fractal_split_N22
+#define fch_fractal_split_reader fch_fractal_split_reader_N22
 #define fch_process fch_process_N22
+#define fch_process_reader fch_process_reader_N22
 #define rotl64 rotl64_leaf_N22
 #include "../src/leaf.c"
 #undef rotl64
@@ -227,9 +230,12 @@ static int rounds_for_len(size_t len) {
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_N22 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 #undef FCH_N_MIN
 #undef FCH_N_MAX
@@ -238,9 +244,12 @@ enum { MINBLOCK_N22 = FCH_MIN_BLOCK_SIZE };
 #define FCH_N_MAX 6
 #define FCH_MAX_DEPTH_CAP 16
 #define fch_leaf_compress fch_leaf_compress_N26
+#define fch_leaf_compress_reader fch_leaf_compress_reader_N26
 #define fch_combine fch_combine_N26
 #define fch_fractal_split fch_fractal_split_N26
+#define fch_fractal_split_reader fch_fractal_split_reader_N26
 #define fch_process fch_process_N26
+#define fch_process_reader fch_process_reader_N26
 #define rotl64 rotl64_leaf_N26
 #include "../src/leaf.c"
 #undef rotl64
@@ -257,9 +266,12 @@ enum { MINBLOCK_N22 = FCH_MIN_BLOCK_SIZE };
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_N26 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 #undef FCH_N_MIN
 #undef FCH_N_MAX
@@ -268,9 +280,12 @@ enum { MINBLOCK_N26 = FCH_MIN_BLOCK_SIZE };
 #define FCH_N_MAX 6
 #define FCH_MAX_DEPTH_CAP 16
 #define fch_leaf_compress fch_leaf_compress_N46
+#define fch_leaf_compress_reader fch_leaf_compress_reader_N46
 #define fch_combine fch_combine_N46
 #define fch_fractal_split fch_fractal_split_N46
+#define fch_fractal_split_reader fch_fractal_split_reader_N46
 #define fch_process fch_process_N46
+#define fch_process_reader fch_process_reader_N46
 #define rotl64 rotl64_leaf_N46
 #include "../src/leaf.c"
 #undef rotl64
@@ -287,9 +302,12 @@ enum { MINBLOCK_N26 = FCH_MIN_BLOCK_SIZE };
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_N46 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 #undef FCH_N_MIN
 #undef FCH_N_MAX
@@ -298,9 +316,12 @@ enum { MINBLOCK_N46 = FCH_MIN_BLOCK_SIZE };
 #define FCH_N_MAX 6
 #define FCH_MAX_DEPTH_CAP 16
 #define fch_leaf_compress fch_leaf_compress_N66
+#define fch_leaf_compress_reader fch_leaf_compress_reader_N66
 #define fch_combine fch_combine_N66
 #define fch_fractal_split fch_fractal_split_N66
+#define fch_fractal_split_reader fch_fractal_split_reader_N66
 #define fch_process fch_process_N66
+#define fch_process_reader fch_process_reader_N66
 #define rotl64 rotl64_leaf_N66
 #include "../src/leaf.c"
 #undef rotl64
@@ -317,9 +338,12 @@ enum { MINBLOCK_N46 = FCH_MIN_BLOCK_SIZE };
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_N66 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 
 #undef FCH_N_MIN
@@ -329,9 +353,12 @@ enum { MINBLOCK_N66 = FCH_MIN_BLOCK_SIZE };
 #define FCH_N_MAX 6
 #define FCH_MAX_DEPTH_CAP 4
 #define fch_leaf_compress fch_leaf_compress_D4
+#define fch_leaf_compress_reader fch_leaf_compress_reader_D4
 #define fch_combine fch_combine_D4
 #define fch_fractal_split fch_fractal_split_D4
+#define fch_fractal_split_reader fch_fractal_split_reader_D4
 #define fch_process fch_process_D4
+#define fch_process_reader fch_process_reader_D4
 #define rotl64 rotl64_leaf_D4
 #include "../src/leaf.c"
 #undef rotl64
@@ -348,16 +375,22 @@ enum { MINBLOCK_N66 = FCH_MIN_BLOCK_SIZE };
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_D4 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 8
 #define fch_leaf_compress fch_leaf_compress_D8
+#define fch_leaf_compress_reader fch_leaf_compress_reader_D8
 #define fch_combine fch_combine_D8
 #define fch_fractal_split fch_fractal_split_D8
+#define fch_fractal_split_reader fch_fractal_split_reader_D8
 #define fch_process fch_process_D8
+#define fch_process_reader fch_process_reader_D8
 #define rotl64 rotl64_leaf_D8
 #include "../src/leaf.c"
 #undef rotl64
@@ -374,16 +407,22 @@ enum { MINBLOCK_D4 = FCH_MIN_BLOCK_SIZE };
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_D8 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 #undef FCH_MAX_DEPTH_CAP
 #define FCH_MAX_DEPTH_CAP 16
 #define fch_leaf_compress fch_leaf_compress_D16
+#define fch_leaf_compress_reader fch_leaf_compress_reader_D16
 #define fch_combine fch_combine_D16
 #define fch_fractal_split fch_fractal_split_D16
+#define fch_fractal_split_reader fch_fractal_split_reader_D16
 #define fch_process fch_process_D16
+#define fch_process_reader fch_process_reader_D16
 #define rotl64 rotl64_leaf_D16
 #include "../src/leaf.c"
 #undef rotl64
@@ -400,9 +439,12 @@ enum { MINBLOCK_D8 = FCH_MIN_BLOCK_SIZE };
 #undef fch_debug_emit_root_if
 enum { MINBLOCK_D16 = FCH_MIN_BLOCK_SIZE };
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef fch_process
+#undef fch_process_reader
 
 #undef FCH_PARAMS_ALLOW_REINCLUDE
 

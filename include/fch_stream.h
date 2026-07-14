@@ -9,23 +9,24 @@ extern "C" {
 #endif
 
 /*
- * NOTE: This is a buffered streaming API: data is accumulated in memory and
- * hashed on finalization using the one-shot FCH functions.
- * Memory usage is O(n) in total input size.
+ * Streaming input is written to an anonymous temporary file and processed
+ * through a random-access reader during finalization. RAM usage stays bounded
+ * by the recursive state and fixed-size I/O buffers. Finalization can be
+ * slower than the one-shot API and requires temporary-file support.
  */
 
 typedef struct {
-	uint8_t *buffer;
+	void *storage;
 	size_t length;
-	size_t capacity;
 	int failed;
+	int finalized;
 } fch256_ctx;
 
 typedef struct {
-	uint8_t *buffer;
+	void *storage;
 	size_t length;
-	size_t capacity;
 	int failed;
+	int finalized;
 } fch512_ctx;
 
 void fch256_init(fch256_ctx *ctx);

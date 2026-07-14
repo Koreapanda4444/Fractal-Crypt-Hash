@@ -13,14 +13,17 @@ static size_t scaled_length(
 }
 
 static size_t determine_n(
-    const uint8_t *data,
+    const fch_reader_t *reader,
+    size_t offset,
     size_t length,
     int depth,
     uint64_t *seed_out
 ) {
     if (seed_out)
         *seed_out = 0;
-    if (!data || length == 0 || !seed_out)
+    if (!reader || !reader->read || length == 0 || !seed_out)
+        return 0;
+    if (offset > SIZE_MAX - length)
         return 0;
 
     unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
@@ -28,13 +31,32 @@ static size_t determine_n(
     seed ^= (uint64_t)length * UINT64_C(0x9E3779B97F4A7C15);
     seed ^= (uint64_t)normalized_depth * UINT64_C(0xD6E8FEB86659FD93);
 
-    for (size_t i = 0; i < length; i++) {
-        uint64_t input_word = (uint64_t)data[i];
-        input_word ^= (uint64_t)i * UINT64_C(0xA24BAED4963EE407);
-        seed ^= input_word + UINT64_C(0x9E3779B97F4A7C15);
-        seed = fch_rotl64(seed, 27u);
-        seed *= UINT64_C(0x94D049BB133111EB);
-        seed ^= seed >> 29u;
+    uint8_t buffer[4096];
+    size_t processed = 0;
+
+    while (processed < length) {
+        size_t chunk = length - processed;
+        if (chunk > sizeof(buffer))
+            chunk = sizeof(buffer);
+        if (!reader->read(
+                reader->context,
+                offset + processed,
+                buffer,
+                chunk
+            ))
+            return 0;
+
+        for (size_t j = 0; j < chunk; j++) {
+            size_t i = processed + j;
+            uint64_t input_word = (uint64_t)buffer[j];
+            input_word ^= (uint64_t)i * UINT64_C(0xA24BAED4963EE407);
+            seed ^= input_word + UINT64_C(0x9E3779B97F4A7C15);
+            seed = fch_rotl64(seed, 27u);
+            seed *= UINT64_C(0x94D049BB133111EB);
+            seed ^= seed >> 29u;
+        }
+
+        processed += chunk;
     }
 
     seed ^= seed >> 30u;
@@ -52,8 +74,9 @@ static size_t determine_n(
     return n;
 }
 
-size_t fch_fractal_split(
-    const uint8_t *data,
+size_t fch_fractal_split_reader(
+    const fch_reader_t *reader,
+    size_t offset,
     size_t length,
     int depth,
     fch_block_t *blocks,
@@ -61,14 +84,16 @@ size_t fch_fractal_split(
 ) {
     if (!blocks || max_blocks == 0)
         return 0;
-    if (!data || length == 0) {
+    if (length == 0) {
         blocks[0].offset = 0;
-        blocks[0].length = length;
+        blocks[0].length = 0;
         return 1;
     }
+    if (!reader || !reader->read || offset > SIZE_MAX - length)
+        return 0;
 
     uint64_t seed = 0;
-    size_t n = determine_n(data, length, depth, &seed);
+    size_t n = determine_n(reader, offset, length, depth, &seed);
     if (n == 0)
         return 0;
     if (n > max_blocks)
@@ -98,9 +123,9 @@ size_t fch_fractal_split(
         return 1;
     }
 
-    size_t offset = 0;
+    size_t block_offset = 0;
     for (size_t i = 0; i < n; i++) {
-        size_t remaining = length - offset;
+        size_t remaining = length - block_offset;
         size_t blocks_left = n - i - 1;
         size_t block_len = scaled_length(length, weights[i], total_weight);
 
@@ -115,10 +140,32 @@ size_t fch_fractal_split(
                 block_len = max_len;
         }
 
-        blocks[i].offset = offset;
+        blocks[i].offset = block_offset;
         blocks[i].length = block_len;
-        offset += block_len;
+        block_offset += block_len;
     }
 
-    return offset == length ? n : 0;
+    return block_offset == length ? n : 0;
+}
+
+size_t fch_fractal_split(
+    const uint8_t *data,
+    size_t length,
+    int depth,
+    fch_block_t *blocks,
+    size_t max_blocks
+) {
+    if (!data && length > 0)
+        return 0;
+
+    fch_memory_reader_t memory = { data, length };
+    fch_reader_t reader = { fch_memory_read, &memory };
+    return fch_fractal_split_reader(
+        &reader,
+        0,
+        length,
+        depth,
+        blocks,
+        max_blocks
+    );
 }

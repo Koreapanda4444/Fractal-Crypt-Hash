@@ -42,22 +42,34 @@ static inline void fch_debug_emit_root_if(
 }
 #endif
 
-fch_state_t fch_process(
-    const uint8_t *data,
+fch_state_t fch_process_reader(
+    const fch_reader_t *reader,
+    size_t offset,
     size_t length,
     int depth,
     size_t state_words
 ) {
     fch_state_t result = { NULL, state_words };
 
-    if (state_words == 0 || (!data && length > 0)) {
+    if (state_words == 0 || !reader || !reader->read)
         return result;
-    }
+    if (offset > SIZE_MAX - length)
+        return result;
 
     if (depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
         result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
         if (result.state) {
-            fch_leaf_compress(data, length, &result, depth);
+            if (!fch_leaf_compress_reader(
+                    reader,
+                    offset,
+                    length,
+                    &result,
+                    depth
+                )) {
+                free(result.state);
+                result.state = NULL;
+                return result;
+            }
             FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
             fch_debug_emit_root_if(depth, result.state, result.words);
         }
@@ -65,8 +77,13 @@ fch_state_t fch_process(
     }
 
     fch_block_t blocks[FCH_N_MAX];
-    size_t n = fch_fractal_split(
-        data, length, depth, blocks, FCH_N_MAX
+    size_t n = fch_fractal_split_reader(
+        reader,
+        offset,
+        length,
+        depth,
+        blocks,
+        FCH_N_MAX
     );
 
     if (n == 0) {
@@ -81,12 +98,15 @@ fch_state_t fch_process(
     }
 
     for (size_t i = 0; i < n; i++) {
-        const uint8_t *sub =
-            data + blocks[i].offset;
+        size_t sub_offset = offset + blocks[i].offset;
         size_t sub_len = blocks[i].length;
 
-        children[i] = fch_process(
-            sub, sub_len, depth + 1, state_words
+        children[i] = fch_process_reader(
+            reader,
+            sub_offset,
+            sub_len,
+            depth + 1,
+            state_words
         );
 
         if (!children[i].state) {
@@ -117,4 +137,20 @@ fch_state_t fch_process(
     free(children);
 
     return result;
+}
+
+fch_state_t fch_process(
+    const uint8_t *data,
+    size_t length,
+    int depth,
+    size_t state_words
+) {
+    fch_state_t result = { NULL, state_words };
+
+    if (state_words == 0 || (!data && length > 0))
+        return result;
+
+    fch_memory_reader_t memory = { data, length };
+    fch_reader_t reader = { fch_memory_read, &memory };
+    return fch_process_reader(&reader, 0, length, depth, state_words);
 }

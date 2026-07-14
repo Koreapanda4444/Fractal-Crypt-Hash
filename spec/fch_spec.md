@@ -87,3 +87,18 @@ Internal nodes:
 
 Allocation or validation failure does not produce an alternative tree. The
 checked API reports failure and clears the output buffer.
+
+---
+
+## 7. Streaming Processing
+
+- Update calls write input bytes to anonymous temporary storage
+- Finalization exposes the stored input and virtual padding through a
+  random-access reader
+- The reader follows the same split, leaf, and combine rules as one-shot input
+- RAM usage is bounded by fixed-size I/O buffers and recursive states
+- Finalization closes the temporary storage
+- Updates after finalization and repeated finalization fail
+
+Streaming therefore preserves the one-shot digest but requires temporary-file
+support and may perform more I/O.
