@@ -8,7 +8,61 @@ and it should not be used as a basis to deploy FCH in production security contex
 
 FCH is intended for research, experimentation, benchmarking, and discussion.
 
-## 1. Input Padding
+---
+
+## 1. Security Targets and Status
+
+### 1.1 Attacker Model
+
+FCH is a public, deterministic, non-keyed hash function. The attacker is
+assumed to know the algorithm, constants, messages, and hash outputs and may
+freely choose messages to hash. The targets below cover only the classical
+computation model. No security strength against quantum attacks is currently
+defined or claimed.
+
+### 1.2 Target Strength
+
+| Variant | Output Size | Collision Resistance | Preimage Resistance | Second-Preimage Resistance |
+| ------- | ----------- | -------------------- | ------------------- | -------------------------- |
+| FCH-256 | 256 bits | 2^128 | 2^256 | 2^256 |
+| FCH-512 | 512 bits | 2^256 | 2^512 | 2^512 |
+
+Each value is the approximate generic attack cost expected from an ideal hash
+of the corresponding output size. These values are **design targets** that FCH
+must aim to meet, not security claims or proofs for the current design.
+Structural weaknesses may reduce the actual security strength below these
+targets.
+
+### 1.3 Structural Security Targets
+
+The FCH tree construction is intended to:
+
+- separate root, internal-node, leaf, and child-state domains
+- bind node type, depth, length, child count, child order, offset, and length
+  without ambiguity
+- prevent different messages or tree structures from merging into the same
+  internal representation through structural collisions
+- avoid tree-specific shortcuts for multicollisions, herding, and long-message
+  second-preimage attacks below the target strengths
+- produce the same digest for the same message through one-shot and streaming APIs
+
+### 1.4 Candidate Evaluation Criteria
+
+Before FCH can be described as a security candidate suitable for serious
+evaluation, it requires at least:
+
+- a stable and complete specification that matches the implementation
+- differential, linear, and structural analysis of the full and reduced designs
+- an explicit security margin that can be compared with attack results
+- no known full-design attack faster than the target costs in the table
+- reproducible test results and meaningful independent public review
+
+Statistical distribution, avalanche behavior, test vectors, and implementation
+tests support analysis but do not by themselves establish cryptographic security.
+
+---
+
+## 2. Input Padding
 
 Given input message M of length L bytes:
 
@@ -22,7 +76,7 @@ field are rejected by the checked API.
 
 ---
 
-## 2. Fractal Processing
+## 3. Fractal Processing
 
 Processing starts at depth = 0.
 
@@ -35,7 +89,7 @@ At each node:
 
 ---
 
-## 3. Variable n-Way Split
+## 4. Variable n-Way Split
 
 - n ∈ [2, 6]
 - A 64-bit split seed incorporates node length, depth, and every input byte
@@ -44,7 +98,7 @@ At each node:
 
 ---
 
-## 4. Leaf Compression
+## 5. Leaf Compression
 
 Leaf nodes apply:
 
@@ -66,7 +120,7 @@ After processing:
 
 ---
 
-## 5. Tree Combine & Recompression
+## 6. Tree Combine & Recompression
 
 Internal nodes:
 
@@ -79,7 +133,7 @@ Internal nodes:
 
 ---
 
-## 6. Output
+## 7. Output
 
 - Root state serialized as little-endian bytes
 - FCH-256: 32 bytes
@@ -90,7 +144,7 @@ checked API reports failure and clears the output buffer.
 
 ---
 
-## 7. Streaming Processing
+## 8. Streaming Processing
 
 - Update calls write input bytes to anonymous temporary storage
 - Finalization exposes the stored input and virtual padding through a

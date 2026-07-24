@@ -1,8 +1,8 @@
 # Fractal Crypt-Hash (FCH)
 
-Fractal Crypt-Hash (FCH) is an experimental cryptographic hash function
-based on a **fractal (self-similar) recursive structure** rather than
-traditional round-based compression.
+Fractal Crypt-Hash (FCH) is an experimental hash design intended to become
+a cryptographic hash candidate. It uses a **fractal (self-similar) recursive
+structure** rather than traditional round-based compression.
 
 ---
 
@@ -19,6 +19,28 @@ Do **not** use FCH in production or for security-critical purposes, including (b
 - any scenario where a broken hash causes harm
 
 This repository is intended for learning, experimentation, benchmarking, and discussion.
+
+---
+
+## Security Targets
+
+FCH is intended to be a public, deterministic, non-keyed hash function with
+the following resistance targets against classical generic attacks.
+
+| Variant | Collision Resistance | Preimage Resistance | Second-Preimage Resistance |
+| ------- | -------------------- | ------------------- | -------------------------- |
+| FCH-256 | 2^128 | 2^256 | 2^256 |
+| FCH-512 | 2^256 | 2^512 | 2^512 |
+
+These values are **design targets**, not claims that the current implementation
+achieves them and not security guarantees. FCH is currently an **unvalidated
+cryptographic hash candidate**. Passing statistical diffusion and avalanche
+tests does not establish collision, preimage, or second-preimage resistance.
+
+Stronger security wording requires a stable specification, analysis of the
+full and reduced designs, a documented security margin, no known attacks below
+the targets, and meaningful independent public review. The detailed targets
+and evaluation criteria are defined in `spec/fch_spec.md`.
 
 ---
 
