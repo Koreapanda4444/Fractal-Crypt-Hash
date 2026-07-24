@@ -100,23 +100,38 @@ At each node:
 
 ## 5. Leaf Compression
 
-Leaf nodes apply:
+FCH-256 and FCH-512 both use a 512-bit internal tree state consisting of
+eight 64-bit words. A leaf initializes this state with separate domains for
+root leaves and internal leaves.
 
-- XOR
-- ADD
-- ROTATE
-- 8×8 S-box substitution
-- Four cross-lane finalization passes
+The leaf first compresses a parameter block containing its length, depth,
+state width, minimum block size, and round count. It then reads leaf data in
+128-byte blocks and compresses each block. The unused portion of the final
+partial block is zero-filled, while the actual block length and cumulative
+byte count are injected as separate tweaks. The last data block carries the
+final flag.
 
-All 64-bit rotations reduce the rotation count modulo 64. S-box substitution
-operates on bytes from least-significant to most-significant order, independent
-of host byte order.
+### 5.1 ARX Compression Core
 
-After processing:
+Each compression uses a 16-word working state. Its first eight 64-bit words
+are initialized from the chaining state and its last eight words from a fixed
+IV. The counter, actual block length, state width, domain, and flags are XORed
+into the working state before 12 rounds. Each round applies four column G
+functions followed by four diagonal G functions so every working word mixes.
 
-- Root leaves and internal leaves use different domain constants
-- Length, depth, and state width are mixed into the state
-- The full state width is retained for parent nodes
+G uses only 64-bit modular addition, XOR, and right rotation:
+
+1. `a = a + b + x`, `d = ROTR64(d XOR a, 32)`
+2. `c = c + d`, `b = ROTR64(b XOR c, 24)`
+3. `a = a + b + y`, `d = ROTR64(d XOR a, 16)`
+4. `c = c + d`, `b = ROTR64(b XOR c, 63)`
+
+After 12 rounds, each chaining word is updated as
+`h[i] XOR work[i] XOR work[i + 8]`.
+The G structure and rotation distances follow the 64-bit ARX structure used
+by BLAKE2b, but FCH has its own initialization, tweak layout, message mode,
+and tree construction. FCH therefore does not inherit BLAKE2b's security
+claims.
 
 ---
 
@@ -124,20 +139,25 @@ After processing:
 
 Internal nodes:
 
-- Merge child states sequentially (order-dependent)
-- Mix node length, depth, child count, and state width
-- Mix each child's index, offset, and length
-- Apply arithmetic mixing and rotation
-- Apply S-box substitution
-- Retain the full state width
+- use separate domains for the root node and other internal nodes
+- first compress a parameter block with node length, depth, child count, and
+  state width
+- serialize each 512-bit child state together with child index, offset,
+  length, and node metadata into one 128-byte block
+- feed child blocks to the 12-round ARX core in order
+- set the final flag on the last child block
+- retain the full 512-bit state after combination
 
 ---
 
 ## 7. Output
 
-- Root state serialized as little-endian bytes
-- FCH-256: 32 bytes
-- FCH-512: 64 bytes
+- Compress the root state once more with the output size and an output domain
+- Use different output domains for FCH-256 and FCH-512
+- FCH-256 serializes the first four words of the final 512-bit state as
+  little-endian bytes
+- FCH-512 serializes all eight final state words as little-endian bytes
+- Result sizes are 32 bytes for FCH-256 and 64 bytes for FCH-512
 
 Allocation or validation failure does not produce an alternative tree. The
 checked API reports failure and clears the output buffer.

@@ -9,7 +9,7 @@ SRC = ../src/fch.c \
       ../src/fractal_split.c \
       ../src/leaf.c \
       ../src/combine.c \
-      ../src/sbox.c \
+      ../src/mix.c \
       ../src/bitops.c \
       ../src/fch_stream.c
 

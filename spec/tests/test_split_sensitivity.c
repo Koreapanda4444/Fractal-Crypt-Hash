@@ -196,7 +196,7 @@ static int rounds_for_len(size_t len) {
 
 
 
-#include "../src/sbox.c"
+#include "../src/mix.c"
 #include "../src/bitops.c"
 
 

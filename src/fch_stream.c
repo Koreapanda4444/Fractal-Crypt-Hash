@@ -6,6 +6,7 @@
 #include "bitops.h"
 #include "fch_stream.h"
 #include "fractal.h"
+#include "mix.h"
 #include "params.h"
 
 typedef struct {
@@ -166,7 +167,8 @@ static int stream_final_checked(
     int *finalized,
     uint8_t *output,
     size_t output_length,
-    size_t state_words
+    size_t state_words,
+    size_t output_words
 ) {
     if (!storage || !failed || !finalized || !output)
         return 0;
@@ -228,9 +230,11 @@ static int stream_final_checked(
         state_words
     );
 
-    int ok = root.state != NULL && root.words == state_words;
+    int ok = root.state != NULL &&
+        root.words == state_words &&
+        fch_mix_finalize_output(root.state, root.words, output_words);
     if (ok) {
-        for (size_t i = 0; i < state_words; i++)
+        for (size_t i = 0; i < output_words; i++)
             fch_store_le64(output + i * 8u, root.state[i]);
     } else {
         *failed = 1;
@@ -277,7 +281,8 @@ int fch256_final_checked(fch256_ctx *ctx, uint8_t out[32]) {
         &ctx->finalized,
         out,
         32,
-        FCH_256_STATE_WORDS
+        FCH_256_STATE_WORDS,
+        FCH_256_OUTPUT_WORDS
     );
 }
 
@@ -329,7 +334,8 @@ int fch512_final_checked(fch512_ctx *ctx, uint8_t out[64]) {
         &ctx->finalized,
         out,
         64,
-        FCH_512_STATE_WORDS
+        FCH_512_STATE_WORDS,
+        FCH_512_OUTPUT_WORDS
     );
 }
 

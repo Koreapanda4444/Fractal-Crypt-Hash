@@ -171,7 +171,7 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 
 #define FCH_PARAMS_ALLOW_REINCLUDE 1
 
-#include "../src/sbox.c"
+#include "../src/mix.c"
 #include "../src/bitops.c"
 
 

@@ -5,6 +5,7 @@
 #include "fractal.h"
 #include "params.h"
 #include "bitops.h"
+#include "mix.h"
 
 static uint8_t *fch_pad(
     const uint8_t *input,
@@ -66,13 +67,20 @@ int fch_hash_256_checked(
     fch_state_t root =
         fch_process(padded, padded_len, 0, FCH_256_STATE_WORDS);
 
-    if (!root.state) {
+    if (!root.state ||
+        root.words != FCH_256_STATE_WORDS ||
+        !fch_mix_finalize_output(
+            root.state,
+            root.words,
+            FCH_256_OUTPUT_WORDS
+        )) {
         memset(output, 0, 32);
+        free(root.state);
         free(padded);
         return 0;
     }
 
-    for (size_t i = 0; i < FCH_256_STATE_WORDS; i++) {
+    for (size_t i = 0; i < FCH_256_OUTPUT_WORDS; i++) {
         fch_store_le64(output + i * 8, root.state[i]);
     }
 
@@ -100,13 +108,20 @@ int fch_hash_512_checked(
     fch_state_t root =
         fch_process(padded, padded_len, 0, FCH_512_STATE_WORDS);
 
-    if (!root.state) {
+    if (!root.state ||
+        root.words != FCH_512_STATE_WORDS ||
+        !fch_mix_finalize_output(
+            root.state,
+            root.words,
+            FCH_512_OUTPUT_WORDS
+        )) {
         memset(output, 0, 64);
+        free(root.state);
         free(padded);
         return 0;
     }
 
-    for (size_t i = 0; i < FCH_512_STATE_WORDS; i++) {
+    for (size_t i = 0; i < FCH_512_OUTPUT_WORDS; i++) {
         fch_store_le64(output + i * 8, root.state[i]);
     }
 

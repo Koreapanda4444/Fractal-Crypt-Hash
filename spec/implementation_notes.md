@@ -12,15 +12,15 @@
 
 ## Design Philosophy
 
-The core idea of FCH is to move diffusion from:
+FCH builds diffusion along two axes:
 
-- time (rounds)
-to:
+- time: a fixed 12-round ARX compression core
 
-- space (recursive structure)
+- space: the recursive fractal tree structure
 
-Diffusion is shared between full-width leaf mixing and structural
-recombination. Leaf and node processing use separate domain constants.
+The recursive structure does not replace sufficient local mixing. Every leaf
+block and child state passes through the 12-round core, and the tree adds
+global diffusion while binding order and structure.
 
 ---
 
@@ -30,6 +30,9 @@ recombination. Leaf and node processing use separate domain constants.
 - Whole-input split seeds bind structure to all bytes in a node
 - Node, child, and leaf metadata provide explicit domain separation
 - Order-dependent combine retains child position and length information
+- A fixed-rotation ARX core gives a clearer analysis target than the previous
+  position-dependent S-box mixing
+- The 512-bit internal state gives FCH-256 a wider internal path than its output
 - Recompression prevents linear state growth
 
 ---
@@ -41,7 +44,8 @@ This implementation prioritizes:
 - clarity
 - determinism
 - structural transparency
+- a fixed, analyzable core
 
-Performance and cryptographic hardness are secondary.
+Performance optimization follows design correctness and security analysis.
 
 No cryptographic security claims are made for this design or implementation.

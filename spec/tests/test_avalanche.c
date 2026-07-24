@@ -38,17 +38,17 @@ static const double AVG_DROP_PCT = 5.0;
 static const double SPREAD_INCR_PCT = 25.0;
 
 static const regression_baseline_t BASELINES[] = {
-    { 63,   FLIP_SWEEP, 50.01, 18.36, 49.96, 10.74 },
-    { 64,   FLIP_SWEEP, 50.10, 14.84, 50.29, 8.98 },
-    { 65,   FLIP_SWEEP, 49.62, 16.41, 50.08, 12.11 },
-    { 127,  FLIP_SWEEP, 49.77, 18.75, 49.90, 11.13 },
-    { 128,  FLIP_SWEEP, 49.99, 15.62, 49.89, 9.18 },
-    { 129,  FLIP_SWEEP, 49.74, 16.02, 50.20, 10.94 },
-    { 255,  FLIP_SWEEP, 50.27, 16.80, 50.07, 9.38 },
-    { 257,  FLIP_SWEEP, 50.15, 16.02, 49.81, 11.52 },
-    { 512,  FLIP_SWEEP, 49.57, 17.19, 49.95, 9.96 },
-    { 1024, FLIP_SWEEP, 50.18, 15.62, 49.67, 11.72 },
-    { 4096, FLIP_SWEEP, 50.28, 14.84, 49.56, 10.35 },
+    { 63,   FLIP_SWEEP, 49.88, 13.28, 49.80, 11.91 },
+    { 64,   FLIP_SWEEP, 49.84, 14.45, 50.24, 10.94 },
+    { 65,   FLIP_SWEEP, 50.65, 13.67, 49.96, 10.94 },
+    { 127,  FLIP_SWEEP, 50.51, 14.45, 49.95, 11.91 },
+    { 128,  FLIP_SWEEP, 50.02, 14.45, 50.01, 11.13 },
+    { 129,  FLIP_SWEEP, 49.66, 14.45, 49.88, 12.70 },
+    { 255,  FLIP_SWEEP, 49.87, 16.41, 49.65, 12.30 },
+    { 257,  FLIP_SWEEP, 49.85, 14.06, 50.05, 12.30 },
+    { 512,  FLIP_SWEEP, 50.13, 14.45, 49.73, 11.33 },
+    { 1024, FLIP_SWEEP, 50.23, 16.80, 49.62, 11.52 },
+    { 4096, FLIP_SWEEP, 49.77, 16.02, 50.04, 11.33 },
 };
 
 static const regression_baseline_t *find_baseline(size_t len, flip_mode_t mode) {

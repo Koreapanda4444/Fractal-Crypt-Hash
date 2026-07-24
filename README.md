@@ -1,8 +1,8 @@
 # Fractal Crypt-Hash (FCH)
 
 Fractal Crypt-Hash (FCH) is an experimental hash design intended to become
-a cryptographic hash candidate. It uses a **fractal (self-similar) recursive
-structure** rather than traditional round-based compression.
+a cryptographic hash candidate. It combines a **12-round ARX compression
+core** with a **fractal (self-similar) recursive structure**.
 
 ---
 
@@ -46,8 +46,8 @@ and evaluation criteria are defined in `spec/fch_spec.md`.
 
 ## Overview
 
-Unlike conventional hash functions that rely on repeated rounds,
-FCH achieves diffusion through **recursive fractal decomposition**.
+FCH combines local diffusion from a fixed-round compression core with
+structural diffusion from **recursive fractal decomposition**.
 
 A small change in the input propagates:
 
@@ -60,11 +60,13 @@ A small change in the input propagates:
 ## Features
 
 - Fractal recursive hash structure
+- 12-round 64-bit ARX compression core over 128-byte blocks
+- 512-bit internal tree state for both variants
 - Variable n-way (2–6) splitting derived from the entire node input
 - Order-dependent tree recombination
-- Separate root, internal-node, leaf, and child domains
-- Full-width leaf states with XOR / ADD / ROTATE / S-box mixing
-- Recompression at each internal node
+- Separate root, internal-node, leaf, child, and output-variant domains
+- ADD / ROTATE / XOR mixing with fixed rotation distances
+- Recompression for every leaf block and internal-node child
 - Deterministic, non-keyed hash function
 
 ---
@@ -73,7 +75,7 @@ A small change in the input propagates:
 
 | Variant | Output Size | Internal State |
 | ------ | ----------- | -------------- |
-| FCH-256 | 256 bits | 4 × uint64 |
+| FCH-256 | 256 bits | 8 × uint64 |
 | FCH-512 | 512 bits | 8 × uint64 |
 
 ---

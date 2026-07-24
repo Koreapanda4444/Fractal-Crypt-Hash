@@ -149,6 +149,27 @@ static int test_empty_stream(void) {
     return ok;
 }
 
+static int test_variant_domain_separation(void) {
+    static const uint8_t input[] = "variant-domain-check";
+    uint8_t output256[32];
+    uint8_t output512[64];
+
+    if (!fch_hash_256_checked(
+            input,
+            sizeof(input) - 1u,
+            output256
+        ))
+        return 0;
+    if (!fch_hash_512_checked(
+            input,
+            sizeof(input) - 1u,
+            output512
+        ))
+        return 0;
+
+    return memcmp(output256, output512, sizeof(output256)) != 0;
+}
+
 int main(void) {
     uint8_t output[32];
     uint8_t streamed[32];
@@ -191,6 +212,10 @@ int main(void) {
     }
     if (!test_empty_stream()) {
         printf("FAIL: empty streaming input\n");
+        return 1;
+    }
+    if (!test_variant_domain_separation()) {
+        printf("FAIL: output variant domain separation\n");
         return 1;
     }
 

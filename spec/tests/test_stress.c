@@ -91,7 +91,7 @@ static volatile int g_max_depth_24 = 0;
 #define FCH_HOOK_AFTER_ROOT 3
 #endif
 
-#include "../src/sbox.c"
+#include "../src/mix.c"
 #include "../src/bitops.c"
 
 #undef FCH_MAX_DEPTH_CAP

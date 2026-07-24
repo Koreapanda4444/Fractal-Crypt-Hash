@@ -1,8 +1,8 @@
 #include <stdlib.h>
 
 #include "combine.h"
-#include "sbox.h"
 #include "bitops.h"
+#include "mix.h"
 
 fch_state_t fch_combine(
     fch_state_t *children,
@@ -26,15 +26,32 @@ fch_state_t fch_combine(
     if (!out.state)
         return out;
 
-    for (size_t i = 0; i < state_words; i++) {
-        out.state[i] = UINT64_C(0xA5A5A5A5A5A5A5A5);
-        out.state[i] ^= domain;
-        out.state[i] ^= (uint64_t)node_length * UINT64_C(0x9E3779B97F4A7C15);
-        out.state[i] ^= (uint64_t)count * UINT64_C(0xD6E8FEB86659FD93);
-        out.state[i] ^= (uint64_t)state_words * UINT64_C(0xA24BAED4963EE407);
-        out.state[i] ^= (uint64_t)normalized_depth << 32u;
-        out.state[i] ^= (uint64_t)i * UINT64_C(0xC2B2AE3D27D4EB4F);
-        out.state[i] = fch_sbox64(out.state[i]);
+    if (!fch_mix_init(out.state, state_words, domain)) {
+        free(out.state);
+        out.state = NULL;
+        return out;
+    }
+
+    uint8_t input[FCH_MIX_BLOCK_SIZE] = {0};
+    fch_store_le64(input + 0u, domain);
+    fch_store_le64(input + 8u, (uint64_t)node_length);
+    fch_store_le64(input + 16u, (uint64_t)normalized_depth);
+    fch_store_le64(input + 24u, (uint64_t)count);
+    fch_store_le64(input + 32u, (uint64_t)state_words);
+    fch_store_le64(input + 40u, FCH_MIX_ROUNDS);
+
+    if (!fch_mix_compress(
+            out.state,
+            state_words,
+            input,
+            48u,
+            0,
+            domain,
+            FCH_MIX_FLAG_PARAMETER
+        )) {
+        free(out.state);
+        out.state = NULL;
+        return out;
     }
 
     size_t covered = 0;
@@ -50,41 +67,35 @@ fch_state_t fch_combine(
             return out;
         }
 
-        uint64_t child_domain = UINT64_C(0x4348494C44535431);
-        child_domain ^= (uint64_t)child_index * UINT64_C(0x9E3779B97F4A7C15);
-        child_domain ^= (uint64_t)block->offset * UINT64_C(0xD6E8FEB86659FD93);
-        child_domain ^= (uint64_t)block->length * UINT64_C(0xA24BAED4963EE407);
+        for (size_t i = 0; i < sizeof(input); i++)
+            input[i] = 0;
+        for (size_t i = 0; i < state_words; i++)
+            fch_store_le64(input + i * 8u, child->state[i]);
 
-        for (size_t i = 0; i < state_words; i++) {
-            size_t index = (child_index + i) % state_words;
-            size_t next = (index + 1u) % state_words;
-            uint64_t value = child->state[i] ^ child_domain;
-            value ^= (uint64_t)i * UINT64_C(0x9FB21C651E98DF25);
-            value = fch_sbox64(value);
+        fch_store_le64(input + 64u, (uint64_t)child_index);
+        fch_store_le64(input + 72u, (uint64_t)block->offset);
+        fch_store_le64(input + 80u, (uint64_t)block->length);
+        fch_store_le64(input + 88u, (uint64_t)count);
+        fch_store_le64(input + 96u, (uint64_t)node_length);
+        fch_store_le64(input + 104u, (uint64_t)normalized_depth);
+        fch_store_le64(input + 112u, (uint64_t)state_words);
+        fch_store_le64(input + 120u, domain);
 
-            out.state[index] ^= fch_rotl64(
-                value,
-                (unsigned int)(((i * 11u + child_index * 7u) % 63u) + 1u)
-            );
-            out.state[next] += value ^ fch_rotl64(
-                out.state[index],
-                (unsigned int)(((i * 17u + child_index * 5u) % 63u) + 1u)
-            );
-        }
-
-        for (size_t i = 0; i < state_words; i++) {
-            uint64_t left = out.state[(i + state_words - 1u) % state_words];
-            uint64_t right = out.state[(i + 1u) % state_words];
-            uint64_t mixed = out.state[i] ^ child_domain;
-            mixed += fch_rotl64(
-                left,
-                (unsigned int)(((i * 13u + child_index) % 63u) + 1u)
-            );
-            mixed ^= fch_rotl64(
-                right,
-                (unsigned int)(((i * 19u + child_index * 3u) % 63u) + 1u)
-            );
-            out.state[i] = fch_sbox64(mixed);
+        uint64_t flags = FCH_MIX_FLAG_NODE_CHILD;
+        if (child_index + 1u == count)
+            flags |= FCH_MIX_FLAG_FINAL;
+        if (!fch_mix_compress(
+                out.state,
+                state_words,
+                input,
+                sizeof(input),
+                (uint64_t)child_index + 1u,
+                domain,
+                flags
+            )) {
+            free(out.state);
+            out.state = NULL;
+            return out;
         }
 
         covered += block->length;
@@ -94,32 +105,6 @@ fch_state_t fch_combine(
         free(out.state);
         out.state = NULL;
         return out;
-    }
-
-    for (unsigned int round = 0; round < 4u; round++) {
-        for (size_t i = 0; i < state_words; i++) {
-            uint64_t left = out.state[(i + state_words - 1u) % state_words];
-            uint64_t current = out.state[i];
-            uint64_t right = out.state[(i + 1u) % state_words];
-            uint64_t mixed = current ^ domain;
-
-            mixed ^= (uint64_t)node_length * UINT64_C(0x9E3779B97F4A7C15);
-            mixed ^= (uint64_t)count * UINT64_C(0xD6E8FEB86659FD93);
-            mixed ^= (uint64_t)round * UINT64_C(0xA24BAED4963EE407);
-            mixed += fch_rotl64(
-                left,
-                (unsigned int)(((i * 7u + round * 13u) % 63u) + 1u)
-            );
-            mixed ^= fch_rotl64(
-                right,
-                (unsigned int)(((i * 11u + round * 17u) % 63u) + 1u)
-            );
-            mixed = fch_sbox64(mixed);
-            out.state[i] = fch_rotl64(
-                mixed,
-                (unsigned int)(((i * 19u + round * 23u) % 63u) + 1u)
-            );
-        }
     }
 
     return out;
