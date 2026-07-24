@@ -183,10 +183,13 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #define fch_hash_512_checked fch_hash_512_checked_D4
 #define fch_pad fch_pad_D4
 #define fch_process fch_process_D4
+#define fch_process_reader fch_process_reader_D4
 #define fch_fractal_split fch_fractal_split_D4
+#define fch_fractal_split_reader fch_fractal_split_reader_D4
 #define determine_n determine_n_D4
 #define scaled_length scaled_length_D4
 #define fch_leaf_compress fch_leaf_compress_D4
+#define fch_leaf_compress_reader fch_leaf_compress_reader_D4
 #define fch_combine fch_combine_D4
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D4
 
@@ -208,10 +211,13 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #undef fch_hash_512_checked
 #undef fch_pad
 #undef fch_process
+#undef fch_process_reader
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef determine_n
 #undef scaled_length
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_debug_emit_root_if
 
@@ -224,10 +230,13 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #define fch_hash_512_checked fch_hash_512_checked_D8
 #define fch_pad fch_pad_D8
 #define fch_process fch_process_D8
+#define fch_process_reader fch_process_reader_D8
 #define fch_fractal_split fch_fractal_split_D8
+#define fch_fractal_split_reader fch_fractal_split_reader_D8
 #define determine_n determine_n_D8
 #define scaled_length scaled_length_D8
 #define fch_leaf_compress fch_leaf_compress_D8
+#define fch_leaf_compress_reader fch_leaf_compress_reader_D8
 #define fch_combine fch_combine_D8
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D8
 
@@ -249,10 +258,13 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #undef fch_hash_512_checked
 #undef fch_pad
 #undef fch_process
+#undef fch_process_reader
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef determine_n
 #undef scaled_length
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_debug_emit_root_if
 
@@ -265,10 +277,13 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #define fch_hash_512_checked fch_hash_512_checked_D16
 #define fch_pad fch_pad_D16
 #define fch_process fch_process_D16
+#define fch_process_reader fch_process_reader_D16
 #define fch_fractal_split fch_fractal_split_D16
+#define fch_fractal_split_reader fch_fractal_split_reader_D16
 #define determine_n determine_n_D16
 #define scaled_length scaled_length_D16
 #define fch_leaf_compress fch_leaf_compress_D16
+#define fch_leaf_compress_reader fch_leaf_compress_reader_D16
 #define fch_combine fch_combine_D16
 #define fch_debug_emit_root_if fch_debug_emit_root_if_D16
 
@@ -290,10 +305,13 @@ static void sha256_ref(const uint8_t *input, size_t len, uint8_t out[32]) {
 #undef fch_hash_512_checked
 #undef fch_pad
 #undef fch_process
+#undef fch_process_reader
 #undef fch_fractal_split
+#undef fch_fractal_split_reader
 #undef determine_n
 #undef scaled_length
 #undef fch_leaf_compress
+#undef fch_leaf_compress_reader
 #undef fch_combine
 #undef fch_debug_emit_root_if
 

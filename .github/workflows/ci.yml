@@ -20,7 +20,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended CC="$CC"
+          make all bench check check-extended CC="$CC"
 
   sanitizers:
     runs-on: ubuntu-latest
