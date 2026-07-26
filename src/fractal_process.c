@@ -51,7 +51,8 @@ fch_state_t fch_process_reader(
 ) {
     fch_state_t result = { NULL, state_words };
 
-    if (state_words == 0 || !reader || !reader->read)
+    if (state_words != FCH_INTERNAL_STATE_WORDS ||
+        depth < 0 || !reader || !reader->read)
         return result;
     if (offset > SIZE_MAX - length)
         return result;
@@ -147,7 +148,8 @@ fch_state_t fch_process(
 ) {
     fch_state_t result = { NULL, state_words };
 
-    if (state_words == 0 || (!data && length > 0))
+    if (state_words != FCH_INTERNAL_STATE_WORDS ||
+        (!data && length > 0))
         return result;
 
     fch_memory_reader_t memory = { data, length };

@@ -21,12 +21,12 @@ static size_t determine_n(
 ) {
     if (seed_out)
         *seed_out = 0;
-    if (!reader || !reader->read || length == 0 || !seed_out)
+    if (!reader || !reader->read || length == 0 || depth < 0 || !seed_out)
         return 0;
     if (offset > SIZE_MAX - length)
         return 0;
 
-    unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
+    unsigned int normalized_depth = (unsigned int)depth;
     uint64_t seed = UINT64_C(0x243F6A8885A308D3);
     seed ^= (uint64_t)length * UINT64_C(0x9E3779B97F4A7C15);
     seed ^= (uint64_t)normalized_depth * UINT64_C(0xD6E8FEB86659FD93);
@@ -67,7 +67,7 @@ static size_t determine_n(
     *seed_out = seed;
 
     if (length < FCH_MIN_BLOCK_SIZE * 2)
-        return 2;
+        return FCH_N_MIN;
 
     size_t n = (size_t)(seed % (uint64_t)(FCH_N_MAX - FCH_N_MIN + 1))
         + FCH_N_MIN;
@@ -83,6 +83,8 @@ size_t fch_fractal_split_reader(
     size_t max_blocks
 ) {
     if (!blocks || max_blocks == 0)
+        return 0;
+    if (depth < 0)
         return 0;
     if (length == 0) {
         blocks[0].offset = 0;

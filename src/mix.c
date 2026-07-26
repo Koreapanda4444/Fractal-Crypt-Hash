@@ -147,16 +147,18 @@ int fch_mix_finalize_output(
         : UINT64_C(0x4643484F55543531);
     uint8_t block[FCH_MIX_BLOCK_SIZE] = {0};
 
-    fch_store_le64(block + 0u, UINT64_C(0x4643482D4F555431));
-    fch_store_le64(block + 8u, (uint64_t)output_words * 64u);
-    fch_store_le64(block + 16u, (uint64_t)state_words * 64u);
-    fch_store_le64(block + 24u, FCH_MIX_ROUNDS);
+    fch_store_le64(block + 0u, FCH_TREE_TAG_OUTPUT);
+    fch_store_le64(block + 8u, FCH_TREE_ENCODING_VERSION);
+    fch_store_le64(block + 16u, (uint64_t)output_words * 64u);
+    fch_store_le64(block + 24u, (uint64_t)state_words * 64u);
+    fch_store_le64(block + 32u, FCH_MIX_BLOCK_SIZE);
+    fch_store_le64(block + 40u, FCH_MIX_ROUNDS);
 
     return fch_mix_compress(
         state,
         state_words,
         block,
-        32u,
+        sizeof(block),
         (uint64_t)output_words * 8u,
         domain,
         FCH_MIX_FLAG_OUTPUT | FCH_MIX_FLAG_FINAL

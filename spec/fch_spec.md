@@ -79,6 +79,8 @@ field are rejected by the checked API.
 ## 3. Fractal Processing
 
 Processing starts at depth = 0.
+Negative depths and internal states other than eight words are not valid tree
+representations and are rejected.
 
 At each node:
 
@@ -95,6 +97,7 @@ At each node:
 - A 64-bit split seed incorporates node length, depth, and every input byte
 - n and each split weight are derived from the mixed seed
 - Blocks cover the entire input without overlap
+- Child blocks in an internal node are non-empty and contiguous from offset 0
 
 ---
 
@@ -104,14 +107,29 @@ FCH-256 and FCH-512 both use a 512-bit internal tree state consisting of
 eight 64-bit words. A leaf initializes this state with separate domains for
 root leaves and internal leaves.
 
-The leaf first compresses a parameter block containing its length, depth,
-state width, minimum block size, and round count. It then reads leaf data in
-128-byte blocks and compresses each block. The unused portion of the final
-partial block is zero-filled, while the actual block length and cumulative
-byte count are injected as separate tweaks. The last data block carries the
-final flag.
+The leaf first compresses a 128-byte header containing the `FCHLEAF1` type
+tag and encoding version 1. Fixed 64-bit little-endian fields bind the domain,
+leaf length, depth, state width, minimum block size, maximum depth, fan-out
+range, compression block size, and round count. Unused fields are zero.
 
-### 5.1 ARX Compression Core
+Each leaf-data record starts with the eight-byte `FCHLDAT1` tag followed by up
+to 120 original input bytes. The unused tail of the last record is zero. The
+actual record length and cumulative original-byte count are injected through
+the block-length tweak and counter. An empty leaf still processes one final
+tag-only data record. The last data record carries the final flag.
+
+### 5.1 Canonical Record Rules
+
+- Every type tag is exactly eight ASCII bytes.
+- Every numeric field is an unsigned 64-bit little-endian value.
+- The encoding version is 1. A format change also changes the version and
+  fixed test vectors.
+- Leaf headers, node headers, child records, and output headers are 128 bytes.
+- Record types use distinct tags, compression flags, and domains.
+- Negative depths, fewer than two or more than six children, empty children,
+  gaps, overlaps, and out-of-range partitions are rejected.
+
+### 5.2 ARX Compression Core
 
 Each compression uses a 16-word working state. Its first eight 64-bit words
 are initialized from the chaining state and its last eight words from a fixed
@@ -140,19 +158,31 @@ claims.
 Internal nodes:
 
 - use separate domains for the root node and other internal nodes
-- first compress a parameter block with node length, depth, child count, and
-  state width
-- serialize each 512-bit child state together with child index, offset,
-  length, and node metadata into one 128-byte block
+- first compress a version-1 node header tagged `FCHNODE1`
+- serialize each child as the following 128-byte `FCHCHLD1` record
 - feed child blocks to the 12-round ARX core in order
 - set the final flag on the last child block
 - retain the full 512-bit state after combination
+
+| 64-bit word | Child-record field |
+| ----------- | ------------------ |
+| 0 | `FCHCHLD1` |
+| 1 | Encoding version |
+| 2 | Parent node length |
+| 3 | Parent depth |
+| 4 | Total child count |
+| 5 | Child index |
+| 6 | Child offset within the parent |
+| 7 | Child length |
+| 8–15 | 512-bit child state |
 
 ---
 
 ## 7. Output
 
-- Compress the root state once more with the output size and an output domain
+- Compress the root state once more with a fixed header tagged `FCHOUT01`
+  containing the encoding version, output width, internal-state width, block
+  size, and round count
 - Use different output domains for FCH-256 and FCH-512
 - FCH-256 serializes the first four words of the final 512-bit state as
   little-endian bytes

@@ -6,6 +6,7 @@
 #include "bitops.h"
 #include "fch.h"
 #include "fch_stream.h"
+#include "mix.h"
 
 static int test_rotate(void) {
     const uint64_t value = UINT64_C(0x0123456789ABCDEF);
@@ -34,6 +35,35 @@ static int test_little_endian(void) {
         return 0;
     if (fch_load_le64(encoded) != value)
         return 0;
+
+    return 1;
+}
+
+static int test_tree_encoding_tags(void) {
+    static const uint64_t tags[] = {
+        FCH_TREE_TAG_LEAF_HEADER,
+        FCH_TREE_TAG_LEAF_DATA,
+        FCH_TREE_TAG_NODE_HEADER,
+        FCH_TREE_TAG_NODE_CHILD,
+        FCH_TREE_TAG_OUTPUT
+    };
+    static const uint8_t expected[][8] = {
+        { 'F', 'C', 'H', 'L', 'E', 'A', 'F', '1' },
+        { 'F', 'C', 'H', 'L', 'D', 'A', 'T', '1' },
+        { 'F', 'C', 'H', 'N', 'O', 'D', 'E', '1' },
+        { 'F', 'C', 'H', 'C', 'H', 'L', 'D', '1' },
+        { 'F', 'C', 'H', 'O', 'U', 'T', '0', '1' }
+    };
+
+    if (FCH_TREE_ENCODING_VERSION != UINT64_C(1))
+        return 0;
+
+    for (size_t i = 0; i < sizeof(tags) / sizeof(tags[0]); i++) {
+        uint8_t encoded[8];
+        fch_store_le64(encoded, tags[i]);
+        if (memcmp(encoded, expected[i], sizeof(encoded)) != 0)
+            return 0;
+    }
 
     return 1;
 }
@@ -180,6 +210,10 @@ int main(void) {
     }
     if (!test_little_endian()) {
         printf("FAIL: little-endian conversion\n");
+        return 1;
+    }
+    if (!test_tree_encoding_tags()) {
+        printf("FAIL: canonical tree encoding tags\n");
         return 1;
     }
     if (!fch_hash_256_checked((const uint8_t *)"abc", 3, output)) {

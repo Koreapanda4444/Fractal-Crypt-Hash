@@ -65,6 +65,7 @@ A small change in the input propagates:
 - Variable n-way (2–6) splitting derived from the entire node input
 - Order-dependent tree recombination
 - Separate root, internal-node, leaf, child, and output-variant domains
+- Canonical tree encoding with versioned type tags and fixed fields
 - ADD / ROTATE / XOR mixing with fixed rotation distances
 - Recompression for every leaf block and internal-node child
 - Deterministic, non-keyed hash function

@@ -63,10 +63,10 @@ test_length_variation: ../tests/test_length_variation.c $(SRC)
 test_depth_diffusion: ../tests/test_depth_diffusion.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-test_stress: ../tests/test_stress.c
+test_stress: ../tests/test_stress.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
 
-test_split_sensitivity: ../tests/test_split_sensitivity.c
+test_split_sensitivity: ../tests/test_split_sensitivity.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS) -lm
 
 check-extended: test-extended
@@ -77,7 +77,7 @@ check-extended: test-extended
 
 bench: bench_hash
 
-bench_hash: ../bench/bench_hash.c
+bench_hash: ../bench/bench_hash.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
 
 clean:

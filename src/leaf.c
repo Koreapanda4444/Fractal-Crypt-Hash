@@ -10,16 +10,19 @@ int fch_leaf_compress_reader(
     fch_state_t *out,
     int depth
 ) {
-    if (!out || !out->state || out->words == 0)
+    if (!out || !out->state ||
+        out->words != FCH_INTERNAL_STATE_WORDS)
         return 0;
     if (!reader || !reader->read)
+        return 0;
+    if (depth < 0)
         return 0;
     if (offset > SIZE_MAX - length)
         return 0;
 
     size_t S = out->words;
     uint64_t *state = out->state;
-    unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
+    unsigned int normalized_depth = (unsigned int)depth;
     uint64_t domain = normalized_depth == 0u
         ? UINT64_C(0x524F4F544C454146)
         : UINT64_C(0x494E544C45414631);
@@ -28,21 +31,27 @@ int fch_leaf_compress_reader(
         return 0;
 
     uint8_t buffer[FCH_MIX_BLOCK_SIZE] = {0};
-    fch_store_le64(buffer + 0u, domain);
-    fch_store_le64(buffer + 8u, (uint64_t)length);
-    fch_store_le64(buffer + 16u, (uint64_t)normalized_depth);
-    fch_store_le64(buffer + 24u, (uint64_t)S);
-    fch_store_le64(buffer + 32u, FCH_MIN_BLOCK_SIZE);
-    fch_store_le64(buffer + 40u, FCH_MIX_ROUNDS);
+    fch_store_le64(buffer + 0u, FCH_TREE_TAG_LEAF_HEADER);
+    fch_store_le64(buffer + 8u, FCH_TREE_ENCODING_VERSION);
+    fch_store_le64(buffer + 16u, domain);
+    fch_store_le64(buffer + 24u, (uint64_t)length);
+    fch_store_le64(buffer + 32u, (uint64_t)normalized_depth);
+    fch_store_le64(buffer + 40u, (uint64_t)S);
+    fch_store_le64(buffer + 48u, FCH_MIN_BLOCK_SIZE);
+    fch_store_le64(buffer + 56u, FCH_MAX_DEPTH_CAP);
+    fch_store_le64(buffer + 64u, FCH_N_MIN);
+    fch_store_le64(buffer + 72u, FCH_N_MAX);
+    fch_store_le64(buffer + 80u, FCH_MIX_BLOCK_SIZE);
+    fch_store_le64(buffer + 88u, FCH_MIX_ROUNDS);
 
     if (!fch_mix_compress(
             state,
             S,
             buffer,
-            48u,
+            sizeof(buffer),
             0,
             domain,
-            FCH_MIX_FLAG_PARAMETER
+            FCH_MIX_FLAG_LEAF_HEADER
         ))
         return 0;
 
@@ -51,11 +60,12 @@ int fch_leaf_compress_reader(
     if (length == 0) {
         for (size_t i = 0; i < sizeof(buffer); i++)
             buffer[i] = 0;
+        fch_store_le64(buffer + 0u, FCH_TREE_TAG_LEAF_DATA);
         if (!fch_mix_compress(
                 state,
                 S,
                 buffer,
-                0,
+                8u,
                 0,
                 domain,
                 FCH_MIX_FLAG_LEAF_DATA | FCH_MIX_FLAG_FINAL
@@ -65,19 +75,25 @@ int fch_leaf_compress_reader(
 
     while (processed < length) {
         size_t chunk = length - processed;
-        if (chunk > sizeof(buffer))
-            chunk = sizeof(buffer);
+        if (chunk > sizeof(buffer) - 8u)
+            chunk = sizeof(buffer) - 8u;
 
         for (size_t i = 0; i < sizeof(buffer); i++)
             buffer[i] = 0;
+        fch_store_le64(buffer + 0u, FCH_TREE_TAG_LEAF_DATA);
         if (!reader->read(
                 reader->context,
                 offset + processed,
-                buffer,
+                buffer + 8u,
                 chunk
             ))
             return 0;
 
+        /*
+         * The record tag occupies the first word. Sequence position,
+         * payload length, and finality are encoded by the counter,
+         * block_length tweak, and final flag.
+         */
         uint64_t flags = FCH_MIX_FLAG_LEAF_DATA;
         if (chunk == length - processed)
             flags |= FCH_MIX_FLAG_FINAL;
@@ -87,7 +103,7 @@ int fch_leaf_compress_reader(
                 state,
                 S,
                 buffer,
-                chunk,
+                chunk + 8u,
                 (uint64_t)processed,
                 domain,
                 flags

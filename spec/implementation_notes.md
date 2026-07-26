@@ -9,6 +9,8 @@
 - Checked one-shot and streaming-final APIs report failures
 - Reader-based recursion keeps one-shot and streaming digests identical
 - Streaming input uses anonymous temporary storage and fixed-size RAM buffers
+- Structural fields use fixed-position 64-bit little-endian encoding
+- Negative depths and non-canonical child ranges or layouts are rejected
 
 ## Design Philosophy
 
@@ -30,6 +32,7 @@ global diffusion while binding order and structure.
 - Whole-input split seeds bind structure to all bytes in a node
 - Node, child, and leaf metadata provide explicit domain separation
 - Order-dependent combine retains child position and length information
+- Versioned unique tags and fixed-width records make structural boundaries explicit
 - A fixed-rotation ARX core gives a clearer analysis target than the previous
   position-dependent S-box mixing
 - The 512-bit internal state gives FCH-256 a wider internal path than its output

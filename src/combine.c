@@ -3,6 +3,7 @@
 #include "combine.h"
 #include "bitops.h"
 #include "mix.h"
+#include "params.h"
 
 fch_state_t fch_combine(
     fch_state_t *children,
@@ -14,10 +15,14 @@ fch_state_t fch_combine(
 ) {
     fch_state_t out = { NULL, state_words };
 
-    if (!children || !blocks || count == 0 || state_words == 0)
+    if (!children || !blocks || depth < 0)
+        return out;
+    if (count < FCH_N_MIN || count > FCH_N_MAX)
+        return out;
+    if (count > node_length || state_words != FCH_INTERNAL_STATE_WORDS)
         return out;
 
-    unsigned int normalized_depth = depth < 0 ? 0u : (unsigned int)depth;
+    unsigned int normalized_depth = (unsigned int)depth;
     uint64_t domain = normalized_depth == 0u
         ? UINT64_C(0x524F4F544E4F4445)
         : UINT64_C(0x494E544E4F444531);
@@ -33,21 +38,28 @@ fch_state_t fch_combine(
     }
 
     uint8_t input[FCH_MIX_BLOCK_SIZE] = {0};
-    fch_store_le64(input + 0u, domain);
-    fch_store_le64(input + 8u, (uint64_t)node_length);
-    fch_store_le64(input + 16u, (uint64_t)normalized_depth);
-    fch_store_le64(input + 24u, (uint64_t)count);
-    fch_store_le64(input + 32u, (uint64_t)state_words);
-    fch_store_le64(input + 40u, FCH_MIX_ROUNDS);
+    fch_store_le64(input + 0u, FCH_TREE_TAG_NODE_HEADER);
+    fch_store_le64(input + 8u, FCH_TREE_ENCODING_VERSION);
+    fch_store_le64(input + 16u, domain);
+    fch_store_le64(input + 24u, (uint64_t)node_length);
+    fch_store_le64(input + 32u, (uint64_t)normalized_depth);
+    fch_store_le64(input + 40u, (uint64_t)count);
+    fch_store_le64(input + 48u, (uint64_t)state_words);
+    fch_store_le64(input + 56u, FCH_MIN_BLOCK_SIZE);
+    fch_store_le64(input + 64u, FCH_MAX_DEPTH_CAP);
+    fch_store_le64(input + 72u, FCH_N_MIN);
+    fch_store_le64(input + 80u, FCH_N_MAX);
+    fch_store_le64(input + 88u, FCH_MIX_BLOCK_SIZE);
+    fch_store_le64(input + 96u, FCH_MIX_ROUNDS);
 
     if (!fch_mix_compress(
             out.state,
             state_words,
             input,
-            48u,
+            sizeof(input),
             0,
             domain,
-            FCH_MIX_FLAG_PARAMETER
+            FCH_MIX_FLAG_NODE_HEADER
         )) {
         free(out.state);
         out.state = NULL;
@@ -60,6 +72,7 @@ fch_state_t fch_combine(
         const fch_block_t *block = &blocks[child_index];
 
         if (!child->state || child->words != state_words ||
+            covered > node_length ||
             block->offset != covered || block->length == 0 ||
             block->length > node_length - covered) {
             free(out.state);
@@ -69,17 +82,16 @@ fch_state_t fch_combine(
 
         for (size_t i = 0; i < sizeof(input); i++)
             input[i] = 0;
+        fch_store_le64(input + 0u, FCH_TREE_TAG_NODE_CHILD);
+        fch_store_le64(input + 8u, FCH_TREE_ENCODING_VERSION);
+        fch_store_le64(input + 16u, (uint64_t)node_length);
+        fch_store_le64(input + 24u, (uint64_t)normalized_depth);
+        fch_store_le64(input + 32u, (uint64_t)count);
+        fch_store_le64(input + 40u, (uint64_t)child_index);
+        fch_store_le64(input + 48u, (uint64_t)block->offset);
+        fch_store_le64(input + 56u, (uint64_t)block->length);
         for (size_t i = 0; i < state_words; i++)
-            fch_store_le64(input + i * 8u, child->state[i]);
-
-        fch_store_le64(input + 64u, (uint64_t)child_index);
-        fch_store_le64(input + 72u, (uint64_t)block->offset);
-        fch_store_le64(input + 80u, (uint64_t)block->length);
-        fch_store_le64(input + 88u, (uint64_t)count);
-        fch_store_le64(input + 96u, (uint64_t)node_length);
-        fch_store_le64(input + 104u, (uint64_t)normalized_depth);
-        fch_store_le64(input + 112u, (uint64_t)state_words);
-        fch_store_le64(input + 120u, domain);
+            fch_store_le64(input + 64u + i * 8u, child->state[i]);
 
         uint64_t flags = FCH_MIX_FLAG_NODE_CHILD;
         if (child_index + 1u == count)
