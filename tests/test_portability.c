@@ -64,7 +64,10 @@ static int test_tree_encoding_tags(void) {
     };
 
     if (FCH_TREE_ENCODING_VERSION != UINT64_C(1) ||
-        FCH_SPLIT_DERIVATION_VERSION != UINT64_C(1))
+        FCH_SPLIT_DERIVATION_VERSION != UINT64_C(1) ||
+        FCH_MIX_ROUNDS != 16u ||
+        FCH_MIX_REDUCED_ROUND_REFERENCE != 8u ||
+        FCH_MIX_ROUND_MARGIN != 8u)
         return 0;
 
     for (size_t i = 0; i < sizeof(tags) / sizeof(tags[0]); i++) {

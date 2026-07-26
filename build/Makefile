@@ -50,7 +50,7 @@ test_vectors: ../tests/test_vectors.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_avalanche: ../tests/test_avalanche.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 check: test
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done

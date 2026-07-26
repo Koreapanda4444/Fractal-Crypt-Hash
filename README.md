@@ -1,7 +1,7 @@
 # Fractal Crypt-Hash (FCH)
 
 Fractal Crypt-Hash (FCH) is an experimental hash design intended to become
-a cryptographic hash candidate. It combines a **12-round ARX compression
+a cryptographic hash candidate. It combines a **16-round ARX compression
 core** with a **fractal (self-similar) recursive structure**.
 
 ---
@@ -42,6 +42,10 @@ full and reduced designs, a documented security margin, no known attacks below
 the targets, and meaningful independent public review. The detailed targets
 and evaluation criteria are defined in `spec/fch_spec.md`.
 
+The current round policy uses 16 full rounds and an 8-round reduced reference,
+leaving an 8-round operational gap. This is a conservative testing margin, not
+a cryptanalytic proof or a claim of 8 rounds of proven security margin.
+
 ---
 
 ## Overview
@@ -60,7 +64,8 @@ A small change in the input propagates:
 ## Features
 
 - Fractal recursive hash structure
-- 12-round 64-bit ARX compression core over 128-byte blocks
+- 16-round 64-bit ARX compression core over 128-byte blocks
+- 8-round operational gap above the reduced-round reference
 - 512-bit internal tree state for both variants
 - Domain-separated 512-bit split derivation over the entire node input
 - Rejection-sampled fan-out and bounded 128–255 split weights
@@ -144,6 +149,7 @@ cat path/to/file | ./fch -256
 The implementation includes:
 
 - Statistical avalanche tests (length/bit diffusion)
+- Reduced-round core diffusion checks at 4, 8, 12, and 16 rounds
 - Determinism tests (same input → same output)
 - Boundary condition tests
 - Structural invariant tests (split coverage)

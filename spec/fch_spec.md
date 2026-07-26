@@ -60,6 +60,20 @@ evaluation, it requires at least:
 Statistical distribution, avalanche behavior, test vectors, and implementation
 tests support analysis but do not by themselves establish cryptographic security.
 
+### 1.5 Round Policy and Current Margin Status
+
+Production FCH always uses 16 rounds. The reference implementation measures
+single-bit core diffusion at 4, 8, 12, and 16 rounds, and conservatively uses
+8 rounds as the reduced-round reference. The full design is therefore eight
+rounds above that reference.
+
+This is an **operational round gap**, not a proven cryptanalytic security
+margin. Statistical diffusion is already stable in the current deterministic
+sample at the tested reduced counts, but that does not measure resistance to
+differential, linear, rotational, rebound, or structural attacks. Attack-based
+analysis of reduced rounds and the full design is still required before an
+actual security margin can be claimed.
+
 ---
 
 ## 2. Input Padding
@@ -172,7 +186,7 @@ tag-only data record. The last data record carries the final flag.
 Each compression uses a 16-word working state. Its first eight 64-bit words
 are initialized from the chaining state and its last eight words from a fixed
 IV. The counter, actual block length, state width, domain, and flags are XORed
-into the working state before 12 rounds. Each round applies four column G
+into the working state before 16 rounds. Each round applies four column G
 functions followed by four diagonal G functions so every working word mixes.
 
 G uses only 64-bit modular addition, XOR, and right rotation:
@@ -182,7 +196,11 @@ G uses only 64-bit modular addition, XOR, and right rotation:
 3. `a = a + b + y`, `d = ROTR64(d XOR a, 16)`
 4. `c = c + d`, `b = ROTR64(b XOR c, 63)`
 
-After 12 rounds, each chaining word is updated as
+The message schedule contains ten fixed permutations and repeats cyclically.
+Rounds 0–9 use those ten permutations in order, and rounds 10–15 repeat
+permutations 0–5.
+
+After 16 rounds, each chaining word is updated as
 `h[i] XOR work[i] XOR work[i + 8]`.
 The G structure and rotation distances follow the 64-bit ARX structure used
 by BLAKE2b, but FCH has its own initialization, tweak layout, message mode,
@@ -199,7 +217,7 @@ Internal nodes:
 - first compress a version-1 node header tagged `FCHNODE1`
 - bind the split-weight range and split-derivation version in that header
 - serialize each child as the following 128-byte `FCHCHLD1` record
-- feed child blocks to the 12-round ARX core in order
+- feed child blocks to the 16-round ARX core in order
 - set the final flag on the last child block
 - retain the full 512-bit state after combination
 

@@ -56,24 +56,24 @@ int main(void) {
 
 	/* Empty string */
 	ok &= check_256((const unsigned char *)"", 0,
-		"38f65f245b346088ae04f935e3fb998b6e5aebc464e4585af4b22c4e82ffbb4f");
+		"2122420c1f9892042b1035c7353e2e3feed2884326031e4e14d82853ea152444");
 	ok &= check_512((const unsigned char *)"", 0,
-		"7e933eaefdf363697ff0555ce54ca3b764d8db6ba41a91f8a6465aae95be5784"
-		"5746750dc416c38490f2c11a1c8adda0bfd2e3c17909f85dc86bac31cc471ec5");
+		"29a65bd8be899adebda5d04e0c2b1a7dab4e517daf9a542b59c905ba35884b16"
+		"a736299163cf116763ea8b52f9ca849ce05c18deab176a59387a014d359f7add");
 
 	/* "abc" */
 	ok &= check_256((const unsigned char *)"abc", 3,
-		"5fca62fb37616b24e0cf8406f6a73aeefeb45957ded4249b0b02fe103653d999");
+		"6eb735442b3d1616b99e8b5ec229f9349421ce84bfb6447b046ac0691fe9f84d");
 	ok &= check_512((const unsigned char *)"abc", 3,
-		"2fd6cc30afcb9b54a257cef3427f05e828786752b84261fd7a4a7036025a7fa7"
-		"4b41fee088dee5502a2c31b9cfb1908bda8088c0f82d291f6f3c4e230c71a505");
+		"a99ee96c4f4d2cf84f408e967f96e56084e51f2bd3871f3aa33f6354e9b8e27e"
+		"138a2f66a7b307155c46a162f27646746552df4e33fc4b1ce0ed9494339c9be7");
 
 	/* quick brown fox */
 	ok &= check_256((const unsigned char *)"The quick brown fox jumps over the lazy dog", 43,
-		"1dda94f7ae6c24670a49f1fa04ba702ce71b2341453f8e0160eda55666ba80ea");
+		"aaac23a5abf4de365266f4dd3e7db7b1c68d548361aa8740636deddd45cd412a");
 	ok &= check_512((const unsigned char *)"The quick brown fox jumps over the lazy dog", 43,
-		"2a9b6fd1db836248d0f0cf598054b2b411d255cf425f2eacabdb834c3f19c801"
-		"0a55235a5e774c2942bb9128cd681b1f777e87ef856cd00f379edab6945fc60d");
+		"c3b608df3b38fb6330428338b96adba0136ffea5a74ebd70d97810779e06df19"
+		"c3b16cbfe8e93664ddd0d302f6620bf594b19e40b8625e4c4321998f9ef29964");
 
 	if (ok) {
 		printf("PASS: fixed test vectors\n");

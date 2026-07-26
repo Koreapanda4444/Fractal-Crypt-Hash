@@ -5,7 +5,10 @@
 #include <stdint.h>
 
 #define FCH_MIX_BLOCK_SIZE 128u
-#define FCH_MIX_ROUNDS 12u
+#define FCH_MIX_ROUNDS 16u
+#define FCH_MIX_REDUCED_ROUND_REFERENCE 8u
+#define FCH_MIX_ROUND_MARGIN \
+    (FCH_MIX_ROUNDS - FCH_MIX_REDUCED_ROUND_REFERENCE)
 
 #define FCH_TREE_ENCODING_VERSION UINT64_C(1)
 
@@ -55,6 +58,23 @@ int fch_mix_compress(
     uint64_t domain,
     uint64_t flags
 );
+
+#ifdef FCH_ENABLE_REDUCED_ROUND_TESTS
+/*
+ * Analysis-only entry point. Production hashing always uses
+ * fch_mix_compress() with FCH_MIX_ROUNDS.
+ */
+int fch_mix_compress_rounds(
+    uint64_t *state,
+    size_t state_words,
+    const uint8_t block[FCH_MIX_BLOCK_SIZE],
+    size_t block_length,
+    uint64_t counter,
+    uint64_t domain,
+    uint64_t flags,
+    unsigned int rounds
+);
+#endif
 
 int fch_mix_finalize_output(
     uint64_t *state,
