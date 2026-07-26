@@ -62,7 +62,8 @@ A small change in the input propagates:
 - Fractal recursive hash structure
 - 12-round 64-bit ARX compression core over 128-byte blocks
 - 512-bit internal tree state for both variants
-- Variable n-way (2–6) splitting derived from the entire node input
+- Domain-separated 512-bit split derivation over the entire node input
+- Rejection-sampled fan-out and bounded 128–255 split weights
 - Order-dependent tree recombination
 - Separate root, internal-node, leaf, child, and output-variant domains
 - Canonical tree encoding with versioned type tags and fixed fields
@@ -146,6 +147,7 @@ The implementation includes:
 - Determinism tests (same input → same output)
 - Boundary condition tests
 - Structural invariant tests (split coverage)
+- Split-derivation diffusion, relocation, and balance tests
 - Portability and domain-separation tests
 - Split-configuration sensitivity tests
 

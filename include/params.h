@@ -48,4 +48,18 @@
 #define FCH_N_MAX 6
 #endif
 
+#ifndef FCH_SPLIT_WEIGHT_MIN
+#define FCH_SPLIT_WEIGHT_MIN 128
+#endif
+#ifndef FCH_SPLIT_WEIGHT_MAX
+#define FCH_SPLIT_WEIGHT_MAX 255
+#endif
+
+#if FCH_N_MIN < 2 || FCH_N_MAX > 6 || FCH_N_MIN > FCH_N_MAX
+#error "FCH fan-out must stay within the canonical range 2..6"
+#endif
+#if FCH_SPLIT_WEIGHT_MIN != 128 || FCH_SPLIT_WEIGHT_MAX != 255
+#error "FCH split weights are fixed to the balanced range 128..255"
+#endif
+
 #endif

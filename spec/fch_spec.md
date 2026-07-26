@@ -94,10 +94,45 @@ At each node:
 ## 4. Variable n-Way Split
 
 - n ∈ [2, 6]
-- A 64-bit split seed incorporates node length, depth, and every input byte
-- n and each split weight are derived from the mixed seed
 - Blocks cover the entire input without overlap
 - Child blocks in an internal node are non-empty and contiguous from offset 0
+
+For every internal node, FCH derives 512 bits of split material with the same
+ARX core but a dedicated `FCHSPLT1` domain. It first compresses a fixed
+128-byte `FCHSPH01` header with split-derivation version 1. The header binds
+the node length and depth, internal-state width, fan-out range, split-weight
+range, minimum block size, maximum depth, compression block size, round count,
+and tree-encoding version.
+
+The complete node input is then absorbed in records consisting of the
+eight-byte `FCHSPD01` tag followed by up to 120 original bytes. Actual record
+length, cumulative byte count, and final-record status are injected through
+the compression tweaks. A fixed `FCHSPO01` output record binds the same
+configuration, input-record count, and a draw counter.
+
+Let `r = N_MAX - N_MIN + 1` and `t = (2^64 mod r)`. The first material word
+is accepted only when it is at least `t`; otherwise another domain-separated
+output draw is compressed. The child count is:
+
+`n = N_MIN + (material[0] mod r)`
+
+Internal nodes shorter than `2 × MIN_BLOCK_SIZE` use `n = N_MIN` so every
+supported fan-out configuration remains canonical. All other internal nodes
+use the formula above. The rejection step avoids modulo bias. For each child
+`i`, its weight is:
+
+`weight[i] = 128 + (material[i + 1] AND 0x7f)`
+
+Weights are therefore in `[128, 255]`. This bounded ratio prevents a selected
+split from producing an extremely unbalanced internal node. Length allocation
+still guarantees at least one byte per child and assigns rounding remainder to
+the final child.
+
+Because FCH is public, deterministic, and non-keyed, an attacker can still
+search several messages for a desired value of `n`. The split derivation is
+intended to remove cheap local or algebraic control over the old 64-bit
+accumulator and to bound pathological imbalance; it is not a secret or keyed
+partition function.
 
 ---
 
@@ -110,7 +145,8 @@ root leaves and internal leaves.
 The leaf first compresses a 128-byte header containing the `FCHLEAF1` type
 tag and encoding version 1. Fixed 64-bit little-endian fields bind the domain,
 leaf length, depth, state width, minimum block size, maximum depth, fan-out
-range, compression block size, and round count. Unused fields are zero.
+range, compression block size, round count, split-weight range, and
+split-derivation version. Unused fields are zero.
 
 Each leaf-data record starts with the eight-byte `FCHLDAT1` tag followed by up
 to 120 original input bytes. The unused tail of the last record is zero. The
@@ -124,7 +160,9 @@ tag-only data record. The last data record carries the final flag.
 - Every numeric field is an unsigned 64-bit little-endian value.
 - The encoding version is 1. A format change also changes the version and
   fixed test vectors.
-- Leaf headers, node headers, child records, and output headers are 128 bytes.
+- Leaf headers, node headers, child records, output headers, split headers,
+  and split-output records are 128 bytes. Tagged leaf and split data records
+  use their actual length from 8 to 128 bytes.
 - Record types use distinct tags, compression flags, and domains.
 - Negative depths, fewer than two or more than six children, empty children,
   gaps, overlaps, and out-of-range partitions are rejected.
@@ -159,6 +197,7 @@ Internal nodes:
 
 - use separate domains for the root node and other internal nodes
 - first compress a version-1 node header tagged `FCHNODE1`
+- bind the split-weight range and split-derivation version in that header
 - serialize each child as the following 128-byte `FCHCHLD1` record
 - feed child blocks to the 12-round ARX core in order
 - set the final flag on the last child block
