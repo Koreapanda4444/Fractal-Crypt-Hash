@@ -153,9 +153,15 @@ cat path/to/file | ./fch -256
 - 분할 파생 확산·리더 위치 독립성·균형 제한 테스트
 - 이식성과 영역 분리 테스트
 - 분할 설정 민감도 테스트
+- 제한된 차분 및 축소 라운드 저중량 탐색
+- 선형 상관·고정점·2주기·근접 충돌 탐색
 
 이 레퍼런스 구현은 결정성, 경계 조건, 구조적 불변성,
 그리고 통계적 확산 동작에 대한 테스트를 포함합니다.
+
+암호분석 테스트는 CI에서 실행할 수 있도록 결정적이고 제한된 범위로
+구성됩니다. 통과는 시험한 단순 구별자와 탐색에서 문제가 발견되지 않았다는
+뜻일 뿐, 충돌·원상·전체 설계의 안전성을 입증하지 않습니다.
 
 테스트 프로그램:
 
@@ -166,12 +172,14 @@ cat path/to/file | ./fch -256
 - `tests/test_portability.c`
 - `tests/test_vectors.c`
 - `tests/test_split_sensitivity.c`
+- `tests/test_cryptanalysis.c`
 
 빌드/실행:
 
 ```sh
 cd build
 make check
+make check-extended
 ```
 
 CI에서는 GCC와 Clang으로 전체 테스트를 실행하며,
@@ -183,7 +191,8 @@ Windows에서 `make`가 없다면 `gcc`로 직접 컴파일할 수 있습니다:
 gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_consistency.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
-gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_avalanche.c src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_cryptanalysis.c src/*.c -o build/test_cryptanalysis.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
 
 gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe

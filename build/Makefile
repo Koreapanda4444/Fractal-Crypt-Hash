@@ -20,7 +20,8 @@ TESTS = test_consistency \
         test_invariants \
         test_portability \
         test_vectors \
-        test_avalanche
+        test_avalanche \
+        test_cryptanalysis
 
 EXTENDED_TESTS = test_length_variation \
                  test_depth_diffusion \
@@ -50,6 +51,9 @@ test_vectors: ../tests/test_vectors.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_avalanche: ../tests/test_avalanche.c $(SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_cryptanalysis: ../tests/test_cryptanalysis.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 check: test

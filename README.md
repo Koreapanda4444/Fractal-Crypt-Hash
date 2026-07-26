@@ -156,10 +156,16 @@ The implementation includes:
 - Split-derivation diffusion, relocation, and balance tests
 - Portability and domain-separation tests
 - Split-configuration sensitivity tests
+- Bounded differential and reduced-round low-weight searches
+- Linear-correlation, fixed-point, two-cycle, and near-collision searches
 
 The reference implementation includes extensive tests for
 determinism, boundary conditions, structural invariants,
 and statistical diffusion behavior.
+
+The cryptanalysis harness is deterministic and intentionally bounded so it
+can run in CI. Passing it only rules out the tested simple distinguishers and
+searches; it is not evidence of collision, preimage, or full-design security.
 
 Test programs:
 
@@ -170,12 +176,14 @@ Test programs:
 - `tests/test_portability.c`
 - `tests/test_vectors.c`
 - `tests/test_split_sensitivity.c`
+- `tests/test_cryptanalysis.c`
 
 Build/run:
 
 ```sh
 cd build
 make check
+make check-extended
 ```
 
 The CI workflow runs the suite with GCC and Clang and also runs
@@ -187,7 +195,8 @@ If `make` is unavailable (Windows), you can compile directly with `gcc`:
 gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_consistency.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
-gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_avalanche.c src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_cryptanalysis.c src/*.c -o build/test_cryptanalysis.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
 
 gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe

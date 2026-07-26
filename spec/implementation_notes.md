@@ -44,6 +44,8 @@ global diffusion while binding order and structure.
   reduced-round diffusion reference
 - Reduced-round compression is available only in analysis builds; production
   hashing always uses all 16 rounds
+- The deterministic analysis harness screens chosen differences, output-bit
+  bias, linear correlation, fixed points, two-cycles, and near collisions
 - The 512-bit internal state gives FCH-256 a wider internal path than its output
 - Recompression prevents linear state growth
 
@@ -61,7 +63,7 @@ This implementation prioritizes:
 Performance optimization follows design correctness and security analysis.
 
 The eight-round operational gap is a testing policy, not a proven
-cryptanalytic security margin. Attack-based reduced-round results are still
-required.
+cryptanalytic security margin. The bundled searches are bounded CI regression
+checks, not a substitute for attack-based analysis or independent review.
 
 No cryptographic security claims are made for this design or implementation.

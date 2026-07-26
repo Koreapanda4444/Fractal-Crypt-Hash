@@ -68,11 +68,14 @@ single-bit core diffusion at 4, 8, 12, and 16 rounds, and conservatively uses
 rounds above that reference.
 
 This is an **operational round gap**, not a proven cryptanalytic security
-margin. Statistical diffusion is already stable in the current deterministic
-sample at the tested reduced counts, but that does not measure resistance to
-differential, linear, rotational, rebound, or structural attacks. Attack-based
-analysis of reduced rounds and the full design is still required before an
-actual security margin can be claimed.
+margin. The reference harness performs bounded chosen-difference searches at
+1, 2, 4, 8, and 16 rounds, differential bit-bias and linear-correlation
+screens at 8 and 16 rounds, and fixed-point, two-cycle, collision, and
+near-collision searches. These deterministic CI checks only reject simple
+properties within their sample bounds. They do not measure resistance to
+general differential, linear, rotational, rebound, or structural attacks.
+Attack-based analysis of reduced rounds and the full design is still required
+before an actual security margin can be claimed.
 
 ---
 
