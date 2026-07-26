@@ -46,6 +46,9 @@ global diffusion while binding order and structure.
   hashing always uses all 16 rounds
 - The deterministic analysis harness screens chosen differences, output-bit
   bias, linear correlation, fixed points, two-cycles, and near collisions
+- Tree-attack regression checks cover truncated multicollision distribution,
+  bounded second-preimage candidates, state grafting, and long-message
+  splice/extension patterns
 - The 512-bit internal state gives FCH-256 a wider internal path than its output
 - Recompression prevents linear state growth
 
@@ -65,5 +68,7 @@ Performance optimization follows design correctness and security analysis.
 The eight-round operational gap is a testing policy, not a proven
 cryptanalytic security margin. The bundled searches are bounded CI regression
 checks, not a substitute for attack-based analysis or independent review.
+Long inputs also retain a resource-exhaustion risk because split derivation
+re-reads input across tree levels and streaming uses temporary storage.
 
 No cryptographic security claims are made for this design or implementation.

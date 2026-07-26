@@ -155,6 +155,8 @@ cat path/to/file | ./fch -256
 - 분할 설정 민감도 테스트
 - 제한된 차분 및 축소 라운드 저중량 탐색
 - 선형 상관·고정점·2주기·근접 충돌 탐색
+- 멀티콜리전·제2원상·상태 이식·장문 splice/extension 패턴을 검사하는
+  트리 공격 테스트
 
 이 레퍼런스 구현은 결정성, 경계 조건, 구조적 불변성,
 그리고 통계적 확산 동작에 대한 테스트를 포함합니다.
@@ -173,6 +175,7 @@ cat path/to/file | ./fch -256
 - `tests/test_vectors.c`
 - `tests/test_split_sensitivity.c`
 - `tests/test_cryptanalysis.c`
+- `tests/test_tree_attacks.c`
 
 빌드/실행:
 
@@ -193,6 +196,7 @@ gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_b
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_avalanche.c src/*.c -o build/test_avalanche.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_cryptanalysis.c src/*.c -o build/test_cryptanalysis.exe
+gcc -Wall -Wextra -O2 -DFCH_DEBUG_HOOKS -Iinclude tests/test_tree_attacks.c src/*.c -o build/test_tree_attacks.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
 
 gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe

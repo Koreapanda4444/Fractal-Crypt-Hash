@@ -266,3 +266,43 @@ checked API reports failure and clears the output buffer.
 
 Streaming therefore preserves the one-shot digest but requires temporary-file
 support and may perform more I/O.
+
+---
+
+## 9. Tree Attack Analysis Status
+
+The tree encoding is intended to prevent a valid child state from being
+silently reused in a different structural context. This is supported by the
+following bindings:
+
+- leaf headers bind leaf length and depth
+- node headers bind parent length, depth, child count, and configuration
+- child records bind index, offset, length, parent metadata, and child state
+- root, internal-node, leaf, split, and output records use separate domains
+- the content-dependent split derivation reads the complete parent input
+
+The current attack status is:
+
+| Attack class | Current automated screen | Remaining limitation |
+| ------------ | ------------------------ | -------------------- |
+| Multicollision | 4,096 leaf states and 4,096 derived node states are checked for exact collisions and 20-bit-prefix bucket anomalies | A small truncated screen cannot establish the expected 512-bit internal collision cost or rule out a Joux-style construction |
+| Second preimage | 512 related candidates for a 16 KiB target cover bit changes, chunk replacement, swaps, and splices | This does not establish the FCH-256 or FCH-512 target costs against expandable-message, herding, or other dedicated attacks |
+| Tree-shape/grafting | Fixed child states are recombined under binary, flat, skewed, reordered, rebounded, and depth-shifted contexts | Structural binding still depends on the compression core resisting collisions and chosen-state attacks |
+| Long message | Fifteen 256 KiB variants cover append, truncate, prefix, embedded-padding extension, chunk swap/copy/rotation, boundary edits, and low-entropy patterns | Larger searches, adversarial split steering, depth-cap leaves, and resource-exhaustion behavior still require analysis |
+
+The 20-bit prefix used by the multicollision screen is deliberately small
+enough for ordinary birthday collisions to appear during CI. The test checks
+for abnormal bucket concentration and exact 512-bit equality; its result
+cannot be extrapolated into a proof about the full state.
+
+Split derivation reads every byte of each visited node before recursively
+processing its children. For an input of length `L` and realized tree depth
+`d`, input-reading work is therefore `O(L * d)`, with `d` capped at 16.
+One-shot hashing also allocates `O(L)` padding storage. Streaming keeps RAM
+bounded but uses `O(L)` temporary storage and can repeat I/O across tree
+levels. A large-input CPU, disk, or temporary-file exhaustion attack is
+therefore an implementation risk even when no cryptographic break is found.
+
+The current tests found no simple structural alias, full-state collision, or
+second preimage in their bounded samples. This does not change FCH's
+experimental status or replace independent tree-hash cryptanalysis.

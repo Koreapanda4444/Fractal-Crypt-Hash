@@ -21,7 +21,8 @@ TESTS = test_consistency \
         test_portability \
         test_vectors \
         test_avalanche \
-        test_cryptanalysis
+        test_cryptanalysis \
+        test_tree_attacks
 
 EXTENDED_TESTS = test_length_variation \
                  test_depth_diffusion \
@@ -55,6 +56,9 @@ test_avalanche: ../tests/test_avalanche.c $(SRC)
 
 test_cryptanalysis: ../tests/test_cryptanalysis.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_tree_attacks: ../tests/test_tree_attacks.c $(SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 check: test
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done

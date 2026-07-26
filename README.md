@@ -158,6 +158,8 @@ The implementation includes:
 - Split-configuration sensitivity tests
 - Bounded differential and reduced-round low-weight searches
 - Linear-correlation, fixed-point, two-cycle, and near-collision searches
+- Tree-attack screens for multicollisions, second preimages, state grafting,
+  and long-message splice/extension patterns
 
 The reference implementation includes extensive tests for
 determinism, boundary conditions, structural invariants,
@@ -177,6 +179,7 @@ Test programs:
 - `tests/test_vectors.c`
 - `tests/test_split_sensitivity.c`
 - `tests/test_cryptanalysis.c`
+- `tests/test_tree_attacks.c`
 
 Build/run:
 
@@ -197,6 +200,7 @@ gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_b
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_avalanche.c src/*.c -o build/test_avalanche.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_cryptanalysis.c src/*.c -o build/test_cryptanalysis.exe
+gcc -Wall -Wextra -O2 -DFCH_DEBUG_HOOKS -Iinclude tests/test_tree_attacks.c src/*.c -o build/test_tree_attacks.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
 
 gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe
