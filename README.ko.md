@@ -157,6 +157,9 @@ cat path/to/file | ./fch -256
 - 선형 상관·고정점·2주기·근접 충돌 탐색
 - 멀티콜리전·제2원상·상태 이식·장문 splice/extension 패턴을 검사하는
   트리 공격 테스트
+- 원샷/스트리밍 동일성, 분할 불변성, API 오용, 리더 실패, 컨텍스트
+  수명주기를 검사하는 결정적 퍼징 스모크 테스트
+- 서로 다른 청크 배치를 비교하는 8 MiB 제한 메모리 스트리밍 테스트
 
 이 레퍼런스 구현은 결정성, 경계 조건, 구조적 불변성,
 그리고 통계적 확산 동작에 대한 테스트를 포함합니다.
@@ -176,6 +179,7 @@ cat path/to/file | ./fch -256
 - `tests/test_split_sensitivity.c`
 - `tests/test_cryptanalysis.c`
 - `tests/test_tree_attacks.c`
+- `tests/test_hardening.c`
 
 빌드/실행:
 
@@ -185,8 +189,16 @@ make check
 make check-extended
 ```
 
-CI에서는 GCC와 Clang으로 전체 테스트를 실행하며,
-AddressSanitizer와 UndefinedBehaviorSanitizer 검사도 수행합니다.
+Clang 기반의 제한된 libFuzzer 검사는 다음과 같이 실행합니다:
+
+```sh
+cd build
+make fuzz-smoke
+```
+
+CI는 Linux의 GCC·Clang, macOS의 Clang, Windows의 UCRT64 GCC에서
+테스트를 실행합니다. libFuzzer, AddressSanitizer,
+UndefinedBehaviorSanitizer 검사도 수행합니다.
 
 Windows에서 `make`가 없다면 `gcc`로 직접 컴파일할 수 있습니다:
 
@@ -196,7 +208,8 @@ gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_b
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_avalanche.c src/*.c -o build/test_avalanche.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_cryptanalysis.c src/*.c -o build/test_cryptanalysis.exe
-gcc -Wall -Wextra -O2 -DFCH_DEBUG_HOOKS -Iinclude tests/test_tree_attacks.c src/*.c -o build/test_tree_attacks.exe
+gcc -Wall -Wextra -O2 -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -Iinclude tests/test_tree_attacks.c src/*.c -o build/test_tree_attacks.exe
+gcc -Wall -Wextra -O2 -DFCH_FUZZ_STANDALONE -Iinclude tests/test_hardening.c src/*.c -o build/test_hardening.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
 
 gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe

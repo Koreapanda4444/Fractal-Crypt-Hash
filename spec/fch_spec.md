@@ -306,3 +306,31 @@ therefore an implementation risk even when no cryptographic break is found.
 The current tests found no simple structural alias, full-state collision, or
 second preimage in their bounded samples. This does not change FCH's
 experimental status or replace independent tree-hash cryptanalysis.
+
+---
+
+## 10. Reference Implementation Hardening
+
+The reference implementation applies the following checks:
+
+- checked one-shot and streaming APIs reject unsupported lengths and invalid
+  pointers before reading input
+- failed streaming contexts remain failed, finalization closes temporary
+  storage, and repeated finalization returns failure with a zeroed output
+- recursive reader failures propagate without returning a partial state
+- the debug-hook path uses an explicit external-hook switch instead of a
+  compiler-specific weak symbol
+- a shared deterministic/libFuzzer harness compares one-shot and streaming
+  outputs, verifies split coverage, and exercises error and cleanup paths
+- an 8 MiB input is streamed through two different chunk layouts without
+  retaining the full message in application memory
+
+CI runs strict builds on hosted x86-64 Linux, macOS, and Windows, with
+AddressSanitizer and UndefinedBehaviorSanitizer on Linux. The bounded
+libFuzzer job is a regression smoke test, not an exhaustive fuzzing campaign.
+The platform matrix does not cover every ABI, allocator, filesystem,
+big-endian target, or temporary-file failure mode.
+
+Streaming contexts have single-owner semantics: initialize before use, do not
+copy or access an active context concurrently, and call the matching free
+function after finalization or failure.

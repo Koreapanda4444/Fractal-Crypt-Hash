@@ -160,6 +160,9 @@ The implementation includes:
 - Linear-correlation, fixed-point, two-cycle, and near-collision searches
 - Tree-attack screens for multicollisions, second preimages, state grafting,
   and long-message splice/extension patterns
+- Deterministic fuzz smoke tests for one-shot/streaming equivalence, split
+  invariants, API misuse, reader failures, and context lifecycle
+- An 8 MiB bounded-memory streaming test with different chunk layouts
 
 The reference implementation includes extensive tests for
 determinism, boundary conditions, structural invariants,
@@ -180,6 +183,7 @@ Test programs:
 - `tests/test_split_sensitivity.c`
 - `tests/test_cryptanalysis.c`
 - `tests/test_tree_attacks.c`
+- `tests/test_hardening.c`
 
 Build/run:
 
@@ -189,8 +193,16 @@ make check
 make check-extended
 ```
 
-The CI workflow runs the suite with GCC and Clang and also runs
-AddressSanitizer and UndefinedBehaviorSanitizer.
+Run the bounded libFuzzer target with Clang:
+
+```sh
+cd build
+make fuzz-smoke
+```
+
+CI runs the suite on Linux with GCC and Clang, macOS with Clang, and Windows
+with UCRT64 GCC. It also runs libFuzzer, AddressSanitizer, and
+UndefinedBehaviorSanitizer.
 
 If `make` is unavailable (Windows), you can compile directly with `gcc`:
 
@@ -200,7 +212,8 @@ gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_b
 gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_avalanche.c src/*.c -o build/test_avalanche.exe
 gcc -Wall -Wextra -O2 -DFCH_ENABLE_REDUCED_ROUND_TESTS -Iinclude tests/test_cryptanalysis.c src/*.c -o build/test_cryptanalysis.exe
-gcc -Wall -Wextra -O2 -DFCH_DEBUG_HOOKS -Iinclude tests/test_tree_attacks.c src/*.c -o build/test_tree_attacks.exe
+gcc -Wall -Wextra -O2 -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -Iinclude tests/test_tree_attacks.c src/*.c -o build/test_tree_attacks.exe
+gcc -Wall -Wextra -O2 -DFCH_FUZZ_STANDALONE -Iinclude tests/test_hardening.c src/*.c -o build/test_hardening.exe
 gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
 
 gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe

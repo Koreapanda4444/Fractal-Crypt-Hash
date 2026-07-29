@@ -6,10 +6,16 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        compiler: [gcc, clang]
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+          - os: ubuntu-latest
+            compiler: clang
+          - os: macos-latest
+            compiler: clang
     env:
       CC: ${{ matrix.compiler }}
     steps:
@@ -35,6 +41,38 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make check \
+          make check check-extended \
             CC=clang \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run libFuzzer smoke test
+        working-directory: build
+        run: make fuzz-smoke
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up UCRT64 GCC
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+
+      - name: Build and test
+        shell: msys2 {0}
+        working-directory: build
+        run: |
+          make clean
+          make all bench check check-extended CC=gcc

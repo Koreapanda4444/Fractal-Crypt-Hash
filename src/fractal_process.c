@@ -7,8 +7,7 @@
 #include "params.h"
 #include "debug_hooks.h"
 
-#ifdef FCH_DEBUG_HOOKS
-__attribute__((weak))
+#if defined(FCH_DEBUG_HOOKS) && !defined(FCH_DEBUG_HOOK_EXTERNAL)
 void fch_debug_hook(
     fch_hook_point_t point,
     int depth,
@@ -20,7 +19,9 @@ void fch_debug_hook(
     (void)state;
     (void)state_words;
 }
+#endif
 
+#ifdef FCH_DEBUG_HOOKS
 static inline void fch_debug_emit_root_if(
     int depth,
     const uint64_t *state,
