@@ -40,7 +40,9 @@ tests does not establish collision, preimage, or second-preimage resistance.
 Stronger security wording requires a stable specification, analysis of the
 full and reduced designs, a documented security margin, no known attacks below
 the targets, and meaningful independent public review. The detailed targets
-and evaluation criteria are defined in `spec/fch_spec.md`.
+and evaluation criteria are defined in `spec/fch_spec.md`. Section 11 records
+the rationale and unresolved assumptions for every security-relevant
+parameter.
 
 The current round policy uses 16 full rounds and an 8-round reduced reference,
 leaving an 8-round operational gap. This is a conservative testing margin, not
