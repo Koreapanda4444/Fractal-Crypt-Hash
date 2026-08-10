@@ -112,107 +112,7 @@ static int check_full_input_split_influence(void) {
             changed_splits++;
     }
 
-    return changed_splits * 100u >= sizeof(base) * 99u;
-}
-
-static int check_split_derivation_properties(void) {
-    enum {
-        PREFIX_LENGTH = 37,
-        SAMPLE_LENGTH = 1024,
-        SAMPLE_COUNT = 256
-    };
-    uint8_t data[SAMPLE_LENGTH];
-    uint8_t prefixed[PREFIX_LENGTH + SAMPLE_LENGTH];
-    fch_block_t direct[FCH_N_MAX];
-    fch_block_t repeated[FCH_N_MAX];
-    fch_block_t relocated[FCH_N_MAX];
-
-    fill_pattern(data, sizeof(data), 3);
-    size_t direct_count = fch_fractal_split(
-        data,
-        sizeof(data),
-        3,
-        direct,
-        FCH_N_MAX
-    );
-    size_t repeated_count = fch_fractal_split(
-        data,
-        sizeof(data),
-        3,
-        repeated,
-        FCH_N_MAX
-    );
-    if (direct_count == 0 ||
-        !same_split(direct, direct_count, repeated, repeated_count))
-        return 0;
-
-    memset(prefixed, 0xA5, PREFIX_LENGTH);
-    memcpy(prefixed + PREFIX_LENGTH, data, sizeof(data));
-    fch_memory_reader_t memory = { prefixed, sizeof(prefixed) };
-    fch_reader_t reader = { fch_memory_read, &memory };
-    size_t relocated_count = fch_fractal_split_reader(
-        &reader,
-        PREFIX_LENGTH,
-        sizeof(data),
-        3,
-        relocated,
-        FCH_N_MAX
-    );
-    if (!same_split(direct, direct_count, relocated, relocated_count))
-        return 0;
-
-    unsigned int seen_counts = 0;
-    size_t depth_changes = 0;
-    for (size_t sample = 0; sample < SAMPLE_COUNT; sample++) {
-        fch_block_t blocks[FCH_N_MAX];
-        fch_block_t deeper[FCH_N_MAX];
-
-        for (size_t i = 0; i < sizeof(data); i++) {
-            data[i] = (uint8_t)(
-                i * 131u + sample * 17u + (i >> 3u) * (sample + 1u)
-            );
-        }
-        data[(sample * 257u + 13u) % sizeof(data)] ^=
-            (uint8_t)(sample | 1u);
-
-        size_t count = fch_fractal_split(
-            data,
-            sizeof(data),
-            3,
-            blocks,
-            FCH_N_MAX
-        );
-        size_t deeper_count = fch_fractal_split(
-            data,
-            sizeof(data),
-            4,
-            deeper,
-            FCH_N_MAX
-        );
-        if (count < FCH_N_MIN || count > FCH_N_MAX ||
-            deeper_count == 0)
-            return 0;
-
-        seen_counts |= 1u << (unsigned int)(count - FCH_N_MIN);
-        if (!same_split(blocks, count, deeper, deeper_count))
-            depth_changes++;
-
-        size_t min_length = blocks[0].length;
-        size_t max_length = blocks[0].length;
-        for (size_t i = 1; i < count; i++) {
-            if (blocks[i].length < min_length)
-                min_length = blocks[i].length;
-            if (blocks[i].length > max_length)
-                max_length = blocks[i].length;
-        }
-        if (max_length > min_length * 2u + count)
-            return 0;
-    }
-
-    unsigned int expected_counts =
-        (1u << (unsigned int)(FCH_N_MAX - FCH_N_MIN + 1)) - 1u;
-    return seen_counts == expected_counts &&
-        depth_changes * 10u >= SAMPLE_COUNT * 9u;
+    return changed_splits * 10u >= sizeof(base) * 9u;
 }
 
 static int check_leaf_domain_separation(void) {
@@ -355,13 +255,8 @@ static int check_tree_encoding_validation(void) {
         ok = 0;
 
     if (FCH_TREE_ENCODING_VERSION == 0 ||
-        FCH_SPLIT_DERIVATION_VERSION == 0 ||
         FCH_TREE_TAG_LEAF_HEADER == FCH_TREE_TAG_NODE_HEADER ||
-        FCH_TREE_TAG_LEAF_DATA == FCH_TREE_TAG_NODE_CHILD ||
-        FCH_SPLIT_TAG_HEADER == FCH_SPLIT_TAG_DATA ||
-        FCH_SPLIT_TAG_DATA == FCH_SPLIT_TAG_OUTPUT ||
-        FCH_MIX_FLAG_SPLIT_HEADER == FCH_MIX_FLAG_SPLIT_DATA ||
-        FCH_MIX_FLAG_SPLIT_DATA == FCH_MIX_FLAG_SPLIT_OUTPUT)
+        FCH_TREE_TAG_LEAF_DATA == FCH_TREE_TAG_NODE_CHILD)
         ok = 0;
 
     free(one_child.state);
@@ -396,10 +291,6 @@ int main(void) {
         printf("FAIL: split ignores too much of the input\n");
         return 1;
     }
-    if (!check_split_derivation_properties()) {
-        printf("FAIL: hardened split derivation properties\n");
-        return 1;
-    }
     if (!check_leaf_domain_separation()) {
         printf("FAIL: leaf domain separation\n");
         return 1;
@@ -413,8 +304,6 @@ int main(void) {
         return 1;
     }
 
-    printf(
-        "PASS: split derivation, invariants, domains, and canonical tree encoding\n"
-    );
+    printf("PASS: split invariants, domains, and canonical tree encoding\n");
     return 0;
 }

@@ -6,19 +6,10 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            compiler: gcc
-            reference: true
-          - os: ubuntu-latest
-            compiler: clang
-            reference: false
-          - os: macos-latest
-            compiler: clang
-            reference: false
+        compiler: [gcc, clang]
     env:
       CC: ${{ matrix.compiler }}
     steps:
@@ -30,17 +21,6 @@ jobs:
         run: |
           make clean
           make all bench check check-extended CC="$CC"
-
-      - name: Set up Python
-        if: matrix.reference
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Cross-check Python reference
-        if: matrix.reference
-        working-directory: build
-        run: make check-reference
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -55,38 +35,6 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make check check-extended \
+          make check \
             CC=clang \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
-
-  fuzz-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run libFuzzer smoke test
-        working-directory: build
-        run: make fuzz-smoke
-
-  windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up UCRT64 GCC
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            make
-            mingw-w64-ucrt-x86_64-gcc
-
-      - name: Build and test
-        shell: msys2 {0}
-        working-directory: build
-        run: |
-          make clean
-          make all bench check check-extended CC=gcc

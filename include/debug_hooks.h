@@ -16,10 +16,15 @@ typedef enum {
 
 #ifdef FCH_DEBUG_HOOKS
 
-/*
- * Define FCH_DEBUG_HOOK_EXTERNAL when the application supplies this function.
- * Otherwise the reference implementation provides a no-op default.
- */
+
+
+
+
+
+
+
+
+
 void fch_debug_hook(
     fch_hook_point_t point,
     int depth,
@@ -41,3 +46,4 @@ void fch_debug_hook(
 #endif
 
 #endif
+

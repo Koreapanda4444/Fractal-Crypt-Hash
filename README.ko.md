@@ -1,64 +1,87 @@
 # Fractal Crypt-Hash (FCH)
 
-Fractal Crypt-Hash(FCH)는 16라운드 ARX 압축 코어와 입력에 따라 달라지는
-재귀 트리를 결합한 암호학 연구용 해시 함수입니다. 압축 코어가 각 구간을
-섞고, 트리는 메시지 여러 부분의 변화를 루트까지 전달해 하나의 결과로
-결합합니다.
+Fractal Crypt-Hash (FCH)는 **12라운드 ARX 압축 코어**와
+**프랙탈(자기유사) 재귀 구조**를 결합해 확산을 유도하며,
+암호학적 해시 후보를 목표로 하는 실험적 해시 설계입니다.
 
-FCH의 설계와 레퍼런스 구현은 분석과 검증을 위해 공개되어 있습니다. 아래의
-보안 강도를 목표로 개발하고 있으며, 독립적인 공개 분석은 아직 진행 단계입니다.
+---
 
-English documentation: [README.md](README.md)
+## 보안 주의사항 (필독)
+
+FCH는 **연구/실험 목적**의 해시 설계 및 레퍼런스 구현입니다.
+광범위한 공개 크립토분석이나 독립 보안 리뷰를 거치지 않았습니다.
+
+따라서 아래와 같은 **실전 보안 목적**에는 사용하지 마세요(예시):
+
+- 인증/서명/토큰/MAC 등
+- 비밀번호 해싱/키 파생
+- 공격자가 존재하는 환경에서의 무결성 검증
+- 해시가 깨졌을 때 피해가 발생하는 모든 용도
+
+이 저장소는 학습, 실험, 벤치마크, 토론을 위한 목적을 권장합니다.
+
+---
 
 ## 보안 목표
 
-FCH는 공개된 결정적 비키 해시 함수입니다. 현재 설계는 각 출력 크기에
-대응하는 고전적 일반 공격 비용을 목표로 합니다.
+FCH는 공개된 결정적 비키 해시 함수로서, 고전적 일반 공격에 대해
+다음 수준의 저항성을 목표로 합니다.
 
-| 변형 | 출력 | 충돌 | 원상 | 제2원상 |
-| ---- | ---- | ---- | ---- | ------- |
-| FCH-256 | 256비트 | 2^128 | 2^256 | 2^256 |
-| FCH-512 | 512비트 | 2^256 | 2^512 | 2^512 |
+| 변형 | 충돌 저항 | 원상 저항 | 제2원상 저항 |
+| ---- | --------- | --------- | ------------- |
+| FCH-256 | 2^128 | 2^256 | 2^256 |
+| FCH-512 | 2^256 | 2^512 | 2^512 |
 
-이 수치는 설계 목표입니다. 목표에 대한 분석 범위와 아직 확인해야 할 조건은
-사양서에 정리되어 있습니다.
+이 수치는 **설계 목표**이며 현재 구현이 달성했다는 주장이나 보안 보장이 아닙니다.
+현재 FCH의 상태는 **미검증 암호학적 해시 후보**입니다. 통계적 확산과 avalanche
+테스트 통과만으로 충돌·원상·제2원상 저항성이 입증되지는 않습니다.
 
-## 구조
+더 강한 보안 표현을 사용하려면 안정된 사양, 구조 및 축소형에 대한 공격 분석,
+명시적인 보안 여유, 목표보다 빠른 알려진 공격의 부재, 독립적인 공개 검토가
+필요합니다. 세부 목표와 판정 기준은 `spec/fch_spec.ko.md`에 정의합니다.
 
-FCH는 메시지를 재귀 트리 형태로 처리합니다.
+---
 
-1. 메시지를 패딩한 뒤 루트에서 처리를 시작합니다.
-2. 현재 노드의 전체 입력으로 가변 분할을 결정합니다.
-3. 각 자식이 리프가 될 때까지 같은 과정을 반복합니다.
-4. 자식 상태를 위치와 길이 정보와 함께 순서대로 압축합니다.
-5. 루트 상태를 FCH-256 또는 FCH-512 전용 영역에서 마무리합니다.
+## 개요
 
-두 변형 모두 512비트 내부 상태를 사용합니다. FCH-256은 별도의 출력
-마무리 영역을 거치므로 FCH-512 결과의 앞부분을 단순히 잘라낸 값이 아닙니다.
+FCH는 고정 라운드 압축 코어의 국소 확산과
+**재귀적 프랙탈 분해**의 구조적 확산을 함께 사용합니다.
 
-### 주요 파라미터
+입력의 작은 변화는 다음 경로로 전파됩니다:
 
-| 항목 | 값 |
-| ---- | -- |
-| 워드 크기 | 64비트 |
-| 내부 상태 | 512비트(8워드) |
-| 압축 입력 | 128바이트(16워드) |
-| 정식 라운드 | 16 |
-| 축소 라운드 분석 기준 | 8라운드 |
-| 분기 수 | 자식 2~6개 |
-| 분할 가중치 | 128~255 |
-| 리프 기준 | 64바이트 |
-| 최대 트리 깊이 | 16 |
+- 리프(leaf) 노드에서의 국소 확산
+- 가변 n-way 분할을 통한 재귀 전파
+- 루트에서의 재압축(recompression)을 통한 전역 확산
 
-ARX G 함수와 IV, 회전값, 메시지 순열은 BLAKE2b의 구성요소를 바탕으로
-합니다. FCH의 초기화 방식, tweak, 레코드 형식, feed-forward 문맥,
-라운드 수와 트리 구조는 별도로 설계했습니다.
+---
 
-## API
+## 특징
+
+- 프랙탈 재귀 해시 구조
+- 128바이트 블록 기반 12라운드 64비트 ARX 압축 코어
+- 두 변형 모두 512비트 내부 트리 상태 사용
+- 노드 전체 입력에서 유도되는 가변 n-way(2–6) 분할
+- 순서 의존(order-dependent) 트리 재결합
+- 루트·내부 노드·리프·자식·출력 변형의 명시적 영역 분리
+- 버전·형식 태그·고정 필드를 갖는 정규 트리 인코딩
+- 고정 회전값을 사용하는 ADD / ROTATE / XOR 혼합
+- 각 리프 블록과 내부 노드 자식마다 재압축 수행
+- 결정적(deterministic) 비키(non-keyed) 해시 함수
+
+---
+
+## 지원 변형
+
+| 변형 | 출력 크기 | 내부 상태 |
+| ---- | --------- | --------- |
+| FCH-256 | 256 bits | 8 × uint64 |
+| FCH-512 | 512 bits | 8 × uint64 |
+
+---
+
+## 사용법
 
 ```c
-#include "fch.h"
-
 uint8_t out256[32];
 uint8_t out512[64];
 
@@ -66,15 +89,15 @@ int ok256 = fch_hash_256_checked(data, len, out256);
 int ok512 = fch_hash_512_checked(data, len, out512);
 ```
 
-checked 함수는 성공하면 `1`을 반환합니다. 입력이 잘못됐거나 길이를 지원하지
-않거나 메모리 할당에 실패하면 `0`을 반환합니다. 기존 `void` 형태의 함수도
-호환용으로 남아 있습니다.
+checked 함수는 성공 시 `1`, 잘못된 입력·메모리 할당 실패·지원하지 않는
+입력 길이에서는 `0`을 반환합니다. 기존 `void` 함수는 호환용으로 유지됩니다.
 
-### 스트리밍
+### 제한 메모리 스트리밍 API
 
-스트리밍 API는 입력 청크를 익명 임시 파일에 저장한 뒤, final 단계에서
-고정 크기 버퍼로 읽습니다. 애플리케이션의 RAM 사용량을 제한하면서 원샷
-API와 같은 해시를 생성합니다.
+FCH 스트리밍 API는 입력 청크를 익명 임시 파일에 기록하고, `final` 단계에서
+고정 크기 버퍼로 다시 읽습니다. 따라서 전체 입력 크기에 비례해 RAM 사용량이
+증가하지 않으며 원샷 API와 같은 해시를 생성합니다. 임시 파일을 사용할 수
+있어야 하고 원샷 API보다 느릴 수 있습니다.
 
 ```c
 #include "fch_stream.h"
@@ -87,78 +110,75 @@ int ok = fch256_final_checked(&ctx, out256);
 fch256_free(&ctx);
 ```
 
-활성 컨텍스트는 하나의 호출 흐름에서만 소유해야 합니다. final 이후의 update와
-final 재호출은 실패합니다.
+final 이후의 추가 update와 final 재호출은 거부됩니다.
+CLI의 파일 및 표준입력 처리도 같은 제한 메모리 경로를 사용합니다.
 
-## 명령줄 도구
+### CLI
 
-빌드:
+CLI 빌드:
 
 ```sh
 cd build
 make all
 ```
 
-파일 또는 표준입력 해시:
+파일 해시:
 
 ```sh
 ./fch -256 path/to/file
 ./fch -512 path/to/file
+```
+
+표준입력(stdin) 해시:
+
+```sh
 cat path/to/file | ./fch -256
-```
-
-### Python 기준 구현
-
-`tools/fch_reference.py`는 Python 표준 라이브러리만으로 사양을 그대로 옮긴
-읽기 쉬운 기준 구현입니다. C 소스와 코드를 공유하지 않으므로 두 구현의
-결과를 독립적으로 비교할 수 있습니다.
-
-```sh
-python3 tools/fch_reference.py -256 path/to/file
-python3 tools/fch_reference.py -512 path/to/file
-```
-
-C CLI를 빌드하고 경계값 및 재귀 트리 입력에서 두 구현을 비교하려면 다음
-명령을 사용합니다.
-
-```sh
-cd build
-make check-reference
 ```
 
 ## 테스트
 
-저장소에는 다음 검사가 포함되어 있습니다.
+구현에는 다음 테스트가 포함됩니다:
 
-- 결정성, 고정 출력, 경계값과 잘못된 입력
-- avalanche 동작과 축소 라운드 확산
-- 분할 범위, 균형, 위치 독립성과 설정 민감도
-- 영역 분리와 little-endian 직렬화의 이식성
-- 제한된 차분·선형·고정점·주기·근접 충돌 탐색
-- 멀티콜리전·제2원상·상태 이식·장문 트리 패턴
-- 원샷/스트리밍 동일성, API 수명주기와 리더 실패
-- sanitizer와 libFuzzer 스모크 검사
-- 8 MiB 입력의 제한 메모리 처리
+- Avalanche 통계 테스트(길이/비트 확산)
+- 결정성 테스트(동일 입력 → 동일 출력)
+- 경계값/예외 입력 테스트
+- 구조 불변성 테스트(split coverage)
+- 이식성과 영역 분리 테스트
+- 분할 설정 민감도 테스트
 
-일반 및 확장 테스트 실행:
+이 레퍼런스 구현은 결정성, 경계 조건, 구조적 불변성,
+그리고 통계적 확산 동작에 대한 테스트를 포함합니다.
+
+테스트 프로그램:
+
+- `tests/test_avalanche.c`
+- `tests/test_consistency.c`
+- `tests/test_boundaries.c`
+- `tests/test_invariants.c`
+- `tests/test_portability.c`
+- `tests/test_vectors.c`
+- `tests/test_split_sensitivity.c`
+
+빌드/실행:
 
 ```sh
 cd build
 make check
-make check-extended
 ```
 
-Clang 기반의 제한된 libFuzzer 실행:
+CI에서는 GCC와 Clang으로 전체 테스트를 실행하며,
+AddressSanitizer와 UndefinedBehaviorSanitizer 검사도 수행합니다.
+
+Windows에서 `make`가 없다면 `gcc`로 직접 컴파일할 수 있습니다:
 
 ```sh
-make fuzz-smoke
+gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_consistency.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
+gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
+
+gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe
+
+build\\fch.exe -256 README.ko.md
 ```
-
-CI는 Linux에서 GCC와 Clang, macOS에서 Clang, Windows에서 UCRT64 GCC로
-빌드와 테스트를 수행합니다. Linux 작업에는 AddressSanitizer와
-UndefinedBehaviorSanitizer도 포함됩니다.
-
-## 문서
-
-- [알고리즘 사양서](spec/fch_spec.ko.md)
-- [구현 노트](spec/implementation_notes.ko.md)

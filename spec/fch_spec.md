@@ -1,362 +1,208 @@
 # Fractal Crypt-Hash Specification
 
-## 0. Purpose and status
+## 0. Scope & Non-Goals
 
-This document defines the byte-for-byte behavior of Fractal Crypt-Hash. FCH is
-a deterministic, public, non-keyed hash function developed for cryptographic
-research. The security levels in this document are design goals used to guide
-analysis. Independent public analysis of the construction is still in progress.
+This specification describes the **deterministic behavior** of the FCH reference design.
+It does **not** claim cryptographic security (collision resistance / preimage resistance / etc.),
+and it should not be used as a basis to deploy FCH in production security contexts.
 
-The Korean version is available in [fch_spec.ko.md](fch_spec.ko.md).
+FCH is intended for research, experimentation, benchmarking, and discussion.
 
-## 1. Security model
+---
 
-### 1.1 Attacker model
+## 1. Security Targets and Status
 
-The algorithm, constants, messages, and digests are public. An attacker may
-choose arbitrary messages and evaluate FCH without restriction. The targets in
-this specification use the classical computation model; no separate quantum
-security level is defined here.
+### 1.1 Attacker Model
 
-### 1.2 Target strength
+FCH is a public, deterministic, non-keyed hash function. The attacker is
+assumed to know the algorithm, constants, messages, and hash outputs and may
+freely choose messages to hash. The targets below cover only the classical
+computation model. No security strength against quantum attacks is currently
+defined or claimed.
 
-| Variant | Output | Collision | Preimage | Second preimage |
-| ------- | ------ | --------- | -------- | --------------- |
+### 1.2 Target Strength
+
+| Variant | Output Size | Collision Resistance | Preimage Resistance | Second-Preimage Resistance |
+| ------- | ----------- | -------------------- | ------------------- | -------------------------- |
 | FCH-256 | 256 bits | 2^128 | 2^256 | 2^256 |
 | FCH-512 | 512 bits | 2^256 | 2^512 | 2^512 |
 
-These are the generic attack costs expected from ideal hashes of the same
-output sizes. They are evaluation targets for FCH rather than conclusions
-drawn from the current test suite.
+Each value is the approximate generic attack cost expected from an ideal hash
+of the corresponding output size. These values are **design targets** that FCH
+must aim to meet, not security claims or proofs for the current design.
+Structural weaknesses may reduce the actual security strength below these
+targets.
 
-### 1.3 Structural goals
+### 1.3 Structural Security Targets
 
-The tree mode is designed to:
+The FCH tree construction is intended to:
 
-- distinguish roots, internal nodes, leaves, child states, split records, and
-  output variants;
-- bind node type, depth, length, child count, child position, offset, and
-  length to each internal state;
-- give every valid tree a canonical encoded form;
-- resist tree-specific multicollision, herding, grafting, and long-message
-  second-preimage shortcuts; and
-- produce identical results through the one-shot and streaming APIs.
+- separate root, internal-node, leaf, and child-state domains
+- bind node type, depth, length, child count, child order, offset, and length
+  without ambiguity
+- prevent different messages or tree structures from merging into the same
+  internal representation through structural collisions
+- avoid tree-specific shortcuts for multicollisions, herding, and long-message
+  second-preimage attacks below the target strengths
+- produce the same digest for the same message through one-shot and streaming APIs
 
-### 1.4 Round policy
+### 1.4 Candidate Evaluation Criteria
 
-Normal hashing always uses 16 rounds. Analysis builds expose reduced-round
-compression and measure diffusion at 4, 8, 12, and 16 rounds. Eight rounds are
-used as the current reduced-round reference, leaving an eight-round gap to the
-full core.
+Before FCH can be described as a security candidate suitable for serious
+evaluation, it requires at least:
 
-The bundled searches cover selected differences at 1, 2, 4, 8, and 16 rounds,
-plus linear correlation, fixed points, two-cycles, collisions, and near
-collisions within bounded samples. Dedicated differential, rotational,
-related-tweak, and structural analysis remains part of the research work.
+- a stable and complete specification that matches the implementation
+- differential, linear, and structural analysis of the full and reduced designs
+- an explicit security margin that can be compared with attack results
+- no known full-design attack faster than the target costs in the table
+- reproducible test results and meaningful independent public review
 
-## 2. Fixed parameters
+Statistical distribution, avalanche behavior, test vectors, and implementation
+tests support analysis but do not by themselves establish cryptographic security.
 
-| Parameter | Value |
-| --------- | ----- |
-| Word width | 64 bits |
-| Internal state | 8 words / 512 bits |
-| Compression input | 16 words / 128 bytes |
-| Full rounds | 16 |
-| Reduced-round reference | 8 rounds |
-| Leaf threshold | 64 bytes |
-| Maximum depth | 16 |
-| Fan-out | 2–6 children |
-| Split weights | 128–255 |
-| Tree encoding version | 1 |
-| Split derivation version | 1 |
+---
 
-FCH-256 and FCH-512 use the same 512-bit state throughout the tree. They
-separate only at output finalization.
+## 2. Input Padding
 
-## 3. Input padding
+Given input message M of length L bytes:
 
-For a message `M` of `L` bytes:
+1. Append byte 0x80
+2. Append zero bytes
+3. Append 64-bit little-endian value of (L × 8)
+4. Ensure total length ≥ FCH_MIN_BLOCK_SIZE
 
-1. append `0x80`;
-2. append zero bytes;
-3. append `L × 8` as an unsigned 64-bit little-endian integer; and
-4. extend the result to at least 64 bytes.
+Inputs whose byte length cannot be represented safely by the 64-bit bit-length
+field are rejected by the checked API.
 
-The checked APIs reject lengths that cannot safely be represented by the
-64-bit bit-length field or by the host `size_t` calculations. The largest
-format-level input is `2^61 - 1` bytes, although a platform may impose a lower
-limit.
+---
 
-## 4. Recursive processing
+## 3. Fractal Processing
 
-Processing starts at depth 0 with an eight-word state width.
+Processing starts at depth = 0.
+Negative depths and internal states other than eight words are not valid tree
+representations and are rejected.
 
-- A node is a leaf when its length is at most 64 bytes or its depth is 16.
-- Every other node is split into two through six contiguous children.
-- Children are processed recursively from left to right.
-- Their 512-bit states are recompressed into the parent state.
+At each node:
 
-Negative depths, unsupported state widths, gaps, overlaps, empty internal
-children, and out-of-range offsets are invalid.
+- If depth ≥ MAX_DEPTH or length ≤ MIN_BLOCK_SIZE:
+  → Leaf compression
+- Else:
+  → Variable n-way split and recursive processing
 
-## 5. Split derivation
+---
 
-Each internal node derives 512 bits of split material from its complete input.
-The derivation uses the normal ARX core in the dedicated `FCHSPLT1` domain.
+## 4. Variable n-Way Split
 
-### 5.1 Header
+- n ∈ [2, 6]
+- A 64-bit split seed incorporates node length, depth, and every input byte
+- n and each split weight are derived from the mixed seed
+- Blocks cover the entire input without overlap
+- Child blocks in an internal node are non-empty and contiguous from offset 0
 
-The first compression input is a 128-byte `FCHSPH01` record. Fixed-width
-little-endian fields bind:
+---
 
-- split derivation version;
-- node length and depth;
-- state width;
-- minimum and maximum fan-out;
-- split-weight range;
-- leaf threshold and maximum depth;
-- compression block size and round count; and
-- tree encoding version.
+## 5. Leaf Compression
 
-### 5.2 Input records
+FCH-256 and FCH-512 both use a 512-bit internal tree state consisting of
+eight 64-bit words. A leaf initializes this state with separate domains for
+root leaves and internal leaves.
 
-The complete node input is absorbed in `FCHSPD01` records. Each record contains
-the eight-byte tag followed by at most 120 bytes from the node. The block-length
-tweak carries the actual record length, the counter carries the cumulative
-input length, and the last record carries the final flag.
+The leaf first compresses a 128-byte header containing the `FCHLEAF1` type
+tag and encoding version 1. Fixed 64-bit little-endian fields bind the domain,
+leaf length, depth, state width, minimum block size, maximum depth, fan-out
+range, compression block size, and round count. Unused fields are zero.
 
-### 5.3 Output draw
+Each leaf-data record starts with the eight-byte `FCHLDAT1` tag followed by up
+to 120 original input bytes. The unused tail of the last record is zero. The
+actual record length and cumulative original-byte count are injected through
+the block-length tweak and counter. An empty leaf still processes one final
+tag-only data record. The last data record carries the final flag.
 
-A fixed 128-byte `FCHSPO01` record binds the configuration, number of input
-records, node length, depth, and draw counter.
+### 5.1 Canonical Record Rules
 
-Let:
+- Every type tag is exactly eight ASCII bytes.
+- Every numeric field is an unsigned 64-bit little-endian value.
+- The encoding version is 1. A format change also changes the version and
+  fixed test vectors.
+- Leaf headers, node headers, child records, and output headers are 128 bytes.
+- Record types use distinct tags, compression flags, and domains.
+- Negative depths, fewer than two or more than six children, empty children,
+  gaps, overlaps, and out-of-range partitions are rejected.
 
-```text
-r = N_MAX - N_MIN + 1
-t = 2^64 mod r
-```
+### 5.2 ARX Compression Core
 
-`material[0]` is accepted only when it is at least `t`. Otherwise another
-output draw is compressed with an incremented draw counter. The child count is:
+Each compression uses a 16-word working state. Its first eight 64-bit words
+are initialized from the chaining state and its last eight words from a fixed
+IV. The counter, actual block length, state width, domain, and flags are XORed
+into the working state before 12 rounds. Each round applies four column G
+functions followed by four diagonal G functions so every working word mixes.
 
-```text
-n = N_MIN + (material[0] mod r)
-```
+G uses only 64-bit modular addition, XOR, and right rotation:
 
-Internal nodes shorter than `2 × MIN_BLOCK_SIZE` use `N_MIN`. This keeps the
-short transition canonical. Rejection sampling removes modulo bias.
+1. `a = a + b + x`, `d = ROTR64(d XOR a, 32)`
+2. `c = c + d`, `b = ROTR64(b XOR c, 24)`
+3. `a = a + b + y`, `d = ROTR64(d XOR a, 16)`
+4. `c = c + d`, `b = ROTR64(b XOR c, 63)`
 
-Each child weight is derived as:
+After 12 rounds, each chaining word is updated as
+`h[i] XOR work[i] XOR work[i + 8]`.
+The G structure and rotation distances follow the 64-bit ARX structure used
+by BLAKE2b, but FCH has its own initialization, tweak layout, message mode,
+and tree construction. FCH therefore does not inherit BLAKE2b's security
+claims.
 
-```text
-weight[i] = 128 + (material[i + 1] AND 0x7f)
-```
+---
 
-The resulting weights lie between 128 and 255. Child lengths are proportional
-to those weights, then corrected so every child is non-empty, contiguous, and
-the children cover the parent exactly. Any rounding remainder is assigned to
-the final child.
+## 6. Tree Combine & Recompression
 
-The partition function is public. Searching messages for a chosen fan-out is
-therefore possible; the purpose of this derivation is to make every byte of the
-parent participate in the split and to avoid cheap local control of the former
-64-bit accumulator.
+Internal nodes:
 
-## 6. Record encoding and compression
+- use separate domains for the root node and other internal nodes
+- first compress a version-1 node header tagged `FCHNODE1`
+- serialize each child as the following 128-byte `FCHCHLD1` record
+- feed child blocks to the 12-round ARX core in order
+- set the final flag on the last child block
+- retain the full 512-bit state after combination
 
-### 6.1 Canonical records
-
-- Type tags are exactly eight ASCII bytes.
-- Numeric fields are unsigned 64-bit little-endian values.
-- Fixed records are 128 bytes and unused bytes are zero.
-- Tagged data records are 8–128 bytes and use their actual length.
-- Each record type has a distinct tag and compression flag.
-- Root and non-root leaf or node contexts use distinct domains.
-- Format changes require a new encoding version.
-
-The principal tags are:
-
-| Tag | Record |
-| --- | ------ |
-| `FCHLEAF1` | Leaf header |
-| `FCHLDAT1` | Leaf data |
-| `FCHNODE1` | Internal-node header |
-| `FCHCHLD1` | Child state |
-| `FCHOUT01` | Output finalization |
-| `FCHSPH01` | Split header |
-| `FCHSPD01` | Split data |
-| `FCHSPO01` | Split output draw |
-
-### 6.2 ARX core
-
-Compression uses a 16-word working state. Words 0–7 are initialized from the
-current chaining state and words 8–15 from the fixed IV. Before the rounds,
-the counter, actual record length and state width, domain, and flags are placed
-in dedicated tweak positions.
-
-Each round applies four column G functions followed by four diagonal G
-functions. G operates on 64-bit words with modular addition, XOR, and right
-rotation:
-
-1. `a = a + b + x`; `d = ROTR64(d XOR a, 32)`
-2. `c = c + d`; `b = ROTR64(b XOR c, 24)`
-3. `a = a + b + y`; `d = ROTR64(d XOR a, 16)`
-4. `c = c + d`; `b = ROTR64(b XOR c, 63)`
-
-The message schedule contains ten fixed permutations. Rounds 0–9 use them in
-order; rounds 10–15 repeat permutations 0–5. After the final round, every
-chaining word is updated as:
-
-```text
-h[i] = h[i] XOR work[i] XOR work[i + 8]
-```
-
-The G function, IV, rotation distances, and message permutations are taken
-from BLAKE2b components. FCH defines different initialization, tweak placement,
-record handling, domains, round count, and tree mode.
-
-### 6.3 Leaf compression
-
-A leaf initializes its 512-bit state in either the root-leaf or internal-leaf
-domain. It first compresses a 128-byte `FCHLEAF1` header that binds the encoding
-version, domain, leaf length, depth, state width, tree limits, core parameters,
-and split parameters.
-
-Leaf bytes are then absorbed in `FCHLDAT1` records. Each record holds up to 120
-message bytes after its tag. The counter records cumulative message bytes, the
-block-length tweak records the actual tagged length, and the last record uses
-the final flag. An empty leaf still processes one tag-only final record.
-
-## 7. Tree combination
-
-An internal node initializes a fresh 512-bit state in the root-node or
-internal-node domain. It first compresses a `FCHNODE1` header that binds the
-parent length, depth, child count, state width, and current tree parameters.
-
-Each child is then encoded as one 128-byte `FCHCHLD1` record:
-
-| Word | Field |
-| ---- | ----- |
+| 64-bit word | Child-record field |
+| ----------- | ------------------ |
 | 0 | `FCHCHLD1` |
 | 1 | Encoding version |
-| 2 | Parent length |
+| 2 | Parent node length |
 | 3 | Parent depth |
-| 4 | Child count |
+| 4 | Total child count |
 | 5 | Child index |
-| 6 | Child offset |
+| 6 | Child offset within the parent |
 | 7 | Child length |
 | 8–15 | 512-bit child state |
 
-Child records are compressed in index order. The last record carries the final
-flag. The combined node retains all eight state words.
+---
 
-## 8. Output
+## 7. Output
 
-The root state is compressed once more with a fixed `FCHOUT01` record. The
-record binds the encoding version, requested output width, internal-state
-width, block size, and round count.
+- Compress the root state once more with a fixed header tagged `FCHOUT01`
+  containing the encoding version, output width, internal-state width, block
+  size, and round count
+- Use different output domains for FCH-256 and FCH-512
+- FCH-256 serializes the first four words of the final 512-bit state as
+  little-endian bytes
+- FCH-512 serializes all eight final state words as little-endian bytes
+- Result sizes are 32 bytes for FCH-256 and 64 bytes for FCH-512
 
-- FCH-256 uses its own output domain and serializes the first four final state
-  words as 32 little-endian bytes.
-- FCH-512 uses a different output domain and serializes all eight final state
-  words as 64 little-endian bytes.
+Allocation or validation failure does not produce an alternative tree. The
+checked API reports failure and clears the output buffer.
 
-Validation or allocation failure returns an error through the checked API and
-clears the output buffer.
+---
 
-## 9. Streaming
+## 8. Streaming Processing
 
-Update calls append input to anonymous temporary storage. Finalization exposes
-the stored bytes and virtual padding through a random-access reader, then runs
-the same split, leaf, combination, and output steps as the one-shot API.
+- Update calls write input bytes to anonymous temporary storage
+- Finalization exposes the stored input and virtual padding through a
+  random-access reader
+- The reader follows the same split, leaf, and combine rules as one-shot input
+- RAM usage is bounded by fixed-size I/O buffers and recursive states
+- Finalization closes the temporary storage
+- Updates after finalization and repeated finalization fail
 
-RAM use is bounded by fixed-size I/O buffers and recursive states. Temporary
-storage grows with the message, and the content-derived tree may reread data at
-several levels. Finalization closes the storage. An active context may not be
-copied or accessed concurrently, and updates or repeated finalization after a
-final call fail.
-
-## 10. Analysis and implementation status
-
-### 10.1 Automated analysis
-
-The current suite includes:
-
-| Area | Current coverage |
-| ---- | ---------------- |
-| Core diffusion | Single-bit and length changes; reduced-round comparisons |
-| Differential and linear behavior | Bounded chosen differences, output-bit bias, low-weight outputs, and linear correlation |
-| Cycles and collisions | Fixed points, two-cycles, exact collisions, and near collisions in bounded samples |
-| Multicollisions | 4,096 leaf states and 4,096 derived node states, including 20-bit prefix-bucket distribution |
-| Second preimages | 512 related candidates for a 16 KiB target |
-| Tree contexts | Binary, flat, skewed, reordered, boundary-shifted, grafted, and depth-shifted combinations |
-| Long messages | Fifteen 256 KiB variants covering extension, truncation, reordering, copying, rotation, boundary edits, and low-entropy inputs |
-
-The small prefix width in the multicollision test is chosen so ordinary
-birthday matches appear during CI; the test looks for abnormal concentration
-and exact 512-bit equality. These searches are regression tools and define a
-reproducible starting point for deeper cryptanalysis.
-
-### 10.2 Resource behavior
-
-Split derivation reads the complete input of every visited node. For a message
-of length `L` and realized depth `d`, input-reading work is `O(L × d)`, with
-`d ≤ 16`. One-shot hashing also allocates `O(L)` padding storage. Streaming
-uses `O(L)` temporary storage while keeping application RAM bounded.
-
-### 10.3 Reference implementation checks
-
-The checked APIs validate pointers and lengths before reading input. Reader and
-allocation failures propagate to the caller without returning a partial state.
-Failed streaming contexts remain failed, finalization closes their storage,
-and repeated finalization clears the destination before returning failure.
-
-The shared deterministic/libFuzzer harness compares one-shot and streaming
-results, validates split coverage, and exercises lifecycle and cleanup paths.
-An 8 MiB message is processed with two chunk layouts. CI builds on x86-64
-Linux, macOS, and Windows; Linux jobs also use AddressSanitizer and
-UndefinedBehaviorSanitizer.
-
-## 11. Design rationale
-
-### 11.1 Widths
-
-The 64-bit word size matches the selected ARX G function and maps directly to
-portable `uint64_t` operations. A 512-bit internal state keeps the generic
-birthday scale at `2^256`, matching the collision target of FCH-512. Keeping
-the same state width for FCH-256 avoids a narrower path inside the tree.
-
-The 128-byte compression input provides sixteen message words. Every round
-uses all sixteen once across eight G calls. Output-domain separation ensures
-that the 256-bit result is not defined as the raw prefix of the 512-bit result.
-
-### 11.2 Rounds and constants
-
-FCH uses public BLAKE2b-derived components rather than a new set of unexplained
-constants. Sixteen rounds were selected as an engineering margin above the
-eight-round reduced analysis reference. Future attack results, rather than
-statistical scores alone, determine whether that count should change.
-
-Tags, domains, and flags overlap deliberately: tags make records readable,
-domains separate state initialization, and flags distinguish the role and end
-of a compression sequence. All are public constants and contain no secret
-material.
-
-### 11.3 Tree parameters
-
-The 64-byte leaf threshold keeps short padded messages in one leaf and limits
-recursion overhead. Fan-out 2 guarantees progress; fan-out 6 bounds temporary
-child state and node-width variation. Weights from 128 to 255 keep the nominal
-largest-to-smallest ratio below two. Maximum depth 16 bounds recursion and
-repeated reads; it is unrelated to the 16 compression rounds.
-
-The security case for the complete design depends on the core, canonical
-encoding, tree combination, content-derived topology, output finalization, and
-implementation all behaving as specified. Those are the main subjects of the
-ongoing analysis.
-
-### 11.4 References
-
-- [RFC 7693: The BLAKE2 Cryptographic Hash and Message Authentication Code](https://www.rfc-editor.org/rfc/rfc7693.html)
-- [NIST SP 800-185: SHA-3 Derived Functions](https://csrc.nist.gov/pubs/sp/800/185/final)
+Streaming therefore preserves the one-shot digest but requires temporary-file
+support and may perform more I/O.

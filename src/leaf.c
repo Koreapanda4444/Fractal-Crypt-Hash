@@ -43,9 +43,6 @@ int fch_leaf_compress_reader(
     fch_store_le64(buffer + 72u, FCH_N_MAX);
     fch_store_le64(buffer + 80u, FCH_MIX_BLOCK_SIZE);
     fch_store_le64(buffer + 88u, FCH_MIX_ROUNDS);
-    fch_store_le64(buffer + 96u, FCH_SPLIT_WEIGHT_MIN);
-    fch_store_le64(buffer + 104u, FCH_SPLIT_WEIGHT_MAX);
-    fch_store_le64(buffer + 112u, FCH_SPLIT_DERIVATION_VERSION);
 
     if (!fch_mix_compress(
             state,

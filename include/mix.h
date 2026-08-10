@@ -5,10 +5,7 @@
 #include <stdint.h>
 
 #define FCH_MIX_BLOCK_SIZE 128u
-#define FCH_MIX_ROUNDS 16u
-#define FCH_MIX_REDUCED_ROUND_REFERENCE 8u
-#define FCH_MIX_ROUND_MARGIN \
-    (FCH_MIX_ROUNDS - FCH_MIX_REDUCED_ROUND_REFERENCE)
+#define FCH_MIX_ROUNDS 12u
 
 #define FCH_TREE_ENCODING_VERSION UINT64_C(1)
 
@@ -22,25 +19,11 @@
 #define FCH_TREE_TAG_NODE_CHILD UINT64_C(0x31444C4843484346)
 #define FCH_TREE_TAG_OUTPUT UINT64_C(0x313054554F484346)
 
-#define FCH_SPLIT_DERIVATION_VERSION UINT64_C(1)
-
-/*
- * Stored little-endian, these constants spell:
- * FCHSPH01, FCHSPD01, FCHSPO01, and FCHSPLT1.
- */
-#define FCH_SPLIT_TAG_HEADER UINT64_C(0x3130485053484346)
-#define FCH_SPLIT_TAG_DATA UINT64_C(0x3130445053484346)
-#define FCH_SPLIT_TAG_OUTPUT UINT64_C(0x31304F5053484346)
-#define FCH_SPLIT_DOMAIN UINT64_C(0x31544C5053484346)
-
 #define FCH_MIX_FLAG_LEAF_HEADER UINT64_C(0x0000000000000001)
 #define FCH_MIX_FLAG_LEAF_DATA UINT64_C(0x0000000000000002)
 #define FCH_MIX_FLAG_NODE_HEADER UINT64_C(0x0000000000000004)
 #define FCH_MIX_FLAG_NODE_CHILD UINT64_C(0x0000000000000008)
 #define FCH_MIX_FLAG_OUTPUT UINT64_C(0x0000000000000010)
-#define FCH_MIX_FLAG_SPLIT_HEADER UINT64_C(0x0000000000000020)
-#define FCH_MIX_FLAG_SPLIT_DATA UINT64_C(0x0000000000000040)
-#define FCH_MIX_FLAG_SPLIT_OUTPUT UINT64_C(0x0000000000000080)
 #define FCH_MIX_FLAG_FINAL UINT64_C(0x8000000000000000)
 
 int fch_mix_init(
@@ -58,23 +41,6 @@ int fch_mix_compress(
     uint64_t domain,
     uint64_t flags
 );
-
-#ifdef FCH_ENABLE_REDUCED_ROUND_TESTS
-/*
- * Analysis-only entry point. Production hashing always uses
- * fch_mix_compress() with FCH_MIX_ROUNDS.
- */
-int fch_mix_compress_rounds(
-    uint64_t *state,
-    size_t state_words,
-    const uint8_t block[FCH_MIX_BLOCK_SIZE],
-    size_t block_length,
-    uint64_t counter,
-    uint64_t domain,
-    uint64_t flags,
-    unsigned int rounds
-);
-#endif
 
 int fch_mix_finalize_output(
     uint64_t *state,
