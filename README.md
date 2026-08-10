@@ -108,6 +108,25 @@ Hash a file or standard input:
 cat path/to/file | ./fch -256
 ```
 
+### Python reference
+
+`tools/fch_reference.py` is a direct, readable implementation of the
+specification using only the Python standard library. It is kept separate from
+the C sources so the two implementations can be compared independently.
+
+```sh
+python3 tools/fch_reference.py -256 path/to/file
+python3 tools/fch_reference.py -512 path/to/file
+```
+
+Build the C CLI and compare both implementations across deterministic boundary
+and recursive-tree cases:
+
+```sh
+cd build
+make check-reference
+```
+
 ## Tests
 
 The repository includes tests for:

@@ -1,4 +1,5 @@
 CC = gcc
+PYTHON ?= python3
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS = -I../include
 LDFLAGS =
@@ -67,6 +68,9 @@ test_hardening: ../tests/test_hardening.c $(SRC)
 check: test
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done
 
+check-reference: fch
+	$(PYTHON) ../tools/fch_reference.py --check-c ./fch
+
 test-extended: $(EXTENDED_TESTS)
 
 test_length_variation: ../tests/test_length_variation.c $(SRC)
@@ -104,4 +108,4 @@ fuzz-smoke: fuzz_hash
 clean:
 	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
 
-.PHONY: all test check test-extended check-extended bench fuzz-smoke clean
+.PHONY: all test check check-reference test-extended check-extended bench fuzz-smoke clean

@@ -12,10 +12,13 @@ jobs:
         include:
           - os: ubuntu-latest
             compiler: gcc
+            reference: true
           - os: ubuntu-latest
             compiler: clang
+            reference: false
           - os: macos-latest
             compiler: clang
+            reference: false
     env:
       CC: ${{ matrix.compiler }}
     steps:
@@ -27,6 +30,17 @@ jobs:
         run: |
           make clean
           make all bench check check-extended CC="$CC"
+
+      - name: Set up Python
+        if: matrix.reference
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Cross-check Python reference
+        if: matrix.reference
+        working-directory: build
+        run: make check-reference
 
   sanitizers:
     runs-on: ubuntu-latest

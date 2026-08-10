@@ -107,6 +107,25 @@ make all
 cat path/to/file | ./fch -256
 ```
 
+### Python 기준 구현
+
+`tools/fch_reference.py`는 Python 표준 라이브러리만으로 사양을 그대로 옮긴
+읽기 쉬운 기준 구현입니다. C 소스와 코드를 공유하지 않으므로 두 구현의
+결과를 독립적으로 비교할 수 있습니다.
+
+```sh
+python3 tools/fch_reference.py -256 path/to/file
+python3 tools/fch_reference.py -512 path/to/file
+```
+
+C CLI를 빌드하고 경계값 및 재귀 트리 입력에서 두 구현을 비교하려면 다음
+명령을 사용합니다.
+
+```sh
+cd build
+make check-reference
+```
+
 ## 테스트
 
 저장소에는 다음 검사가 포함되어 있습니다.
@@ -143,4 +162,3 @@ UndefinedBehaviorSanitizer도 포함됩니다.
 
 - [알고리즘 사양서](spec/fch_spec.ko.md)
 - [구현 노트](spec/implementation_notes.ko.md)
-
