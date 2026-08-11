@@ -7,6 +7,10 @@ a deterministic, public, non-keyed hash function developed for cryptographic
 research. The security levels in this document are design goals used to guide
 analysis. Independent public analysis of the construction is still in progress.
 
+Section 12 records the approved design for the next tree encoding. It is
+non-normative until the C and Python implementations move to that encoding;
+the preceding sections continue to define the current version-1 digest.
+
 The Korean version is available in [fch_spec.ko.md](fch_spec.ko.md).
 
 ## 1. Security model
@@ -360,3 +364,197 @@ ongoing analysis.
 
 - [RFC 7693: The BLAKE2 Cryptographic Hash and Message Authentication Code](https://www.rfc-editor.org/rfc/rfc7693.html)
 - [NIST SP 800-185: SHA-3 Derived Functions](https://csrc.nist.gov/pubs/sp/800/185/final)
+- [The BLAKE3 Hashing Framework](https://www.ietf.org/archive/id/draft-aumasson-blake3-00.html)
+- [Sakura: A Flexible Coding for Tree Hashing](https://eprint.iacr.org/2013/231)
+
+## 12. Approved next tree format
+
+This section freezes the next incompatible tree-format revision before its
+implementation. It does not change the digest produced by the current code.
+Tree encoding version 1, including content-derived splitting, remains
+authoritative until the implementation and reference model switch to version
+2 together.
+
+The revision keeps recursive tree hashing but removes message-dependent tree
+shape. The topology depends only on the padded length and leaf position. This
+makes the tree unique for each length, removes split selection from the
+security argument, and allows complete prefix subtrees to be retained while
+more input arrives.
+
+### 12.1 Fixed schedule parameters
+
+| Parameter | Version-2 value |
+| --------- | --------------- |
+| Tree encoding version | 2 |
+| Padding format version | 1 |
+| Leaf span | 1,024 bytes |
+| Internal-node arity | 2 |
+| Leaf level | 0 |
+| Split derivation | None |
+| Root distinction | Output-finalization record only |
+
+The input padding in section 3 remains unchanged. The padded byte string is
+called `P`, and its length is `P_len`. It is divided from offset zero into
+consecutive 1,024-byte leaves. Only the final leaf may be shorter, and it is
+never empty because `P_len` is at least 64.
+
+For leaf index `i`:
+
+```text
+byte_offset = i * 1024
+byte_length = min(1024, P_len - byte_offset)
+first_leaf  = i
+leaf_count  = 1
+level       = 0
+```
+
+All structural integers are unsigned 64-bit little-endian values. Checked APIs
+reject a message if any byte offset, leaf count, or encoded length cannot be
+represented without overflow.
+
+### 12.2 Canonical binary tree
+
+Let `Tree(a, n)` denote the tree over `n` consecutive leaves beginning with
+leaf `a`.
+
+```text
+Tree(a, 1) = Leaf(a)
+
+Tree(a, n) for n > 1:
+    k = largest power of two strictly less than n
+    left  = Tree(a, k)
+    right = Tree(a + k, n - k)
+    return Node(left, right)
+```
+
+This is a left-complete binary tree. Every internal node has exactly two
+children. The left child precedes the right child, their byte ranges and leaf
+ranges are adjacent, and their union is exactly the parent range.
+
+Each node carries this descriptor:
+
+```text
+level       = 1 + max(left.level, right.level)
+first_leaf  = left.first_leaf
+leaf_count  = left.leaf_count + right.leaf_count
+byte_offset = left.byte_offset
+byte_length = left.byte_length + right.byte_length
+```
+
+The right child must start at both `left.first_leaf + left.leaf_count` and
+`left.byte_offset + left.byte_length`. A decoder or implementation rejects any
+node that violates these relationships.
+
+### 12.3 Version-2 records
+
+Version 2 uses new eight-byte tags so version-1 and version-2 records cannot be
+confused. Unlisted words in a fixed record are zero.
+
+| Role | Eight-byte label |
+| ---- | ---------------- |
+| Leaf header | `FCHLEAF2` |
+| Leaf data | `FCHLDAT2` |
+| Node header | `FCHNODE2` |
+| Node child | `FCHCHLD2` |
+| Output finalization | `FCHOUT02` |
+| Leaf domain | `FCHLDM02` |
+| Node domain | `FCHNDM02` |
+| FCH-256 output domain | `FCHO2562` |
+| FCH-512 output domain | `FCHO5122` |
+
+Labels are interpreted as eight ASCII bytes and loaded little-endian into the
+64-bit tag or domain field. Split tags, split domains, and split flags are not
+used by version 2. The leaf-header, leaf-data, node-header, node-child, output,
+and final flags keep their current bit values.
+
+The leaf header `FCHLEAF2` stores, in order: the tag, encoding version, leaf
+domain, leaf index, byte offset, byte length, 1,024-byte leaf span, internal
+state width in words, compression-block size in bytes, round count,
+padding-format version, and binary arity. Leaf data uses `FCHLDAT2`; its counter
+remains the cumulative number of bytes absorbed within that leaf.
+
+The leaf header is compressed as a full 128-byte record with counter zero and
+the leaf-header flag. Each data record contains its tag followed by at most 120
+leaf bytes. Its block-length tweak is the tag-plus-payload length. The final
+data record carries the final flag.
+
+The internal-node header `FCHNODE2` stores: the tag, encoding version, node
+domain, level, first leaf, leaf count, byte offset, byte length, child count,
+leaf span, internal state width in words, compression-block size in bytes, and
+round count.
+
+Each `FCHCHLD2` child record uses words 0 through 7 for:
+
+| Word | Field |
+| ---- | ----- |
+| 0 | `FCHCHLD2` |
+| 1 | Encoding version |
+| 2 | Child index, 0 or 1 |
+| 3 | Child level |
+| 4 | Child first-leaf index |
+| 5 | Child leaf count |
+| 6 | Child byte offset |
+| 7 | Child byte length |
+| 8–15 | Complete 512-bit child state |
+
+The node header commits to the parent descriptor before the two child records
+are absorbed. It uses counter zero. Child records use counters one and two in
+index order, and the second child record carries the final flag. All three are
+full 128-byte records with their corresponding role flags.
+
+Leaves use one domain regardless of whether the message has one leaf. Internal
+nodes likewise use one domain regardless of whether a node later becomes the
+root. Root status is applied only after the complete tree is known. This rule
+is required so a completed leaf or subtree never changes when a suffix is
+appended.
+
+The final `FCHOUT02` record stores: the tag, encoding version, requested output
+width in bits, internal state width in bits, compression-block size in bytes,
+round count, original message length in bytes, padded length in bytes, total
+leaf count, root level, root first-leaf index, root leaf count, root byte
+offset, root byte length, leaf span, and padding-format version. FCH-256 and
+FCH-512 continue to use separate output domains.
+
+Output finalization compresses this full record with the requested output
+length in bytes as its counter and with both the output and final flags.
+
+### 12.4 Incremental evaluation
+
+An implementation may evaluate the canonical tree without storing the whole
+message:
+
+1. hash each completed 1,024-byte leaf and push its descriptor and state;
+2. while the top two stack entries cover adjacent equal-size power-of-two leaf
+   ranges, combine them;
+3. at finalization, append the unchanged padding to the remaining partial leaf,
+   creating another leaf when padding crosses a leaf boundary; and
+4. combine the remaining stack entries from right to left.
+
+The final right fold is:
+
+```text
+root = rightmost stack entry
+while another entry remains:
+    root = Node(rightmost remaining entry, root)
+```
+
+This procedure produces exactly `Tree(0, leaf_count)`. At most one completed
+power-of-two subtree of each size remains on the stack, so tree state grows as
+`O(log leaf_count)`. Finalization still performs output-domain separation and
+commits to the original and padded lengths.
+
+### 12.5 Security and compatibility consequences
+
+The new schedule is deliberately digest-incompatible with version 1. The C
+implementation, Python reference, expected outputs, encoding tests, and the
+normative parts of this specification must change in one implementation step;
+mixed-version hashing is invalid.
+
+The schedule does not claim that a binary tree is secure by itself. Its purpose
+is to make the structural argument explicit: message values cannot select a
+topology, leaf and node inputs have disjoint encodings, positions and lengths
+are committed, and the root commits to the complete message range. The
+1,024-byte chunk size follows a well-studied engineering pattern used by
+BLAKE3, while the explicit record separation follows the same general goal as
+Sakura coding. FCH remains a separate construction and does not inherit either
+design's security analysis.

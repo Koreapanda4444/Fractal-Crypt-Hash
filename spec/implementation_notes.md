@@ -65,6 +65,33 @@ This replaced the earlier 64-bit accumulator, whose local influence was easier
 to steer. The current split remains public and deterministic; its purpose is
 full-input structural binding, not secrecy.
 
+## Frozen next tree format
+
+The next incompatible tree format is defined in section 12 of the
+specification. It uses fixed 1,024-byte leaves and a left-complete binary tree.
+Leaf and node descriptors bind their absolute byte range, leaf range, and
+level. Message bytes do not select fan-out, weights, or boundaries.
+
+This document-only decision does not alter the current implementation. Version
+1 remains active until the following pieces move to version 2 together:
+
+- the C one-shot and streaming paths;
+- the Python reference;
+- record tags, domains, and structural validation;
+- expected digests and tree-encoding tests; and
+- the normative parameter and processing sections of the specification.
+
+No partial compatibility mode will be added. A version-2 implementation must
+not emit a version-1 digest after encountering an unsupported layout or an
+allocation failure.
+
+The implementation will keep a stack of completed power-of-two subtrees.
+Ordinary updates can finalize full leaves without knowing the eventual message
+length. Finalization handles the partial leaf and padding, folds the remaining
+stack from right to left, then commits the complete range in `FCHOUT02`. This
+removes the need to reread earlier leaves and is the basis for replacing the
+temporary-file streaming path later.
+
 ## Analysis hooks and tests
 
 Reduced-round compression is compiled only for analysis targets. Debug hooks
@@ -84,4 +111,3 @@ buffering, seeking, or scheduling must preserve fixed outputs and one-shot/
 streaming equivalence. Changes to domains, tags, field layouts, round count,
 fan-out, weights, or depth limits are algorithm changes and must be treated as
 such.
-
