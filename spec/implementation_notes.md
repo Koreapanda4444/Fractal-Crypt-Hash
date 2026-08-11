@@ -1,54 +1,87 @@
 # Implementation Notes
 
-## Portability and error handling
+This file records decisions specific to the C reference implementation. The
+algorithm itself is defined in [fch_spec.md](fch_spec.md).
 
-- Rotation counts are defined modulo 64
-- Padding and digest serialization use explicit little-endian conversion
-- Recursive allocation failures propagate to the caller
-- Split arithmetic avoids size multiplication overflow
-- Checked one-shot and streaming-final APIs report failures
-- Reader-based recursion keeps one-shot and streaming digests identical
-- Streaming input uses anonymous temporary storage and fixed-size RAM buffers
-- Structural fields use fixed-position 64-bit little-endian encoding
-- Negative depths and non-canonical child ranges or layouts are rejected
+## Structure
 
-## Design Philosophy
+FCH builds diffusion in two layers. The 16-round ARX core mixes data inside
+each compression call, and the recursive tree carries those changes across
+leaves and parent nodes. The tree is an additional structure around the core;
+it does not replace local mixing.
 
-FCH builds diffusion along two axes:
+Both output variants use the same eight-word internal state. Leaves, internal
+nodes, split derivation, and output finalization use separate domains and
+record types. Child records include their order, offset, length, parent
+metadata, and complete 512-bit state.
 
-- time: a fixed 12-round ARX compression core
+## Portability
 
-- space: the recursive fractal tree structure
+The implementation avoids native byte-order assumptions:
 
-The recursive structure does not replace sufficient local mixing. Every leaf
-block and child state passes through the 12-round core, and the tree adds
-global diffusion while binding order and structure.
+- state words use `uint64_t`;
+- modular addition follows unsigned C arithmetic;
+- rotation counts are reduced modulo 64;
+- padding, metadata, and digests use explicit little-endian loads and stores;
+- structural values are encoded in fixed 64-bit fields; and
+- split calculations check for overflow before multiplying or adding sizes.
 
----
+Current CI covers x86-64 Linux, macOS, and Windows. A future portability pass
+will add direct 32-bit and big-endian execution rather than relying only on
+serialization tests.
 
-## Rationale
+## Error handling
 
-- Variable n-way splitting prevents uniform structural assumptions
-- Whole-input split seeds bind structure to all bytes in a node
-- Node, child, and leaf metadata provide explicit domain separation
-- Order-dependent combine retains child position and length information
-- Versioned unique tags and fixed-width records make structural boundaries explicit
-- A fixed-rotation ARX core gives a clearer analysis target than the previous
-  position-dependent S-box mixing
-- The 512-bit internal state gives FCH-256 a wider internal path than its output
-- Recompression prevents linear state growth
+The checked one-shot and streaming APIs return an explicit success value.
+Invalid pointers, unsupported lengths, allocation failures, reader errors, and
+non-canonical tree layouts propagate to the caller. A failed hash does not fall
+back to a different tree or return a partial state.
 
----
+On failure, public output buffers are cleared. A failed streaming context
+remains failed until it is freed, and repeated finalization fails after clearing
+the destination. Streaming contexts have single-owner semantics and must not be
+copied or used concurrently while active.
 
-## Reference Implementation Scope
+## Streaming path
 
-This implementation prioritizes:
+Update calls append bytes to an anonymous temporary file. Finalization exposes
+that file through the same random-access reader used by tree processing and
+synthesizes padding without placing the complete padded message in RAM.
 
-- clarity
-- determinism
-- structural transparency
-- a fixed, analyzable core
+This keeps application memory bounded, but it is not a one-pass online tree
+hash. Split derivation reads the complete contents of each visited node, so a
+message can be read again at several tree levels. Temporary storage grows with
+the message, and disk I/O is part of the streaming cost.
 
-Performance optimization follows design correctness and security analysis.
+## Split implementation
 
-No cryptographic security claims are made for this design or implementation.
+Split material is derived from the complete node input in a dedicated domain.
+The fan-out draw uses rejection sampling, and the remaining state words provide
+weights from 128 through 255. After proportional allocation, the implementation
+corrects child lengths so they are positive, contiguous, non-overlapping, and
+cover the parent exactly.
+
+This replaced the earlier 64-bit accumulator, whose local influence was easier
+to steer. The current split remains public and deterministic; its purpose is
+full-input structural binding, not secrecy.
+
+## Analysis hooks and tests
+
+Reduced-round compression is compiled only for analysis targets. Debug hooks
+use an explicit external-hook switch instead of compiler-specific weak symbols.
+Normal builds always use all 16 rounds.
+
+The test suite covers deterministic outputs, boundaries, tree invariants,
+domain separation, split sensitivity, reduced-round diffusion, bounded
+cryptanalytic searches, tree-attack patterns, API misuse, reader failures, and
+one-shot/streaming equivalence. Sanitizer and libFuzzer smoke jobs exercise the
+same implementation paths used by the regular tests.
+
+## Optimization policy
+
+Digest compatibility takes priority over optimization. Changes to allocation,
+buffering, seeking, or scheduling must preserve fixed outputs and one-shot/
+streaming equivalence. Changes to domains, tags, field layouts, round count,
+fan-out, weights, or depth limits are algorithm changes and must be treated as
+such.
+

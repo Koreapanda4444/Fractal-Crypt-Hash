@@ -51,6 +51,9 @@ fch_state_t fch_combine(
     fch_store_le64(input + 80u, FCH_N_MAX);
     fch_store_le64(input + 88u, FCH_MIX_BLOCK_SIZE);
     fch_store_le64(input + 96u, FCH_MIX_ROUNDS);
+    fch_store_le64(input + 104u, FCH_SPLIT_WEIGHT_MIN);
+    fch_store_le64(input + 112u, FCH_SPLIT_WEIGHT_MAX);
+    fch_store_le64(input + 120u, FCH_SPLIT_DERIVATION_VERSION);
 
     if (!fch_mix_compress(
             out.state,

@@ -1,4 +1,5 @@
 CC = gcc
+PYTHON ?= python3
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS = -I../include
 LDFLAGS =
@@ -18,9 +19,13 @@ OBJ = $(SRC:.c=.o)
 TESTS = test_consistency \
         test_boundaries \
         test_invariants \
+        test_tree_encoding \
         test_portability \
         test_vectors \
-        test_avalanche
+        test_avalanche \
+        test_cryptanalysis \
+        test_tree_attacks \
+        test_hardening
 
 EXTENDED_TESTS = test_length_variation \
                  test_depth_diffusion \
@@ -43,6 +48,9 @@ test_boundaries: ../tests/test_boundaries.c $(SRC)
 test_invariants: ../tests/test_invariants.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
+test_tree_encoding: ../tests/test_tree_encoding.c ../src/leaf.c ../src/combine.c ../src/bitops.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
 test_portability: ../tests/test_portability.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
@@ -50,10 +58,22 @@ test_vectors: ../tests/test_vectors.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_avalanche: ../tests/test_avalanche.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_cryptanalysis: ../tests/test_cryptanalysis.c $(SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_tree_attacks: ../tests/test_tree_attacks.c $(SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_hardening: ../tests/test_hardening.c $(SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_FUZZ_STANDALONE -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 check: test
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done
+
+check-reference: fch
+	$(PYTHON) ../tools/fch_reference.py --check-c ./fch
 
 test-extended: $(EXTENDED_TESTS)
 
@@ -61,7 +81,7 @@ test_length_variation: ../tests/test_length_variation.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_depth_diffusion: ../tests/test_depth_diffusion.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_stress: ../tests/test_stress.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
@@ -80,7 +100,16 @@ bench: bench_hash
 bench_hash: ../bench/bench_hash.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
 
-clean:
-	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash test_vectors_ubsan test_vectors_san
+fuzz_hash: ../tests/test_hardening.c $(SRC)
+	clang $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
+		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+		-o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-.PHONY: all test check test-extended check-extended bench clean
+fuzz-smoke: fuzz_hash
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+		./fuzz_hash -runs=512 -max_len=8192 -seed=164981
+
+clean:
+	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
+
+.PHONY: all test check check-reference test-extended check-extended bench fuzz-smoke clean

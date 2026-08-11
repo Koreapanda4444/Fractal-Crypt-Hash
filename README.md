@@ -1,89 +1,65 @@
 # Fractal Crypt-Hash (FCH)
 
-Fractal Crypt-Hash (FCH) is an experimental hash design intended to become
-a cryptographic hash candidate. It combines a **12-round ARX compression
-core** with a **fractal (self-similar) recursive structure**.
+Fractal Crypt-Hash (FCH) is a cryptographic research hash function built from
+a 16-round ARX compression core and an input-dependent recursive tree. The
+compression core handles local mixing, while the tree carries changes through
+different regions of the message and combines them at the root.
 
----
+FCH is an open research project. Its security goals are defined below, and
+independent public analysis is still ongoing.
 
-## Security Notice (Read First)
+Korean documentation: [README.ko.md](README.ko.md)
 
-FCH is a **research / experimental** hash design and reference implementation.
-It has **not** undergone broad public cryptanalysis or independent security review.
+## Security goals
 
-Do **not** use FCH in production or for security-critical purposes, including (but not limited to):
+FCH is deterministic, public, and non-keyed. The current design targets the
+generic classical attack costs expected for each output size.
 
-- authentication, signatures, tokens, or MACs
-- password hashing / key derivation
-- integrity checks where adversaries exist
-- any scenario where a broken hash causes harm
+| Variant | Output | Collision | Preimage | Second preimage |
+| ------- | ------ | --------- | -------- | --------------- |
+| FCH-256 | 256 bits | 2^128 | 2^256 | 2^256 |
+| FCH-512 | 512 bits | 2^256 | 2^512 | 2^512 |
 
-This repository is intended for learning, experimentation, benchmarking, and discussion.
+These figures are design targets. The specification describes what still has
+to be analyzed before those targets can be treated as established properties.
 
----
+## Design
 
-## Security Targets
+FCH processes a message as a recursive tree:
 
-FCH is intended to be a public, deterministic, non-keyed hash function with
-the following resistance targets against classical generic attacks.
+1. Pad the message and start at the root.
+2. Derive a variable split from the complete input of the current node.
+3. Process each child recursively until it becomes a leaf.
+4. Compress the child states in order, together with their positions and
+   lengths.
+5. Finalize the root in a domain dedicated to FCH-256 or FCH-512.
 
-| Variant | Collision Resistance | Preimage Resistance | Second-Preimage Resistance |
-| ------- | -------------------- | ------------------- | -------------------------- |
-| FCH-256 | 2^128 | 2^256 | 2^256 |
-| FCH-512 | 2^256 | 2^512 | 2^512 |
+The two variants share a 512-bit internal state. FCH-256 uses a separate
+output-finalization domain and is not simply a truncated FCH-512 digest.
 
-These values are **design targets**, not claims that the current implementation
-achieves them and not security guarantees. FCH is currently an **unvalidated
-cryptographic hash candidate**. Passing statistical diffusion and avalanche
-tests does not establish collision, preimage, or second-preimage resistance.
+### Main parameters
 
-Stronger security wording requires a stable specification, analysis of the
-full and reduced designs, a documented security margin, no known attacks below
-the targets, and meaningful independent public review. The detailed targets
-and evaluation criteria are defined in `spec/fch_spec.md`.
+| Parameter | Value |
+| --------- | ----- |
+| Word size | 64 bits |
+| Internal state | 512 bits (8 words) |
+| Compression input | 128 bytes (16 words) |
+| Full rounds | 16 |
+| Reduced-round analysis reference | 8 rounds |
+| Fan-out | 2–6 children |
+| Split weights | 128–255 |
+| Leaf threshold | 64 bytes |
+| Maximum tree depth | 16 |
 
----
+The ARX G function, IV, rotation distances, and message permutations are based
+on BLAKE2b components. FCH uses its own initialization, tweaks, record format,
+feed-forward context, round count, and tree construction.
 
-## Overview
-
-FCH combines local diffusion from a fixed-round compression core with
-structural diffusion from **recursive fractal decomposition**.
-
-A small change in the input propagates:
-
-- locally at leaf nodes,
-- recursively through variable n-way splits,
-- and globally at the root via recompression.
-
----
-
-## Features
-
-- Fractal recursive hash structure
-- 12-round 64-bit ARX compression core over 128-byte blocks
-- 512-bit internal tree state for both variants
-- Variable n-way (2–6) splitting derived from the entire node input
-- Order-dependent tree recombination
-- Separate root, internal-node, leaf, child, and output-variant domains
-- Canonical tree encoding with versioned type tags and fixed fields
-- ADD / ROTATE / XOR mixing with fixed rotation distances
-- Recompression for every leaf block and internal-node child
-- Deterministic, non-keyed hash function
-
----
-
-## Supported Variants
-
-| Variant | Output Size | Internal State |
-| ------ | ----------- | -------------- |
-| FCH-256 | 256 bits | 8 × uint64 |
-| FCH-512 | 512 bits | 8 × uint64 |
-
----
-
-## Usage
+## API
 
 ```c
+#include "fch.h"
+
 uint8_t out256[32];
 uint8_t out512[64];
 
@@ -91,16 +67,15 @@ int ok256 = fch_hash_256_checked(data, len, out256);
 int ok512 = fch_hash_512_checked(data, len, out512);
 ```
 
-The checked functions return `1` on success and `0` on invalid input,
-allocation failure, or an unsupported input length. The original `void`
-functions remain available as compatibility wrappers.
+The checked functions return `1` on success and `0` for invalid input,
+unsupported length, or allocation failure. Compatibility wrappers with the
+original `void` signatures are also available.
 
-### Bounded-memory streaming API
+### Streaming
 
-FCH provides a streaming API that writes incoming chunks to an anonymous
-temporary file. Finalization reads that data through fixed-size buffers, so RAM
-usage does not grow with the total input size. The digest is identical to the
-one-shot API. This mode requires temporary-file support and can be slower.
+The streaming API stores incoming chunks in an anonymous temporary file and
+reads them through fixed-size buffers during finalization. This keeps
+application RAM usage bounded and produces the same digest as the one-shot API.
 
 ```c
 #include "fch_stream.h"
@@ -113,76 +88,78 @@ int ok = fch256_final_checked(&ctx, out256);
 fch256_free(&ctx);
 ```
 
-After finalization, further updates and repeated finalization are rejected.
-The CLI uses the same bounded-memory path for files and standard input.
+An active context has a single owner. Updates after finalization and repeated
+finalization are rejected.
 
-### CLI
+## Command-line tool
 
-Build the CLI:
+Build the tool:
 
 ```sh
 cd build
 make all
 ```
 
-Hash a file:
+Hash a file or standard input:
 
 ```sh
 ./fch -256 path/to/file
 ./fch -512 path/to/file
-```
-
-Hash stdin:
-
-```sh
 cat path/to/file | ./fch -256
 ```
 
-## Testing
+### Python reference
 
-The implementation includes:
+`tools/fch_reference.py` is a direct, readable implementation of the
+specification using only the Python standard library. It is kept separate from
+the C sources so the two implementations can be compared independently.
 
-- Statistical avalanche tests (length/bit diffusion)
-- Determinism tests (same input → same output)
-- Boundary condition tests
-- Structural invariant tests (split coverage)
-- Portability and domain-separation tests
-- Split-configuration sensitivity tests
+```sh
+python3 tools/fch_reference.py -256 path/to/file
+python3 tools/fch_reference.py -512 path/to/file
+```
 
-The reference implementation includes extensive tests for
-determinism, boundary conditions, structural invariants,
-and statistical diffusion behavior.
+Build the C CLI and compare both implementations across deterministic boundary
+and recursive-tree cases:
 
-Test programs:
+```sh
+cd build
+make check-reference
+```
 
-- `tests/test_avalanche.c`
-- `tests/test_consistency.c`
-- `tests/test_boundaries.c`
-- `tests/test_invariants.c`
-- `tests/test_portability.c`
-- `tests/test_vectors.c`
-- `tests/test_split_sensitivity.c`
+## Tests
 
-Build/run:
+The repository includes tests for:
+
+- determinism, fixed outputs, boundaries, and invalid inputs
+- avalanche behavior and reduced-round diffusion
+- split coverage, balance, relocation, and configuration sensitivity
+- domain separation and portable little-endian serialization
+- bounded differential, linear, fixed-point, cycle, and near-collision searches
+- multicollision, second-preimage, grafting, and long-message tree patterns
+- one-shot and streaming equivalence, API lifecycle, and reader failures
+- sanitizer and libFuzzer smoke runs
+- bounded-memory processing of an 8 MiB input
+
+Run the regular and extended suites:
 
 ```sh
 cd build
 make check
+make check-extended
 ```
 
-The CI workflow runs the suite with GCC and Clang and also runs
-AddressSanitizer and UndefinedBehaviorSanitizer.
-
-If `make` is unavailable (Windows), you can compile directly with `gcc`:
+Run the bounded libFuzzer target with Clang:
 
 ```sh
-gcc -Wall -Wextra -O2 -Iinclude tests/test_consistency.c src/*.c -o build/test_consistency.exe
-gcc -Wall -Wextra -O2 -Iinclude tests/test_boundaries.c  src/*.c -o build/test_boundaries.exe
-gcc -Wall -Wextra -O2 -Iinclude tests/test_invariants.c  src/*.c -o build/test_invariants.exe
-gcc -Wall -Wextra -O2 -Iinclude tests/test_avalanche.c   src/*.c -o build/test_avalanche.exe
-gcc -Wall -Wextra -O2 -Iinclude tests/test_vectors.c     src/*.c -o build/test_vectors.exe
-
-gcc -Wall -Wextra -O2 -Iinclude tools/fch.c              src/*.c -o build/fch.exe
-
-build\\fch.exe -256 README.md
+make fuzz-smoke
 ```
+
+CI builds and tests the code with GCC and Clang on Linux, Clang on macOS, and
+UCRT64 GCC on Windows. Linux jobs also run AddressSanitizer and
+UndefinedBehaviorSanitizer.
+
+## Documentation
+
+- [Algorithm specification](spec/fch_spec.md)
+- [Implementation notes](spec/implementation_notes.md)

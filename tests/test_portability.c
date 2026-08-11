@@ -45,17 +45,29 @@ static int test_tree_encoding_tags(void) {
         FCH_TREE_TAG_LEAF_DATA,
         FCH_TREE_TAG_NODE_HEADER,
         FCH_TREE_TAG_NODE_CHILD,
-        FCH_TREE_TAG_OUTPUT
+        FCH_TREE_TAG_OUTPUT,
+        FCH_SPLIT_TAG_HEADER,
+        FCH_SPLIT_TAG_DATA,
+        FCH_SPLIT_TAG_OUTPUT,
+        FCH_SPLIT_DOMAIN
     };
     static const uint8_t expected[][8] = {
         { 'F', 'C', 'H', 'L', 'E', 'A', 'F', '1' },
         { 'F', 'C', 'H', 'L', 'D', 'A', 'T', '1' },
         { 'F', 'C', 'H', 'N', 'O', 'D', 'E', '1' },
         { 'F', 'C', 'H', 'C', 'H', 'L', 'D', '1' },
-        { 'F', 'C', 'H', 'O', 'U', 'T', '0', '1' }
+        { 'F', 'C', 'H', 'O', 'U', 'T', '0', '1' },
+        { 'F', 'C', 'H', 'S', 'P', 'H', '0', '1' },
+        { 'F', 'C', 'H', 'S', 'P', 'D', '0', '1' },
+        { 'F', 'C', 'H', 'S', 'P', 'O', '0', '1' },
+        { 'F', 'C', 'H', 'S', 'P', 'L', 'T', '1' }
     };
 
-    if (FCH_TREE_ENCODING_VERSION != UINT64_C(1))
+    if (FCH_TREE_ENCODING_VERSION != UINT64_C(1) ||
+        FCH_SPLIT_DERIVATION_VERSION != UINT64_C(1) ||
+        FCH_MIX_ROUNDS != 16u ||
+        FCH_MIX_REDUCED_ROUND_REFERENCE != 8u ||
+        FCH_MIX_ROUND_MARGIN != 8u)
         return 0;
 
     for (size_t i = 0; i < sizeof(tags) / sizeof(tags[0]); i++) {
@@ -213,7 +225,7 @@ int main(void) {
         return 1;
     }
     if (!test_tree_encoding_tags()) {
-        printf("FAIL: canonical tree encoding tags\n");
+        printf("FAIL: canonical tree and split encoding tags\n");
         return 1;
     }
     if (!fch_hash_256_checked((const uint8_t *)"abc", 3, output)) {

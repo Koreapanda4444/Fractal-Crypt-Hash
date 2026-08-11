@@ -12,9 +12,24 @@ enum {
     LINEAR_MASKS = 32,
     FIXED_POINT_SAMPLES = 4096,
     REDUCED_BASES = 4,
+    TRAIL_BASES = 8,
+    TRAIL_PATTERN_COUNT = 2,
+    TRAIL_ROUND_COUNT = 8,
     NEAR_COLLISION_SAMPLES = 2048,
     NEAR_COLLISION_MESSAGE_SIZE = 64
 };
+
+typedef struct {
+    uint64_t total_weight;
+    int minimum_weight;
+    int maximum_weight;
+    unsigned int minimum_active_words;
+    unsigned int zero_differences;
+    unsigned int best_base;
+    unsigned int best_pattern;
+    size_t best_bit_a;
+    size_t best_bit_b;
+} trail_stats_t;
 
 static uint64_t splitmix64_next(uint64_t *state) {
     uint64_t value;
@@ -379,6 +394,264 @@ static int reduced_round_search(void) {
     return reference_ok && full_ok;
 }
 
+static unsigned int active_difference_words(
+    const uint64_t a[8],
+    const uint64_t b[8]
+) {
+    unsigned int active = 0;
+
+    for (size_t word = 0; word < 8u; word++) {
+        if ((a[word] ^ b[word]) != 0u)
+            active++;
+    }
+    return active;
+}
+
+static size_t paired_trail_bit(size_t bit) {
+    const size_t bit_count = FCH_MIX_BLOCK_SIZE * 8u;
+    size_t paired = (bit * 73u + 19u) % bit_count;
+
+    if (paired == bit)
+        paired = (paired + 1u) % bit_count;
+    return paired;
+}
+
+static void apply_trail_difference(
+    uint8_t changed[FCH_MIX_BLOCK_SIZE],
+    const uint8_t base[FCH_MIX_BLOCK_SIZE],
+    unsigned int pattern,
+    size_t bit_a,
+    size_t bit_b
+) {
+    memcpy(changed, base, FCH_MIX_BLOCK_SIZE);
+    changed[bit_a / 8u] ^=
+        (uint8_t)(1u << (unsigned int)(bit_a % 8u));
+    if (pattern != 0u) {
+        changed[bit_b / 8u] ^=
+            (uint8_t)(1u << (unsigned int)(bit_b % 8u));
+    }
+}
+
+static int print_best_trail(
+    uint8_t bases[TRAIL_BASES][FCH_MIX_BLOCK_SIZE],
+    const trail_stats_t *best,
+    unsigned int target_round
+) {
+    uint8_t changed[FCH_MIX_BLOCK_SIZE];
+
+    apply_trail_difference(
+        changed,
+        bases[best->best_base],
+        best->best_pattern,
+        best->best_bit_a,
+        best->best_bit_b
+    );
+
+    printf(
+        "reduced_trail_best,target=%u,base=%u,pattern=%s,"
+        "bit_a=%u",
+        target_round,
+        best->best_base,
+        best->best_pattern == 0u ? "single" : "pair",
+        (unsigned int)best->best_bit_a
+    );
+    if (best->best_pattern != 0u)
+        printf(",bit_b=%u", (unsigned int)best->best_bit_b);
+
+    for (unsigned int rounds = 1u;
+         rounds <= TRAIL_ROUND_COUNT;
+         rounds++) {
+        uint64_t output_a[8];
+        uint64_t output_b[8];
+
+        if (!core_output(
+                bases[best->best_base],
+                best->best_base,
+                UINT64_C(0x545241494C303031),
+                FCH_MIX_FLAG_LEAF_DATA,
+                rounds,
+                output_a
+            ) ||
+            !core_output(
+                changed,
+                best->best_base,
+                UINT64_C(0x545241494C303031),
+                FCH_MIX_FLAG_LEAF_DATA,
+                rounds,
+                output_b
+            ))
+            return 0;
+
+        int weight = bit_diff(
+            (const uint8_t *)output_a,
+            (const uint8_t *)output_b,
+            sizeof(output_a)
+        );
+        printf(",r%u=%d", rounds, weight);
+    }
+    printf("\n");
+    return 1;
+}
+
+static int reduced_round_trail_search(void) {
+    uint8_t bases[TRAIL_BASES][FCH_MIX_BLOCK_SIZE];
+    uint64_t base_outputs[TRAIL_BASES][TRAIL_ROUND_COUNT][8];
+    trail_stats_t stats[TRAIL_ROUND_COUNT];
+    uint64_t stream = UINT64_C(0x7A4115EED5EED001);
+    const size_t bit_count = FCH_MIX_BLOCK_SIZE * 8u;
+    const uint64_t comparisons =
+        (uint64_t)TRAIL_BASES * TRAIL_PATTERN_COUNT * bit_count;
+    int all_ok = 1;
+
+    if (FCH_MIX_REDUCED_ROUND_REFERENCE != TRAIL_ROUND_COUNT)
+        return 0;
+
+    for (size_t round = 0; round < TRAIL_ROUND_COUNT; round++) {
+        stats[round].total_weight = 0;
+        stats[round].minimum_weight = 512;
+        stats[round].maximum_weight = 0;
+        stats[round].minimum_active_words = 8u;
+        stats[round].zero_differences = 0u;
+        stats[round].best_base = 0u;
+        stats[round].best_pattern = 0u;
+        stats[round].best_bit_a = 0u;
+        stats[round].best_bit_b = 0u;
+    }
+
+    for (unsigned int base_index = 0;
+         base_index < TRAIL_BASES;
+         base_index++) {
+        fill_bytes(bases[base_index], FCH_MIX_BLOCK_SIZE, &stream);
+        for (unsigned int rounds = 1u;
+             rounds <= TRAIL_ROUND_COUNT;
+             rounds++) {
+            if (!core_output(
+                    bases[base_index],
+                    base_index,
+                    UINT64_C(0x545241494C303031),
+                    FCH_MIX_FLAG_LEAF_DATA,
+                    rounds,
+                    base_outputs[base_index][rounds - 1u]
+                ))
+                return 0;
+        }
+    }
+
+    for (unsigned int base_index = 0;
+         base_index < TRAIL_BASES;
+         base_index++) {
+        for (unsigned int pattern = 0;
+             pattern < TRAIL_PATTERN_COUNT;
+             pattern++) {
+            for (size_t bit_a = 0; bit_a < bit_count; bit_a++) {
+                size_t bit_b = paired_trail_bit(bit_a);
+                uint8_t changed[FCH_MIX_BLOCK_SIZE];
+
+                apply_trail_difference(
+                    changed,
+                    bases[base_index],
+                    pattern,
+                    bit_a,
+                    bit_b
+                );
+
+                for (unsigned int rounds = 1u;
+                     rounds <= TRAIL_ROUND_COUNT;
+                     rounds++) {
+                    uint64_t changed_output[8];
+                    uint64_t *base_output =
+                        base_outputs[base_index][rounds - 1u];
+
+                    if (!core_output(
+                            changed,
+                            base_index,
+                            UINT64_C(0x545241494C303031),
+                            FCH_MIX_FLAG_LEAF_DATA,
+                            rounds,
+                            changed_output
+                        ))
+                        return 0;
+
+                    int weight = bit_diff(
+                        (const uint8_t *)base_output,
+                        (const uint8_t *)changed_output,
+                        sizeof(changed_output)
+                    );
+                    unsigned int active = active_difference_words(
+                        base_output,
+                        changed_output
+                    );
+                    trail_stats_t *round_stats = &stats[rounds - 1u];
+
+                    round_stats->total_weight += (uint64_t)weight;
+                    if (weight == 0)
+                        round_stats->zero_differences++;
+                    if (weight < round_stats->minimum_weight) {
+                        round_stats->minimum_weight = weight;
+                        round_stats->best_base = base_index;
+                        round_stats->best_pattern = pattern;
+                        round_stats->best_bit_a = bit_a;
+                        round_stats->best_bit_b = bit_b;
+                    }
+                    if (weight > round_stats->maximum_weight)
+                        round_stats->maximum_weight = weight;
+                    if (active < round_stats->minimum_active_words)
+                        round_stats->minimum_active_words = active;
+                }
+            }
+        }
+    }
+
+    printf(
+        "reduced_trail,rounds,candidates,avg,min,max,"
+        "min_active_words,zero_differences,status\n"
+    );
+    for (unsigned int rounds = 1u;
+         rounds <= TRAIL_ROUND_COUNT;
+         rounds++) {
+        const trail_stats_t *round_stats = &stats[rounds - 1u];
+        double average =
+            (double)round_stats->total_weight /
+            ((double)comparisons * 512.0) * 100.0;
+        int ok = round_stats->zero_differences == 0u;
+
+        if (rounds >= 2u) {
+            ok = ok &&
+                average >= 47.0 && average <= 53.0 &&
+                round_stats->minimum_weight >= 160 &&
+                round_stats->minimum_active_words == 8u;
+        }
+
+        printf(
+            "reduced_trail,%u,%llu,%.2f,%d,%d,%u,%u,%s\n",
+            rounds,
+            (unsigned long long)comparisons,
+            average,
+            round_stats->minimum_weight,
+            round_stats->maximum_weight,
+            round_stats->minimum_active_words,
+            round_stats->zero_differences,
+            ok ? (rounds == 1u ? "WEAK" : "PASS") : "FAIL"
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    if (stats[TRAIL_ROUND_COUNT - 1u].minimum_weight <
+        stats[0].minimum_weight + 128)
+        all_ok = 0;
+
+    if (!print_best_trail(bases, &stats[3], 4u) ||
+        !print_best_trail(
+            bases,
+            &stats[TRAIL_ROUND_COUNT - 1u],
+            TRAIL_ROUND_COUNT
+        ))
+        return 0;
+
+    return all_ok;
+}
+
 static int fixed_point_search(void) {
     static const unsigned int round_counts[] = {
         4u,
@@ -559,6 +832,8 @@ int main(void) {
     if (!linear_correlation_check())
         ok = 0;
     if (!reduced_round_search())
+        ok = 0;
+    if (!reduced_round_trail_search())
         ok = 0;
     if (!fixed_point_search())
         ok = 0;
