@@ -212,8 +212,8 @@ static int stream_final_checked(
     }
 
     size_t padded_length = checked_length + 9u;
-    if (padded_length < FCH_MIN_BLOCK_SIZE)
-        padded_length = FCH_MIN_BLOCK_SIZE;
+    if (padded_length < FCH_PADDING_MIN_BYTES)
+        padded_length = FCH_PADDING_MIN_BYTES;
 
     fch_stream_reader_context_t context = {
         file,
@@ -232,7 +232,18 @@ static int stream_final_checked(
 
     int ok = root.state != NULL &&
         root.words == state_words &&
-        fch_mix_finalize_output(root.state, root.words, output_words);
+        fch_mix_finalize_output(
+            root.state,
+            root.words,
+            output_words,
+            length,
+            padded_length,
+            root.tree.level,
+            root.tree.first_leaf,
+            root.tree.leaf_count,
+            root.tree.byte_offset,
+            root.tree.byte_length
+        );
     if (ok) {
         for (size_t i = 0; i < output_words; i++)
             fch_store_le64(output + i * 8u, root.state[i]);

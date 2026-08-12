@@ -25,8 +25,8 @@ static uint8_t *fch_pad(
     size_t min_len = length + 1 + 8;
     size_t padded_len = min_len;
 
-    if (padded_len < FCH_MIN_BLOCK_SIZE)
-        padded_len = FCH_MIN_BLOCK_SIZE;
+    if (padded_len < FCH_PADDING_MIN_BYTES)
+        padded_len = FCH_PADDING_MIN_BYTES;
 
     uint8_t *buf = (uint8_t *)calloc(padded_len, 1);
 
@@ -72,7 +72,14 @@ int fch_hash_256_checked(
         !fch_mix_finalize_output(
             root.state,
             root.words,
-            FCH_256_OUTPUT_WORDS
+            FCH_256_OUTPUT_WORDS,
+            length,
+            padded_len,
+            root.tree.level,
+            root.tree.first_leaf,
+            root.tree.leaf_count,
+            root.tree.byte_offset,
+            root.tree.byte_length
         )) {
         memset(output, 0, 32);
         free(root.state);
@@ -113,7 +120,14 @@ int fch_hash_512_checked(
         !fch_mix_finalize_output(
             root.state,
             root.words,
-            FCH_512_OUTPUT_WORDS
+            FCH_512_OUTPUT_WORDS,
+            length,
+            padded_len,
+            root.tree.level,
+            root.tree.first_leaf,
+            root.tree.leaf_count,
+            root.tree.byte_offset,
+            root.tree.byte_length
         )) {
         memset(output, 0, 64);
         free(root.state);

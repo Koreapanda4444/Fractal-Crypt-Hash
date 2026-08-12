@@ -1,420 +1,359 @@
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "combine.h"
+#include "fch.h"
 #include "fractal.h"
 #include "leaf.h"
-#include "combine.h"
 #include "mix.h"
 #include "params.h"
 
-#define MAX_TEST_LENGTH 4096u
+#define REQUIRE(condition, message) \
+    do { \
+        if (!(condition)) { \
+            fprintf(stderr, "FAIL: %s\n", (message)); \
+            return 0; \
+        } \
+    } while (0)
 
-static void fill_pattern(uint8_t *data, size_t length, unsigned int pattern) {
-    uint32_t state = 0x9E3779B9u ^ pattern;
-
-    for (size_t i = 0; i < length; i++) {
-        switch (pattern) {
-            case 0:
-                data[i] = 0;
-                break;
-            case 1:
-                data[i] = 0xFF;
-                break;
-            case 2:
-                data[i] = (uint8_t)i;
-                break;
-            default:
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                data[i] = (uint8_t)state;
-                break;
-        }
-    }
-}
-
-static int check_split(const uint8_t *data, size_t length, int depth) {
-    fch_block_t blocks[FCH_N_MAX];
-    size_t count = fch_fractal_split(
-        data,
-        length,
-        depth,
-        blocks,
-        FCH_N_MAX
-    );
-
-    if (count == 0 || count > FCH_N_MAX || count > length)
-        return 0;
-
-    size_t offset = 0;
-    for (size_t i = 0; i < count; i++) {
-        if (blocks[i].offset != offset)
-            return 0;
-        if (blocks[i].length == 0)
-            return 0;
-        if (blocks[i].length > length - offset)
-            return 0;
-        offset += blocks[i].length;
-    }
-
-    return offset == length;
-}
-
-static int same_split(
-    const fch_block_t *a,
-    size_t a_count,
-    const fch_block_t *b,
-    size_t b_count
+static int same_blocks(
+    const fch_block_t *left,
+    const fch_block_t *right,
+    size_t count
 ) {
-    if (a_count != b_count)
-        return 0;
-    for (size_t i = 0; i < a_count; i++) {
-        if (a[i].offset != b[i].offset || a[i].length != b[i].length)
+    for (size_t i = 0; i < count; i++) {
+        if (left[i].offset != right[i].offset ||
+            left[i].length != right[i].length)
             return 0;
     }
     return 1;
 }
 
-static int check_full_input_split_influence(void) {
-    uint8_t base[512];
-    uint8_t changed[512];
-    fch_block_t base_blocks[FCH_N_MAX];
+static int check_position_recursive(const fch_tree_position_t *position) {
+    REQUIRE(fch_tree_position_valid(position), "invalid tree position");
 
-    fill_pattern(base, sizeof(base), 3);
-    size_t base_count = fch_fractal_split(
-        base,
-        sizeof(base),
-        3,
-        base_blocks,
-        FCH_N_MAX
-    );
-    if (base_count == 0)
-        return 0;
-
-    size_t changed_splits = 0;
-    for (size_t position = 0; position < sizeof(base); position++) {
-        fch_block_t blocks[FCH_N_MAX];
-        memcpy(changed, base, sizeof(base));
-        changed[position] ^= (uint8_t)(1u << (unsigned int)(position % 8u));
-
-        size_t count = fch_fractal_split(
-            changed,
-            sizeof(changed),
-            3,
-            blocks,
-            FCH_N_MAX
+    if (position->leaf_count == 1u) {
+        REQUIRE(position->level == 0u, "leaf level is not zero");
+        REQUIRE(
+            position->byte_length <= FCH_TREE_LEAF_BYTES,
+            "leaf exceeds fixed span"
         );
-        if (count == 0)
-            return 0;
-        if (!same_split(base_blocks, base_count, blocks, count))
-            changed_splits++;
+        return 1;
     }
 
-    return changed_splits * 100u >= sizeof(base) * 99u;
+    fch_tree_position_t children[FCH_TREE_ARITY];
+    REQUIRE(
+        fch_tree_split_position(position, children),
+        "internal position did not split"
+    );
+    REQUIRE(
+        children[0].first_leaf + children[0].leaf_count ==
+            children[1].first_leaf,
+        "child leaf ranges are not adjacent"
+    );
+    REQUIRE(
+        children[0].byte_offset + children[0].byte_length ==
+            children[1].byte_offset,
+        "child byte ranges are not adjacent"
+    );
+    REQUIRE(
+        children[0].byte_length + children[1].byte_length ==
+            position->byte_length,
+        "children do not cover parent"
+    );
+    REQUIRE(
+        check_position_recursive(&children[0]) &&
+            check_position_recursive(&children[1]),
+        "descendant position is invalid"
+    );
+    return 1;
 }
 
-static int check_split_derivation_properties(void) {
-    enum {
-        PREFIX_LENGTH = 37,
-        SAMPLE_LENGTH = 1024,
-        SAMPLE_COUNT = 256
+static int check_canonical_schedule(void) {
+    static const size_t lengths[] = {
+        1u, 63u, 64u, 1023u, 1024u, 1025u,
+        2048u, 2049u, 3072u, 3073u, 4096u,
+        4097u, 8193u, 16385u
     };
-    uint8_t data[SAMPLE_LENGTH];
-    uint8_t prefixed[PREFIX_LENGTH + SAMPLE_LENGTH];
-    fch_block_t direct[FCH_N_MAX];
-    fch_block_t repeated[FCH_N_MAX];
-    fch_block_t relocated[FCH_N_MAX];
 
-    fill_pattern(data, sizeof(data), 3);
-    size_t direct_count = fch_fractal_split(
-        data,
-        sizeof(data),
-        3,
-        direct,
-        FCH_N_MAX
-    );
-    size_t repeated_count = fch_fractal_split(
-        data,
-        sizeof(data),
-        3,
-        repeated,
-        FCH_N_MAX
-    );
-    if (direct_count == 0 ||
-        !same_split(direct, direct_count, repeated, repeated_count))
-        return 0;
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        fch_tree_position_t root;
+        REQUIRE(
+            fch_tree_position_for_range(0, lengths[i], &root),
+            "root position creation failed"
+        );
+        REQUIRE(
+            root.leaf_count ==
+                1u + (lengths[i] - 1u) / FCH_TREE_LEAF_BYTES,
+            "leaf count mismatch"
+        );
+        REQUIRE(
+            root.level == fch_tree_level_for_leaves(root.leaf_count),
+            "tree level mismatch"
+        );
+        REQUIRE(check_position_recursive(&root), "tree schedule failed");
+    }
 
-    memset(prefixed, 0xA5, PREFIX_LENGTH);
-    memcpy(prefixed + PREFIX_LENGTH, data, sizeof(data));
-    fch_memory_reader_t memory = { prefixed, sizeof(prefixed) };
+    fch_tree_position_t invalid;
+    REQUIRE(
+        !fch_tree_position_for_range(1u, 64u, &invalid),
+        "unaligned range accepted"
+    );
+    REQUIRE(
+        !fch_tree_position_for_range(0u, 0u, &invalid),
+        "empty tree range accepted"
+    );
+    return 1;
+}
+
+typedef struct {
+    unsigned int calls;
+} rejecting_reader_t;
+
+static int reject_read(
+    void *opaque,
+    size_t offset,
+    uint8_t *output,
+    size_t length
+) {
+    rejecting_reader_t *reader = (rejecting_reader_t *)opaque;
+    (void)offset;
+    (void)output;
+    (void)length;
+    reader->calls++;
+    return 0;
+}
+
+static int check_content_independence(void) {
+    enum { LENGTH = 8193 };
+    uint8_t zeros[LENGTH] = {0};
+    uint8_t pattern[LENGTH];
+    for (size_t i = 0; i < sizeof(pattern); i++)
+        pattern[i] = (uint8_t)(i * 73u + (i >> 3u));
+
+    fch_block_t a[FCH_TREE_ARITY];
+    fch_block_t b[FCH_TREE_ARITY];
+    fch_block_t c[FCH_TREE_ARITY];
+    size_t count_a = fch_fractal_split(
+        zeros, sizeof(zeros), 0, a, FCH_TREE_ARITY
+    );
+    size_t count_b = fch_fractal_split(
+        pattern, sizeof(pattern), 0, b, FCH_TREE_ARITY
+    );
+    size_t count_c = fch_fractal_split(
+        pattern, sizeof(pattern), 11, c, FCH_TREE_ARITY
+    );
+
+    REQUIRE(count_a == FCH_TREE_ARITY, "binary split count mismatch");
+    REQUIRE(count_b == count_a && count_c == count_a, "split count changed");
+    REQUIRE(same_blocks(a, b, count_a), "message changed tree shape");
+    REQUIRE(same_blocks(a, c, count_a), "depth changed tree shape");
+
+    rejecting_reader_t context = {0};
+    fch_reader_t reader = { reject_read, &context };
+    fch_block_t reader_blocks[FCH_TREE_ARITY];
+    REQUIRE(
+        fch_fractal_split_reader(
+            &reader,
+            0,
+            sizeof(pattern),
+            0,
+            reader_blocks,
+            FCH_TREE_ARITY
+        ) == FCH_TREE_ARITY,
+        "reader split failed"
+    );
+    REQUIRE(context.calls == 0u, "tree schedule read message bytes");
+    REQUIRE(
+        same_blocks(a, reader_blocks, count_a),
+        "reader split differs from memory split"
+    );
+    return 1;
+}
+
+static int check_leaf_position_binding(void) {
+    uint8_t storage[FCH_TREE_LEAF_BYTES * 2u];
+    for (size_t i = 0; i < FCH_TREE_LEAF_BYTES; i++) {
+        uint8_t value = (uint8_t)(i * 29u + 7u);
+        storage[i] = value;
+        storage[FCH_TREE_LEAF_BYTES + i] = value;
+    }
+
+    fch_memory_reader_t memory = { storage, sizeof(storage) };
     fch_reader_t reader = { fch_memory_read, &memory };
-    size_t relocated_count = fch_fractal_split_reader(
-        &reader,
-        PREFIX_LENGTH,
-        sizeof(data),
-        3,
-        relocated,
-        FCH_N_MAX
+    uint64_t words_a[FCH_INTERNAL_STATE_WORDS] = {0};
+    uint64_t words_b[FCH_INTERNAL_STATE_WORDS] = {0};
+    uint64_t words_c[FCH_INTERNAL_STATE_WORDS] = {0};
+    fch_state_t a = {
+        words_a, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 }
+    };
+    fch_state_t b = {
+        words_b, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 }
+    };
+    fch_state_t c = {
+        words_c, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 }
+    };
+
+    REQUIRE(
+        fch_leaf_compress_reader(
+            &reader, 0, FCH_TREE_LEAF_BYTES, &a, 0
+        ),
+        "first leaf compression failed"
     );
-    if (!same_split(direct, direct_count, relocated, relocated_count))
-        return 0;
+    REQUIRE(
+        fch_leaf_compress_reader(
+            &reader, 0, FCH_TREE_LEAF_BYTES, &b, 9
+        ),
+        "depth-independent leaf compression failed"
+    );
+    REQUIRE(
+        fch_leaf_compress_reader(
+            &reader,
+            FCH_TREE_LEAF_BYTES,
+            FCH_TREE_LEAF_BYTES,
+            &c,
+            0
+        ),
+        "relocated leaf compression failed"
+    );
 
-    unsigned int seen_counts = 0;
-    size_t depth_changes = 0;
-    for (size_t sample = 0; sample < SAMPLE_COUNT; sample++) {
-        fch_block_t blocks[FCH_N_MAX];
-        fch_block_t deeper[FCH_N_MAX];
-
-        for (size_t i = 0; i < sizeof(data); i++) {
-            data[i] = (uint8_t)(
-                i * 131u + sample * 17u + (i >> 3u) * (sample + 1u)
-            );
-        }
-        data[(sample * 257u + 13u) % sizeof(data)] ^=
-            (uint8_t)(sample | 1u);
-
-        size_t count = fch_fractal_split(
-            data,
-            sizeof(data),
-            3,
-            blocks,
-            FCH_N_MAX
-        );
-        size_t deeper_count = fch_fractal_split(
-            data,
-            sizeof(data),
-            4,
-            deeper,
-            FCH_N_MAX
-        );
-        if (count < FCH_N_MIN || count > FCH_N_MAX ||
-            deeper_count == 0)
-            return 0;
-
-        seen_counts |= 1u << (unsigned int)(count - FCH_N_MIN);
-        if (!same_split(blocks, count, deeper, deeper_count))
-            depth_changes++;
-
-        size_t min_length = blocks[0].length;
-        size_t max_length = blocks[0].length;
-        for (size_t i = 1; i < count; i++) {
-            if (blocks[i].length < min_length)
-                min_length = blocks[i].length;
-            if (blocks[i].length > max_length)
-                max_length = blocks[i].length;
-        }
-        if (max_length > min_length * 2u + count)
-            return 0;
-    }
-
-    unsigned int expected_counts =
-        (1u << (unsigned int)(FCH_N_MAX - FCH_N_MIN + 1)) - 1u;
-    return seen_counts == expected_counts &&
-        depth_changes * 10u >= SAMPLE_COUNT * 9u;
-}
-
-static int check_leaf_domain_separation(void) {
-    uint8_t data[64];
-    uint64_t root_words[FCH_256_STATE_WORDS];
-    uint64_t inner_words[FCH_256_STATE_WORDS];
-    uint64_t shorter_words[FCH_256_STATE_WORDS];
-    fch_state_t root = { root_words, FCH_256_STATE_WORDS };
-    fch_state_t inner = { inner_words, FCH_256_STATE_WORDS };
-    fch_state_t shorter = { shorter_words, FCH_256_STATE_WORDS };
-
-    fill_pattern(data, sizeof(data), 2);
-    fch_leaf_compress(data, sizeof(data), &root, 0);
-    fch_leaf_compress(data, sizeof(data), &inner, 1);
-    fch_leaf_compress(data, sizeof(data) - 1u, &shorter, 1);
-
-    if (root.words != FCH_256_STATE_WORDS ||
-        inner.words != FCH_256_STATE_WORDS ||
-        shorter.words != FCH_256_STATE_WORDS)
-        return 0;
-    if (memcmp(root.state, inner.state, sizeof(root_words)) == 0)
-        return 0;
-    if (memcmp(inner.state, shorter.state, sizeof(inner_words)) == 0)
-        return 0;
-
+    REQUIRE(
+        memcmp(words_a, words_b, sizeof(words_a)) == 0,
+        "obsolete root depth changed leaf state"
+    );
+    REQUIRE(
+        memcmp(words_a, words_c, sizeof(words_a)) != 0,
+        "leaf position was not bound"
+    );
+    REQUIRE(a.tree.first_leaf == 0u && c.tree.first_leaf == 1u,
+        "leaf descriptor index mismatch");
     return 1;
 }
 
-static int check_node_domain_separation(void) {
-    uint64_t child_a_words[FCH_256_STATE_WORDS] = {
-        UINT64_C(1), UINT64_C(2), UINT64_C(3), UINT64_C(4)
-    };
-    uint64_t child_b_words[FCH_256_STATE_WORDS] = {
-        UINT64_C(5), UINT64_C(6), UINT64_C(7), UINT64_C(8)
-    };
-    uint64_t child_c_words[FCH_256_STATE_WORDS] = {
-        UINT64_C(9), UINT64_C(10), UINT64_C(11), UINT64_C(12)
-    };
-    fch_state_t children[2] = {
-        { child_a_words, FCH_256_STATE_WORDS },
-        { child_b_words, FCH_256_STATE_WORDS }
-    };
-    fch_state_t reversed[2] = {
-        { child_b_words, FCH_256_STATE_WORDS },
-        { child_a_words, FCH_256_STATE_WORDS }
-    };
-    fch_state_t three_children[3] = {
-        { child_a_words, FCH_256_STATE_WORDS },
-        { child_b_words, FCH_256_STATE_WORDS },
-        { child_c_words, FCH_256_STATE_WORDS }
-    };
-    const fch_block_t balanced[2] = { { 0, 32 }, { 32, 32 } };
-    const fch_block_t uneven[2] = { { 0, 31 }, { 31, 33 } };
-    const fch_block_t three_blocks[3] = {
-        { 0, 16 }, { 16, 16 }, { 32, 32 }
-    };
+static int check_combine_validation(void) {
+    uint8_t data[FCH_TREE_LEAF_BYTES * 2u];
+    for (size_t i = 0; i < sizeof(data); i++)
+        data[i] = (uint8_t)(i * 17u + 3u);
 
-    fch_state_t a = fch_combine(
-        children, balanced, 2, 64, FCH_256_STATE_WORDS, 1
-    );
-    fch_state_t b = fch_combine(
-        children, uneven, 2, 64, FCH_256_STATE_WORDS, 1
-    );
-    fch_state_t c = fch_combine(
-        reversed, balanced, 2, 64, FCH_256_STATE_WORDS, 1
-    );
-    fch_state_t root = fch_combine(
-        children, balanced, 2, 64, FCH_256_STATE_WORDS, 0
-    );
-    fch_state_t deeper = fch_combine(
-        children, balanced, 2, 64, FCH_256_STATE_WORDS, 2
-    );
-    fch_state_t wider = fch_combine(
-        three_children, three_blocks, 3, 64, FCH_256_STATE_WORDS, 1
-    );
-
-    int ok = a.state && b.state && c.state && root.state &&
-        deeper.state && wider.state;
-    if (ok && memcmp(a.state, b.state, FCH_256_STATE_WORDS * sizeof(uint64_t)) == 0)
-        ok = 0;
-    if (ok && memcmp(a.state, c.state, FCH_256_STATE_WORDS * sizeof(uint64_t)) == 0)
-        ok = 0;
-    if (ok && memcmp(a.state, root.state, FCH_256_STATE_WORDS * sizeof(uint64_t)) == 0)
-        ok = 0;
-    if (ok && memcmp(a.state, deeper.state, FCH_256_STATE_WORDS * sizeof(uint64_t)) == 0)
-        ok = 0;
-    if (ok && memcmp(a.state, wider.state, FCH_256_STATE_WORDS * sizeof(uint64_t)) == 0)
-        ok = 0;
-
-    free(a.state);
-    free(b.state);
-    free(c.state);
-    free(root.state);
-    free(deeper.state);
-    free(wider.state);
-    return ok;
-}
-
-static int check_tree_encoding_validation(void) {
-    uint8_t data[64] = {0};
-    uint64_t child_a_words[FCH_256_STATE_WORDS] = {0};
-    uint64_t child_b_words[FCH_256_STATE_WORDS] = {0};
-    fch_state_t children[2] = {
-        { child_a_words, FCH_256_STATE_WORDS },
-        { child_b_words, FCH_256_STATE_WORDS }
-    };
-    const fch_block_t valid[2] = { { 0, 32 }, { 32, 32 } };
-    const fch_block_t gap[2] = { { 0, 32 }, { 33, 31 } };
-
-    fch_state_t one_child = fch_combine(
-        children, valid, 1, 64, FCH_256_STATE_WORDS, 1
-    );
-    fch_state_t negative_depth = fch_combine(
-        children, valid, 2, 64, FCH_256_STATE_WORDS, -1
-    );
-    fch_state_t noncanonical = fch_combine(
-        children, gap, 2, 64, FCH_256_STATE_WORDS, 1
-    );
-
-    int ok = !one_child.state && !negative_depth.state &&
-        !noncanonical.state;
-
-    uint64_t leaf_words[FCH_256_STATE_WORDS] = {0};
-    fch_state_t leaf = { leaf_words, FCH_256_STATE_WORDS };
-    uint64_t narrow_words[4] = {0};
-    fch_state_t narrow = { narrow_words, 4 };
     fch_memory_reader_t memory = { data, sizeof(data) };
     fch_reader_t reader = { fch_memory_read, &memory };
-    if (fch_leaf_compress_reader(&reader, 0, sizeof(data), &leaf, -1))
-        ok = 0;
-    if (fch_leaf_compress_reader(&reader, 0, sizeof(data), &narrow, 0))
-        ok = 0;
+    uint64_t left_words[FCH_INTERNAL_STATE_WORDS] = {0};
+    uint64_t right_words[FCH_INTERNAL_STATE_WORDS] = {0};
+    fch_state_t children[FCH_TREE_ARITY] = {
+        { left_words, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 } },
+        { right_words, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 } }
+    };
 
-    fch_state_t wrong_width = fch_process(data, sizeof(data), 0, 4);
-    if (wrong_width.state)
-        ok = 0;
+    REQUIRE(
+        fch_leaf_compress_reader(
+            &reader, 0, FCH_TREE_LEAF_BYTES, &children[0], 0
+        ),
+        "left child compression failed"
+    );
+    REQUIRE(
+        fch_leaf_compress_reader(
+            &reader,
+            FCH_TREE_LEAF_BYTES,
+            FCH_TREE_LEAF_BYTES,
+            &children[1],
+            0
+        ),
+        "right child compression failed"
+    );
 
-    fch_block_t blocks[FCH_N_MAX];
-    if (fch_fractal_split(data, sizeof(data), -1, blocks, FCH_N_MAX) != 0)
-        ok = 0;
+    fch_block_t blocks[FCH_TREE_ARITY] = {
+        { 0, FCH_TREE_LEAF_BYTES },
+        { FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES }
+    };
+    fch_state_t parent = fch_combine(
+        children,
+        blocks,
+        FCH_TREE_ARITY,
+        sizeof(data),
+        FCH_INTERNAL_STATE_WORDS,
+        0
+    );
+    REQUIRE(parent.state != NULL, "canonical children were rejected");
+    REQUIRE(parent.tree.level == 1u && parent.tree.leaf_count == 2u,
+        "parent descriptor mismatch");
 
-    if (FCH_TREE_ENCODING_VERSION == 0 ||
-        FCH_SPLIT_DERIVATION_VERSION == 0 ||
-        FCH_TREE_TAG_LEAF_HEADER == FCH_TREE_TAG_NODE_HEADER ||
-        FCH_TREE_TAG_LEAF_DATA == FCH_TREE_TAG_NODE_CHILD ||
-        FCH_SPLIT_TAG_HEADER == FCH_SPLIT_TAG_DATA ||
-        FCH_SPLIT_TAG_DATA == FCH_SPLIT_TAG_OUTPUT ||
-        FCH_MIX_FLAG_SPLIT_HEADER == FCH_MIX_FLAG_SPLIT_DATA ||
-        FCH_MIX_FLAG_SPLIT_DATA == FCH_MIX_FLAG_SPLIT_OUTPUT)
-        ok = 0;
+    fch_state_t swapped[FCH_TREE_ARITY] = { children[1], children[0] };
+    fch_state_t rejected_swap = fch_combine(
+        swapped,
+        blocks,
+        FCH_TREE_ARITY,
+        sizeof(data),
+        FCH_INTERNAL_STATE_WORDS,
+        0
+    );
+    REQUIRE(!rejected_swap.state, "reordered children were accepted");
 
-    free(one_child.state);
-    free(negative_depth.state);
-    free(noncanonical.state);
-    free(wrong_width.state);
-    return ok;
+    fch_block_t wrong_blocks[FCH_TREE_ARITY] = {
+        { 0, FCH_TREE_LEAF_BYTES - 1u },
+        { FCH_TREE_LEAF_BYTES - 1u, FCH_TREE_LEAF_BYTES + 1u }
+    };
+    fch_state_t rejected_layout = fch_combine(
+        children,
+        wrong_blocks,
+        FCH_TREE_ARITY,
+        sizeof(data),
+        FCH_INTERNAL_STATE_WORDS,
+        0
+    );
+    REQUIRE(!rejected_layout.state, "non-canonical blocks were accepted");
+
+    free(parent.state);
+    free(rejected_swap.state);
+    free(rejected_layout.state);
+    return 1;
+}
+
+static int values_are_distinct(const uint64_t *values, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        for (size_t j = i + 1u; j < count; j++) {
+            if (values[i] == values[j])
+                return 0;
+        }
+    }
+    return 1;
+}
+
+static int check_encoding_constants(void) {
+    const uint64_t tags[] = {
+        FCH_TREE_TAG_LEAF_HEADER,
+        FCH_TREE_TAG_LEAF_DATA,
+        FCH_TREE_TAG_NODE_HEADER,
+        FCH_TREE_TAG_NODE_CHILD,
+        FCH_TREE_TAG_OUTPUT
+    };
+    const uint64_t domains[] = {
+        FCH_DOMAIN_LEAF,
+        FCH_DOMAIN_NODE,
+        FCH_DOMAIN_OUTPUT_256,
+        FCH_DOMAIN_OUTPUT_512
+    };
+
+    REQUIRE(FCH_TREE_ENCODING_VERSION == 2u, "wrong tree version");
+    REQUIRE(FCH_PADDING_FORMAT_VERSION == 1u, "wrong padding version");
+    REQUIRE(FCH_TREE_ARITY == 2u, "tree is not binary");
+    REQUIRE(values_are_distinct(tags, sizeof(tags) / sizeof(tags[0])),
+        "record tags overlap");
+    REQUIRE(values_are_distinct(domains, sizeof(domains) / sizeof(domains[0])),
+        "domains overlap");
+    return 1;
 }
 
 int main(void) {
-    uint8_t data[MAX_TEST_LENGTH];
-
-    for (unsigned int pattern = 0; pattern < 4; pattern++) {
-        fill_pattern(data, sizeof(data), pattern);
-
-        for (size_t length = 1; length <= sizeof(data); length++) {
-            for (int depth = 0; depth < FCH_MAX_DEPTH_CAP; depth++) {
-                if (!check_split(data, length, depth)) {
-                    printf(
-                        "FAIL: split invariant (pattern=%u length=%u depth=%d)\n",
-                        pattern,
-                        (unsigned int)length,
-                        depth
-                    );
-                    return 1;
-                }
-            }
-        }
-    }
-
-    if (!check_full_input_split_influence()) {
-        printf("FAIL: split ignores too much of the input\n");
+    if (!check_canonical_schedule() ||
+        !check_content_independence() ||
+        !check_leaf_position_binding() ||
+        !check_combine_validation() ||
+        !check_encoding_constants())
         return 1;
-    }
-    if (!check_split_derivation_properties()) {
-        printf("FAIL: hardened split derivation properties\n");
-        return 1;
-    }
-    if (!check_leaf_domain_separation()) {
-        printf("FAIL: leaf domain separation\n");
-        return 1;
-    }
-    if (!check_node_domain_separation()) {
-        printf("FAIL: node domain separation\n");
-        return 1;
-    }
-    if (!check_tree_encoding_validation()) {
-        printf("FAIL: canonical tree encoding validation\n");
-        return 1;
-    }
 
     printf(
-        "PASS: split derivation, invariants, domains, and canonical tree encoding\n"
+        "PASS: canonical binary schedule, positions, domains, and validation\n"
     );
     return 0;
 }

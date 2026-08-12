@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include <string.h>
 
 #include "fractal.h"
 #include "leaf.h"
@@ -10,38 +9,108 @@
 #if defined(FCH_DEBUG_HOOKS) && !defined(FCH_DEBUG_HOOK_EXTERNAL)
 void fch_debug_hook(
     fch_hook_point_t point,
-    int depth,
+    int level,
     const uint64_t *state,
     size_t state_words
 ) {
     (void)point;
-    (void)depth;
+    (void)level;
     (void)state;
     (void)state_words;
 }
 #endif
 
-#ifdef FCH_DEBUG_HOOKS
-static inline void fch_debug_emit_root_if(
-    int depth,
-    const uint64_t *state,
+static fch_state_t process_subtree(
+    const fch_reader_t *reader,
+    const fch_tree_position_t *position,
     size_t state_words
 ) {
-    if (depth == 0) {
-        FCH_DEBUG_EMIT(FCH_HOOK_AFTER_ROOT, depth, state, state_words);
+    fch_state_t result = {
+        NULL,
+        state_words,
+        { 0, 0, 0, 0, 0 }
+    };
+
+    if (!reader || !reader->read || !position ||
+        !fch_tree_position_valid(position) ||
+        state_words != FCH_INTERNAL_STATE_WORDS)
+        return result;
+
+    if (position->leaf_count == 1u) {
+        result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
+        if (!result.state)
+            return result;
+
+        if (!fch_leaf_compress_reader(
+                reader,
+                position->byte_offset,
+                position->byte_length,
+                &result,
+                0
+            )) {
+            free(result.state);
+            result.state = NULL;
+            return result;
+        }
+
+        FCH_DEBUG_EMIT(
+            FCH_HOOK_AFTER_LEAF,
+            (int)result.tree.level,
+            result.state,
+            result.words
+        );
+        return result;
     }
+
+    fch_tree_position_t child_positions[FCH_TREE_ARITY];
+    if (!fch_tree_split_position(position, child_positions))
+        return result;
+
+    fch_state_t children[FCH_TREE_ARITY] = {
+        { NULL, state_words, { 0, 0, 0, 0, 0 } },
+        { NULL, state_words, { 0, 0, 0, 0, 0 } }
+    };
+    fch_block_t blocks[FCH_TREE_ARITY];
+
+    for (size_t i = 0; i < FCH_TREE_ARITY; i++) {
+        children[i] = process_subtree(
+            reader,
+            &child_positions[i],
+            state_words
+        );
+        if (!children[i].state) {
+            for (size_t j = 0; j < i; j++)
+                free(children[j].state);
+            return result;
+        }
+
+        blocks[i].offset =
+            child_positions[i].byte_offset - position->byte_offset;
+        blocks[i].length = child_positions[i].byte_length;
+    }
+
+    result = fch_combine(
+        children,
+        blocks,
+        FCH_TREE_ARITY,
+        position->byte_length,
+        state_words,
+        0
+    );
+
+    for (size_t i = 0; i < FCH_TREE_ARITY; i++)
+        free(children[i].state);
+
+    if (result.state) {
+        FCH_DEBUG_EMIT(
+            FCH_HOOK_AFTER_NODE,
+            (int)result.tree.level,
+            result.state,
+            result.words
+        );
+    }
+    return result;
 }
-#else
-static inline void fch_debug_emit_root_if(
-    int depth,
-    const uint64_t *state,
-    size_t state_words
-) {
-    (void)depth;
-    (void)state;
-    (void)state_words;
-}
-#endif
 
 fch_state_t fch_process_reader(
     const fch_reader_t *reader,
@@ -50,94 +119,29 @@ fch_state_t fch_process_reader(
     int depth,
     size_t state_words
 ) {
-    fch_state_t result = { NULL, state_words };
-
-    if (state_words != FCH_INTERNAL_STATE_WORDS ||
-        depth < 0 || !reader || !reader->read)
-        return result;
-    if (offset > SIZE_MAX - length)
-        return result;
-
-    if (depth >= FCH_MAX_DEPTH_CAP || length <= FCH_MIN_BLOCK_SIZE) {
-        result.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
-        if (result.state) {
-            if (!fch_leaf_compress_reader(
-                    reader,
-                    offset,
-                    length,
-                    &result,
-                    depth
-                )) {
-                free(result.state);
-                result.state = NULL;
-                return result;
-            }
-            FCH_DEBUG_EMIT(FCH_HOOK_AFTER_LEAF, depth, result.state, result.words);
-            fch_debug_emit_root_if(depth, result.state, result.words);
-        }
-        return result;
-    }
-
-    fch_block_t blocks[FCH_N_MAX];
-    size_t n = fch_fractal_split_reader(
-        reader,
-        offset,
-        length,
-        depth,
-        blocks,
-        FCH_N_MAX
-    );
-
-    if (n == 0) {
-        return result;
-    }
-
-    fch_state_t *children =
-        (fch_state_t *)calloc(n, sizeof(fch_state_t));
-
-    if (!children) {
-        return result;
-    }
-
-    for (size_t i = 0; i < n; i++) {
-        size_t sub_offset = offset + blocks[i].offset;
-        size_t sub_len = blocks[i].length;
-
-        children[i] = fch_process_reader(
-            reader,
-            sub_offset,
-            sub_len,
-            depth + 1,
-            state_words
-        );
-
-        if (!children[i].state) {
-            for (size_t j = 0; j < i; j++) {
-                free(children[j].state);
-            }
-            free(children);
-            return result;
-        }
-    }
-
-    result = fch_combine(
-        children,
-        blocks,
-        n,
-        length,
+    fch_state_t result = {
+        NULL,
         state_words,
-        depth
-    );
+        { 0, 0, 0, 0, 0 }
+    };
+
+    if (state_words != FCH_INTERNAL_STATE_WORDS || depth < 0 ||
+        !reader || !reader->read)
+        return result;
+
+    fch_tree_position_t root_position;
+    if (!fch_tree_position_for_range(offset, length, &root_position))
+        return result;
+
+    result = process_subtree(reader, &root_position, state_words);
     if (result.state) {
-        FCH_DEBUG_EMIT(FCH_HOOK_AFTER_NODE, depth, result.state, result.words);
-        fch_debug_emit_root_if(depth, result.state, result.words);
+        FCH_DEBUG_EMIT(
+            FCH_HOOK_AFTER_ROOT,
+            (int)result.tree.level,
+            result.state,
+            result.words
+        );
     }
-
-    for (size_t i = 0; i < n; i++) {
-        free(children[i].state);
-    }
-    free(children);
-
     return result;
 }
 
@@ -147,10 +151,14 @@ fch_state_t fch_process(
     int depth,
     size_t state_words
 ) {
-    fch_state_t result = { NULL, state_words };
+    fch_state_t result = {
+        NULL,
+        state_words,
+        { 0, 0, 0, 0, 0 }
+    };
 
-    if (state_words != FCH_INTERNAL_STATE_WORDS ||
-        (!data && length > 0))
+    if (state_words != FCH_INTERNAL_STATE_WORDS || depth < 0 ||
+        (!data && length > 0u))
         return result;
 
     fch_memory_reader_t memory = { data, length };

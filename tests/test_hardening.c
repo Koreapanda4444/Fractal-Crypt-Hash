@@ -30,25 +30,27 @@ static void require_or_abort(int condition) {
 }
 
 static void check_split_invariants(const uint8_t *data, size_t size) {
-    fch_block_t blocks[FCH_N_MAX];
+    fch_block_t blocks[FCH_TREE_ARITY];
     int depth = size == 0 ? 0 : (int)(data[0] & 31u);
     size_t count = fch_fractal_split(
         data,
         size,
         depth,
         blocks,
-        FCH_N_MAX
+        FCH_TREE_ARITY
     );
 
-    require_or_abort(count > 0 && count <= FCH_N_MAX);
+    if (size == 0u) {
+        require_or_abort(count == 0u);
+        return;
+    }
+
+    require_or_abort(count > 0u && count <= FCH_TREE_ARITY);
 
     size_t covered = 0;
     for (size_t i = 0; i < count; i++) {
         require_or_abort(blocks[i].offset == covered);
-        if (size == 0)
-            require_or_abort(count == 1 && blocks[i].length == 0);
-        else
-            require_or_abort(blocks[i].length > 0);
+        require_or_abort(blocks[i].length > 0u);
         require_or_abort(blocks[i].length <= size - covered);
         covered += blocks[i].length;
     }
@@ -296,7 +298,7 @@ static int test_reader_failures(void) {
     fch_state_t leaf = fch_process_reader(
         &reader,
         0,
-        FCH_MIN_BLOCK_SIZE,
+        FCH_TREE_LEAF_BYTES,
         0,
         FCH_INTERNAL_STATE_WORDS
     );
@@ -309,7 +311,7 @@ static int test_reader_failures(void) {
     fch_state_t node = fch_process_reader(
         &reader,
         0,
-        FCH_MIN_BLOCK_SIZE * 8u,
+        FCH_TREE_LEAF_BYTES * 2u,
         0,
         FCH_INTERNAL_STATE_WORDS
     );

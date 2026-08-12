@@ -1,9 +1,9 @@
 # Fractal Crypt-Hash (FCH)
 
 Fractal Crypt-Hash (FCH) is a cryptographic research hash function built from
-a 16-round ARX compression core and an input-dependent recursive tree. The
-compression core handles local mixing, while the tree carries changes through
-different regions of the message and combines them at the root.
+a 16-round ARX compression core and a canonical recursive tree. The compression
+core handles local mixing, while fixed 1,024-byte leaves and position-bound
+binary nodes carry changes across the message and combine them at the root.
 
 FCH is an open research project. Its security goals are defined below, and
 independent public analysis is still ongoing.
@@ -28,11 +28,15 @@ to be analyzed before those targets can be treated as established properties.
 FCH processes a message as a recursive tree:
 
 1. Pad the message and start at the root.
-2. Derive a variable split from the complete input of the current node.
-3. Process each child recursively until it becomes a leaf.
-4. Compress the child states in order, together with their positions and
+2. Divide the padded input into consecutive 1,024-byte leaves.
+3. Build the unique left-complete binary tree for that leaf count.
+4. Compress child states in order, together with their positions and
    lengths.
 5. Finalize the root in a domain dedicated to FCH-256 or FCH-512.
+
+The tree shape depends only on the padded length. Message bytes cannot select
+the number of children or move a boundary, and completed power-of-two prefix
+subtrees keep the same encoding when a suffix is added.
 
 The two variants share a 512-bit internal state. FCH-256 uses a separate
 output-finalization domain and is not simply a truncated FCH-512 digest.
@@ -46,10 +50,10 @@ output-finalization domain and is not simply a truncated FCH-512 digest.
 | Compression input | 128 bytes (16 words) |
 | Full rounds | 16 |
 | Reduced-round analysis reference | 8 rounds |
-| Fan-out | 2–6 children |
-| Split weights | 128–255 |
-| Leaf threshold | 64 bytes |
-| Maximum tree depth | 16 |
+| Tree encoding | Version 2 |
+| Leaf span | 1,024 bytes |
+| Internal-node arity | 2 |
+| Tree level | Determined by the leaf count |
 
 The ARX G function, IV, rotation distances, and message permutations are based
 on BLAKE2b components. FCH uses its own initialization, tweaks, record format,
@@ -74,8 +78,10 @@ original `void` signatures are also available.
 ### Streaming
 
 The streaming API stores incoming chunks in an anonymous temporary file and
-reads them through fixed-size buffers during finalization. This keeps
-application RAM usage bounded and produces the same digest as the one-shot API.
+reads each leaf through fixed-size buffers during finalization. The canonical
+schedule no longer scans message contents to choose splits. Application RAM
+usage stays bounded, temporary storage grows with the input, and the result is
+identical to the one-shot API.
 
 ```c
 #include "fch_stream.h"
@@ -133,7 +139,7 @@ The repository includes tests for:
 
 - determinism, fixed outputs, boundaries, and invalid inputs
 - avalanche behavior and reduced-round diffusion
-- split coverage, balance, relocation, and configuration sensitivity
+- canonical tree boundaries, prefix stability, and content independence
 - domain separation and portable little-endian serialization
 - bounded differential, linear, fixed-point, cycle, and near-collision searches
 - multicollision, second-preimage, grafting, and long-message tree patterns
@@ -147,6 +153,12 @@ Run the regular and extended suites:
 cd build
 make check
 make check-extended
+```
+
+Build the one-shot and streaming throughput benchmark:
+
+```sh
+make bench
 ```
 
 Run the bounded libFuzzer target with Clang:

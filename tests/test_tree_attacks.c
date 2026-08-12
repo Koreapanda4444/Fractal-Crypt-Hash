@@ -25,7 +25,14 @@ enum {
 
 typedef struct {
     uint64_t words[FCH_INTERNAL_STATE_WORDS];
+    fch_tree_position_t tree;
 } state_record_t;
+
+typedef struct {
+    const uint8_t *data;
+    size_t length;
+    size_t base_offset;
+} positioned_input_t;
 
 typedef struct {
     uint64_t truncated_pairs;
@@ -88,28 +95,64 @@ static int hash_both(
     return 1;
 }
 
+static int positioned_read(
+    void *context,
+    size_t offset,
+    uint8_t *output,
+    size_t length
+) {
+    positioned_input_t *input = (positioned_input_t *)context;
+
+    if (!input || (!output && length > 0u) ||
+        offset < input->base_offset)
+        return 0;
+    size_t local_offset = offset - input->base_offset;
+    if (local_offset > input->length ||
+        length > input->length - local_offset ||
+        (!input->data && length > 0u))
+        return 0;
+
+    if (length > 0u)
+        memcpy(output, input->data + local_offset, length);
+    return 1;
+}
+
 static int make_leaf(
     const uint8_t *message,
     size_t length,
+    size_t offset,
     int depth,
     state_record_t *output
 ) {
     if (!output)
         return 0;
 
-    fch_memory_reader_t memory = { message, length };
-    fch_reader_t reader = { fch_memory_read, &memory };
+    positioned_input_t input = { message, length, offset };
+    fch_reader_t reader = { positioned_read, &input };
     fch_state_t state = {
         output->words,
-        FCH_INTERNAL_STATE_WORDS
+        FCH_INTERNAL_STATE_WORDS,
+        {0, 0, 0, 0, 0}
     };
-    return fch_leaf_compress_reader(
+    int ok = fch_leaf_compress_reader(
         &reader,
-        0,
+        offset,
         length,
         &state,
         depth
     );
+    if (ok)
+        output->tree = state.tree;
+    return ok;
+}
+
+static fch_state_t state_view(state_record_t *record) {
+    fch_state_t view = {
+        record ? record->words : NULL,
+        FCH_INTERNAL_STATE_WORDS,
+        record ? record->tree : (fch_tree_position_t){0, 0, 0, 0, 0}
+    };
+    return view;
 }
 
 static int combine_state(
@@ -135,6 +178,7 @@ static int combine_state(
         return 0;
 
     memcpy(output->words, combined.state, sizeof(output->words));
+    output->tree = combined.tree;
     free(combined.state);
     return 1;
 }
@@ -229,7 +273,7 @@ static int multicollision_screen(void) {
         return 0;
     }
 
-    uint8_t sibling_message[ATTACK_CHUNK_SIZE];
+    uint8_t sibling_message[FCH_TREE_LEAF_BYTES];
     uint64_t sibling_stream = UINT64_C(0x51B11A65EED00001);
     state_record_t sibling;
     fill_bytes(
@@ -240,6 +284,7 @@ static int multicollision_screen(void) {
     if (!make_leaf(
             sibling_message,
             sizeof(sibling_message),
+            FCH_TREE_LEAF_BYTES,
             2,
             &sibling
         )) {
@@ -249,32 +294,38 @@ static int multicollision_screen(void) {
     }
 
     const fch_block_t blocks[2] = {
-        { 0u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE, ATTACK_CHUNK_SIZE }
+        { 0u, FCH_TREE_LEAF_BYTES },
+        { FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES }
     };
     uint64_t stream = UINT64_C(0xC0111510A5EED801);
     int generated = 1;
     for (size_t sample = 0;
          sample < MULTICOLLISION_SAMPLES;
          sample++) {
-        uint8_t message[ATTACK_CHUNK_SIZE];
+        uint8_t message[FCH_TREE_LEAF_BYTES];
         fill_bytes(message, sizeof(message), &stream);
         fch_store_le64(message, (uint64_t)sample);
 
-        if (!make_leaf(message, sizeof(message), 2, &leaves[sample])) {
+        if (!make_leaf(
+                message,
+                sizeof(message),
+                0u,
+                2,
+                &leaves[sample]
+            )) {
             generated = 0;
             break;
         }
 
         fch_state_t children[2] = {
-            { leaves[sample].words, FCH_INTERNAL_STATE_WORDS },
-            { sibling.words, FCH_INTERNAL_STATE_WORDS }
+            state_view(&leaves[sample]),
+            state_view(&sibling)
         };
         if (!combine_state(
                 children,
                 blocks,
                 2,
-                ATTACK_CHUNK_SIZE * 2u,
+                FCH_TREE_LEAF_BYTES * 2u,
                 1,
                 &nodes[sample]
             )) {
@@ -338,182 +389,246 @@ static int tree_shape_screen(void) {
     uint64_t stream = UINT64_C(0x7EED5A9E5EED0001);
 
     for (size_t i = 0; i < 4u; i++) {
-        uint8_t message[ATTACK_CHUNK_SIZE];
+        uint8_t message[FCH_TREE_LEAF_BYTES];
         fill_bytes(message, sizeof(message), &stream);
         fch_store_le64(message, i);
-        if (!make_leaf(message, sizeof(message), 2, &leaves[i]))
+        if (!make_leaf(
+                message,
+                sizeof(message),
+                i * FCH_TREE_LEAF_BYTES,
+                2,
+                &leaves[i]
+            ))
             return 0;
     }
 
     const fch_block_t pair_blocks[2] = {
-        { 0u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE, ATTACK_CHUNK_SIZE }
+        {0u, FCH_TREE_LEAF_BYTES},
+        {FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES}
     };
-    const fch_block_t triple_blocks[3] = {
-        { 0u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE * 2u, ATTACK_CHUNK_SIZE }
+    const fch_block_t bcd_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES * 2u},
+        {FCH_TREE_LEAF_BYTES * 2u, FCH_TREE_LEAF_BYTES}
+    };
+    const fch_block_t root_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES * 2u},
+        {FCH_TREE_LEAF_BYTES * 2u, FCH_TREE_LEAF_BYTES * 2u}
+    };
+
+    state_record_t pair_ab;
+    state_record_t pair_cd;
+    state_record_t pair_bc;
+    fch_state_t ab_children[2] = {
+        state_view(&leaves[0]),
+        state_view(&leaves[1])
+    };
+    fch_state_t cd_children[2] = {
+        state_view(&leaves[2]),
+        state_view(&leaves[3])
+    };
+    fch_state_t bc_children[2] = {
+        state_view(&leaves[1]),
+        state_view(&leaves[2])
+    };
+    if (!combine_state(
+            ab_children,
+            pair_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            1,
+            &pair_ab
+        ) ||
+        !combine_state(
+            cd_children,
+            pair_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            1,
+            &pair_cd
+        ) ||
+        !combine_state(
+            bc_children,
+            pair_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            1,
+            &pair_bc
+        ))
+        return 0;
+
+    state_record_t subtree_bcd;
+    fch_state_t bcd_children[2] = {
+        state_view(&pair_bc),
+        state_view(&leaves[3])
+    };
+    if (!combine_state(
+            bcd_children,
+            bcd_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 3u,
+            1,
+            &subtree_bcd
+        ))
+        return 0;
+
+    state_record_t root_depth0;
+    state_record_t root_depth99;
+    fch_state_t canonical_children[2] = {
+        state_view(&pair_ab),
+        state_view(&pair_cd)
+    };
+    if (!combine_state(
+            canonical_children,
+            root_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            0,
+            &root_depth0
+        ) ||
+        !combine_state(
+            canonical_children,
+            root_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            99,
+            &root_depth99
+        ))
+        return 0;
+
+    if (memcmp(
+            root_depth0.words,
+            root_depth99.words,
+            sizeof(root_depth0.words)
+        ) != 0)
+        return 0;
+
+    state_record_t altered_ab = pair_ab;
+    altered_ab.words[0] ^= UINT64_C(1);
+    state_record_t altered_root;
+    fch_state_t altered_children[2] = {
+        state_view(&altered_ab),
+        state_view(&pair_cd)
+    };
+    if (!combine_state(
+            altered_children,
+            root_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            0,
+            &altered_root
+        ))
+        return 0;
+
+    int altered_distance = bit_diff(
+        (const uint8_t *)root_depth0.words,
+        (const uint8_t *)altered_root.words,
+        sizeof(root_depth0.words)
+    );
+
+    unsigned int rejected = 0;
+    state_record_t rejected_output;
+
+    fch_state_t reversed_children[2] = {
+        state_view(&pair_cd),
+        state_view(&pair_ab)
+    };
+    if (!combine_state(
+            reversed_children,
+            root_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            0,
+            &rejected_output
+        ))
+        rejected++;
+
+    fch_state_t skew_children[2] = {
+        state_view(&leaves[0]),
+        state_view(&subtree_bcd)
+    };
+    const fch_block_t skew_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES},
+        {FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES * 3u}
+    };
+    if (!combine_state(
+            skew_children,
+            skew_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            0,
+            &rejected_output
+        ))
+        rejected++;
+
+    fch_state_t flat_children[4] = {
+        state_view(&leaves[0]),
+        state_view(&leaves[1]),
+        state_view(&leaves[2]),
+        state_view(&leaves[3])
     };
     const fch_block_t flat_blocks[4] = {
-        { 0u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE * 2u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE * 3u, ATTACK_CHUNK_SIZE }
+        {0u, FCH_TREE_LEAF_BYTES},
+        {FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES},
+        {FCH_TREE_LEAF_BYTES * 2u, FCH_TREE_LEAF_BYTES},
+        {FCH_TREE_LEAF_BYTES * 3u, FCH_TREE_LEAF_BYTES}
     };
-    const fch_block_t shifted_blocks[4] = {
-        { 0u, ATTACK_CHUNK_SIZE - 1u },
-        { ATTACK_CHUNK_SIZE - 1u, ATTACK_CHUNK_SIZE + 1u },
-        { ATTACK_CHUNK_SIZE * 2u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE * 3u, ATTACK_CHUNK_SIZE }
-    };
-    const fch_block_t binary_root_blocks[2] = {
-        { 0u, ATTACK_CHUNK_SIZE * 2u },
-        { ATTACK_CHUNK_SIZE * 2u, ATTACK_CHUNK_SIZE * 2u }
-    };
-    const fch_block_t skew_root_blocks[2] = {
-        { 0u, ATTACK_CHUNK_SIZE },
-        { ATTACK_CHUNK_SIZE, ATTACK_CHUNK_SIZE * 3u }
-    };
-
-    fch_state_t pair_ab_children[2] = {
-        { leaves[0].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[1].words, FCH_INTERNAL_STATE_WORDS }
-    };
-    fch_state_t pair_cd_children[2] = {
-        { leaves[2].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[3].words, FCH_INTERNAL_STATE_WORDS }
-    };
-    fch_state_t triple_bcd_children[3] = {
-        { leaves[1].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[2].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[3].words, FCH_INTERNAL_STATE_WORDS }
-    };
-
-    state_record_t inner_ab;
-    state_record_t inner_cd;
-    state_record_t inner_bcd;
     if (!combine_state(
-            pair_ab_children,
-            pair_blocks,
-            2,
-            ATTACK_CHUNK_SIZE * 2u,
-            1,
-            &inner_ab
-        ) ||
-        !combine_state(
-            pair_cd_children,
-            pair_blocks,
-            2,
-            ATTACK_CHUNK_SIZE * 2u,
-            1,
-            &inner_cd
-        ) ||
-        !combine_state(
-            triple_bcd_children,
-            triple_blocks,
-            3,
-            ATTACK_CHUNK_SIZE * 3u,
-            1,
-            &inner_bcd
-        ))
-        return 0;
-
-    /*
-     * Child states stay fixed while parent grouping, order, boundaries, and
-     * depth change. This models an internal-state graft or tree-reuse attempt.
-     */
-    state_record_t variants[6];
-    fch_state_t binary_children[2] = {
-        { inner_ab.words, FCH_INTERNAL_STATE_WORDS },
-        { inner_cd.words, FCH_INTERNAL_STATE_WORDS }
-    };
-    fch_state_t reversed_children[2] = {
-        { inner_cd.words, FCH_INTERNAL_STATE_WORDS },
-        { inner_ab.words, FCH_INTERNAL_STATE_WORDS }
-    };
-    fch_state_t skew_children[2] = {
-        { leaves[0].words, FCH_INTERNAL_STATE_WORDS },
-        { inner_bcd.words, FCH_INTERNAL_STATE_WORDS }
-    };
-    fch_state_t flat_children[4] = {
-        { leaves[0].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[1].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[2].words, FCH_INTERNAL_STATE_WORDS },
-        { leaves[3].words, FCH_INTERNAL_STATE_WORDS }
-    };
-
-    if (!combine_state(
-            binary_children,
-            binary_root_blocks,
-            2,
-            ATTACK_CHUNK_SIZE * 4u,
-            0,
-            &variants[0]
-        ) ||
-        !combine_state(
             flat_children,
             flat_blocks,
-            4,
-            ATTACK_CHUNK_SIZE * 4u,
+            4u,
+            FCH_TREE_LEAF_BYTES * 4u,
             0,
-            &variants[1]
-        ) ||
-        !combine_state(
-            skew_children,
-            skew_root_blocks,
-            2,
-            ATTACK_CHUNK_SIZE * 4u,
-            0,
-            &variants[2]
-        ) ||
-        !combine_state(
-            reversed_children,
-            binary_root_blocks,
-            2,
-            ATTACK_CHUNK_SIZE * 4u,
-            0,
-            &variants[3]
-        ) ||
-        !combine_state(
-            flat_children,
+            &rejected_output
+        ))
+        rejected++;
+
+    const fch_block_t shifted_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES * 2u - 1u},
+        {FCH_TREE_LEAF_BYTES * 2u - 1u,
+         FCH_TREE_LEAF_BYTES * 2u + 1u}
+    };
+    if (!combine_state(
+            canonical_children,
             shifted_blocks,
-            4,
-            ATTACK_CHUNK_SIZE * 4u,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
             0,
-            &variants[4]
-        ) ||
-        !combine_state(
-            flat_children,
-            flat_blocks,
-            4,
-            ATTACK_CHUNK_SIZE * 4u,
-            1,
-            &variants[5]
+            &rejected_output
         ))
-        return 0;
+        rejected++;
 
-    int minimum_distance = 512;
-    unsigned int collisions = 0;
-    for (size_t a = 0; a < 6u; a++) {
-        for (size_t b = a + 1u; b < 6u; b++) {
-            int distance = bit_diff(
-                (const uint8_t *)variants[a].words,
-                (const uint8_t *)variants[b].words,
-                sizeof(variants[a].words)
-            );
-            if (distance == 0)
-                collisions++;
-            if (distance < minimum_distance)
-                minimum_distance = distance;
-        }
-    }
+    state_record_t forged_cd = pair_cd;
+    forged_cd.tree.first_leaf++;
+    fch_state_t forged_children[2] = {
+        state_view(&pair_ab),
+        state_view(&forged_cd)
+    };
+    if (!combine_state(
+            forged_children,
+            root_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            0,
+            &rejected_output
+        ))
+        rejected++;
 
-    int ok = collisions == 0u && minimum_distance >= 160;
+    if (!combine_state(
+            canonical_children,
+            root_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            -1,
+            &rejected_output
+        ))
+        rejected++;
+
+    int ok = rejected == 6u && altered_distance >= 160;
     printf(
-        "tree_shape,variants=6,min_distance=%d,"
-        "collisions=%u,%s\n",
-        minimum_distance,
-        collisions,
+        "tree_shape,canonical=accepted,invalid_rejected=%u,"
+        "depth_independent=yes,child_bit_distance=%d,%s\n",
+        rejected,
+        altered_distance,
         ok ? "PASS" : "FAIL"
     );
     return ok;
@@ -910,7 +1025,7 @@ static int long_message_screen(void) {
         collisions512 == 0u &&
         minimum256 >= 64 &&
         minimum512 >= 160 &&
-        maximum_depth < FCH_MAX_DEPTH_CAP;
+        maximum_depth == 9;
     printf(
         "long_message,bytes=%u,variants=%u,max_depth=%d,"
         "min256=%d,min512=%d,collisions256=%u,"

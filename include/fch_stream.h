@@ -8,17 +8,6 @@
 extern "C" {
 #endif
 
-/*
- * Streaming input is written to an anonymous temporary file and processed
- * through a random-access reader during finalization. RAM usage stays bounded
- * by the recursive state and fixed-size I/O buffers. Finalization can be
- * slower than the one-shot API and requires temporary-file support.
- *
- * A context must be initialized before use and must not be copied or accessed
- * concurrently while active. After finalization, call the matching free
- * function; repeated free calls on an initialized context are safe.
- */
-
 typedef struct {
 	void *storage;
 	size_t length;

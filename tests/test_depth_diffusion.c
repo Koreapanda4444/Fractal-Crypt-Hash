@@ -7,10 +7,10 @@
 #include "params.h"
 #include "debug_hooks.h"
 
-#define MAX_DEPTH FCH_MAX_DEPTH_CAP
+#define MAX_DEPTH 64
 #define MAX_WORDS FCH_512_STATE_WORDS
 #define ROUNDS 128
-#define INPUT_LEN 2048
+#define INPUT_LEN 8192
 
 typedef struct {
     uint64_t x[MAX_WORDS];
@@ -227,7 +227,7 @@ int main(void) {
         }
     }
 
-    printf("stage,depth,avg,min,max,rounds\n");
+    printf("stage,level,avg,min,max,rounds\n");
     print_stage_stats("node", node_stats, global_max_depth);
     print_stage_stats("leaf", leaf_stats, global_max_depth);
     print_stage_stats("root", root_stats, 0);
@@ -270,4 +270,3 @@ int main(void) {
 
     return 0;
 }
-

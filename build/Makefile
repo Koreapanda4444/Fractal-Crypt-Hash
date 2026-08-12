@@ -48,7 +48,7 @@ test_boundaries: ../tests/test_boundaries.c $(SRC)
 test_invariants: ../tests/test_invariants.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-test_tree_encoding: ../tests/test_tree_encoding.c ../src/leaf.c ../src/combine.c ../src/bitops.c
+test_tree_encoding: ../tests/test_tree_encoding.c ../src/leaf.c ../src/combine.c ../src/fractal_split.c ../src/bitops.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_portability: ../tests/test_portability.c $(SRC)
@@ -84,21 +84,21 @@ test_depth_diffusion: ../tests/test_depth_diffusion.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_stress: ../tests/test_stress.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 test_split_sensitivity: ../tests/test_split_sensitivity.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS) -lm
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 check-extended: test-extended
 	./test_length_variation
 	./test_depth_diffusion
-	./test_stress --variant 16 --big-mb 1 --iters-big 1 --small-kb 4 --iters-small 16 --quiet
+	./test_stress --big-mb 1 --iters-big 1 --small-kb 4 --iters-small 16 --quiet
 	./test_split_sensitivity
 
 bench: bench_hash
 
 bench_hash: ../bench/bench_hash.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 fuzz_hash: ../tests/test_hardening.c $(SRC)
 	clang $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -O1 -g \

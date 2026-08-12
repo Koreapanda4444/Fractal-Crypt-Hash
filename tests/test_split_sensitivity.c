@@ -1,589 +1,243 @@
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
+#include "fch.h"
 #include "fractal.h"
 #include "params.h"
-#include "bitops.h"
+#include "test_utils.h"
 
-typedef fch_state_t (*fch_process_fn)(
-    const uint8_t *data,
-    size_t length,
-    int depth,
-    size_t state_words
-);
+#define REQUIRE(_condition, _message) \
+    do { \
+        if (!(_condition)) { \
+            fprintf(stderr, "FAIL: %s\n", (_message)); \
+            return 0; \
+        } \
+    } while (0)
 
-typedef enum {
-    PAT_CONST = 0,
-    PAT_RAMP = 1,
-    PAT_XORSHIFT = 2
-} pattern_t;
-
-static const char *pattern_name(pattern_t p) {
-    switch (p) {
-        case PAT_CONST: return "const";
-        case PAT_RAMP: return "ramp";
-        case PAT_XORSHIFT: return "xorshift";
-        default: return "?";
+static void fill_pattern(uint8_t *data, size_t length, uint32_t seed) {
+    uint32_t state = seed;
+    for (size_t i = 0; i < length; i++) {
+        state ^= state << 13u;
+        state ^= state >> 17u;
+        state ^= state << 5u;
+        data[i] = (uint8_t)(state + (uint32_t)i * 29u);
     }
 }
 
-typedef struct {
-    double avg;
-    double min;
-    double max;
-    double spread;
-} stats_t;
+static size_t left_leaf_count(size_t leaf_count) {
+    if (leaf_count < 2u)
+        return 0u;
 
-static int popcount64(uint64_t v) {
-#if defined(__GNUC__)
-    return __builtin_popcountll((unsigned long long)v);
-#else
-    int c = 0;
-    while (v) {
-        c += (int)(v & 1u);
-        v >>= 1;
-    }
-    return c;
-#endif
+    size_t power = 1u;
+    while (power <= (leaf_count - 1u) / 2u)
+        power *= 2u;
+    return power;
 }
 
-static double diff_ratio_words(const uint64_t *a, const uint64_t *b, size_t words) {
-    int bits = 0;
-    for (size_t i = 0; i < words; i++) {
-        bits += popcount64(a[i] ^ b[i]);
-    }
-    return bits / (double)(words * 64.0);
-}
-
-static uint8_t *pad_input(const uint8_t *input, size_t length, size_t min_block, size_t *out_len) {
-    if (!out_len) return NULL;
-
-    size_t min_len = length + 1 + 8;
-    size_t padded_len = min_len;
-    if (padded_len < min_block)
-        padded_len = min_block;
-
-    uint8_t *buf = (uint8_t *)calloc(padded_len, 1);
-    if (!buf) {
-        *out_len = 0;
-        return NULL;
-    }
-
-    if (length > 0) {
-        memcpy(buf, input, length);
-    }
-
-    buf[length] = 0x80;
-
-    
-    uint64_t bit_len = (uint64_t)length * 8u;
-    fch_store_le64(buf + padded_len - 8, bit_len);
-
-    *out_len = padded_len;
-    return buf;
-}
-
-static uint32_t xorshift32(uint32_t *s) {
-    uint32_t x = *s;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    *s = x;
-    return x;
-}
-
-static void fill_pattern(uint8_t *buf, size_t len, pattern_t pat, uint32_t seed) {
-    if (!buf) return;
-
-    if (pat == PAT_CONST) {
-        memset(buf, 0xA5, len);
-        return;
-    }
-
-    if (pat == PAT_RAMP) {
-        for (size_t i = 0; i < len; i++)
-            buf[i] = (uint8_t)i;
-        return;
-    }
-
-    uint32_t s = seed ? seed : 0xC001D00Du;
-    for (size_t i = 0; i < len; i++) {
-        buf[i] = (uint8_t)(xorshift32(&s) & 0xFFu);
-    }
-}
-
-static stats_t measure_diffusion(
-    fch_process_fn fn,
-    size_t min_block,
-    pattern_t pat,
-    size_t input_len,
-    int rounds
+static int same_blocks(
+    const fch_block_t *left,
+    const fch_block_t *right,
+    size_t count
 ) {
-    uint8_t *base = (uint8_t *)malloc(input_len);
-    uint8_t *mod  = (uint8_t *)malloc(input_len);
+    for (size_t i = 0; i < count; i++) {
+        if (left[i].offset != right[i].offset ||
+            left[i].length != right[i].length)
+            return 0;
+    }
+    return 1;
+}
 
-    stats_t s;
-    s.avg = 0.0;
-    s.min = 1.0;
-    s.max = 0.0;
-    s.spread = 0.0;
+static int check_schedule_case(size_t length) {
+    uint8_t *first = (uint8_t *)malloc(length);
+    uint8_t *second = (uint8_t *)malloc(length);
+    REQUIRE(first && second, "schedule test allocation failed");
 
-    if (!base || !mod) {
-        free(base);
-        free(mod);
-        return s;
+    fill_pattern(first, length, UINT32_C(0x12345678));
+    fill_pattern(second, length, UINT32_C(0xD00DFEED));
+
+    fch_block_t base[FCH_TREE_ARITY];
+    fch_block_t changed[FCH_TREE_ARITY];
+    fch_block_t other_depth[FCH_TREE_ARITY];
+    size_t base_count = fch_fractal_split(
+        first,
+        length,
+        0,
+        base,
+        FCH_TREE_ARITY
+    );
+    size_t changed_count = fch_fractal_split(
+        second,
+        length,
+        0,
+        changed,
+        FCH_TREE_ARITY
+    );
+    size_t depth_count = fch_fractal_split(
+        first,
+        length,
+        63,
+        other_depth,
+        FCH_TREE_ARITY
+    );
+
+    size_t leaves = fch_tree_leaf_count_for_length(length);
+    size_t expected_count = leaves == 1u ? 1u : FCH_TREE_ARITY;
+    int ok = base_count == expected_count &&
+        changed_count == base_count && depth_count == base_count &&
+        same_blocks(base, changed, base_count) &&
+        same_blocks(base, other_depth, base_count);
+
+    if (ok && leaves == 1u) {
+        ok = base[0].offset == 0u && base[0].length == length;
+    } else if (ok) {
+        size_t left = left_leaf_count(leaves) * FCH_TREE_LEAF_BYTES;
+        ok = base[0].offset == 0u && base[0].length == left &&
+            base[1].offset == left &&
+            base[1].length == length - left;
     }
 
-    fill_pattern(base, input_len, pat, 0x12345678u);
-    uint32_t flip_s = 0xBADC0DEu ^ (uint32_t)input_len ^ (uint32_t)pat;
+    free(first);
+    free(second);
+    REQUIRE(ok, "schedule depends on content, depth, or wrong boundary");
+    return 1;
+}
 
-    for (int r = 0; r < rounds; r++) {
-        memcpy(mod, base, input_len);
+static int schedule_cases(void) {
+    static const size_t lengths[] = {
+        1u,
+        FCH_TREE_LEAF_BYTES - 1u,
+        FCH_TREE_LEAF_BYTES,
+        FCH_TREE_LEAF_BYTES + 1u,
+        FCH_TREE_LEAF_BYTES * 2u - 1u,
+        FCH_TREE_LEAF_BYTES * 2u,
+        FCH_TREE_LEAF_BYTES * 2u + 1u,
+        FCH_TREE_LEAF_BYTES * 3u,
+        FCH_TREE_LEAF_BYTES * 4u,
+        FCH_TREE_LEAF_BYTES * 5u,
+        FCH_TREE_LEAF_BYTES * 8u,
+        FCH_TREE_LEAF_BYTES * 9u + 17u
+    };
 
-        size_t pos = (size_t)(xorshift32(&flip_s) % (uint32_t)input_len);
-        unsigned bit = (unsigned)(xorshift32(&flip_s) % 8u);
-        mod[pos] ^= (uint8_t)(1u << bit);
-
-        size_t bl = 0, ml = 0;
-        uint8_t *bp = pad_input(base, input_len, min_block, &bl);
-        uint8_t *mp = pad_input(mod,  input_len, min_block, &ml);
-        if (!bp || !mp || bl != ml) {
-            free(bp);
-            free(mp);
-            continue;
-        }
-
-        fch_state_t a = fn(bp, bl, 0, FCH_256_STATE_WORDS);
-        fch_state_t b = fn(mp, ml, 0, FCH_256_STATE_WORDS);
-
-        if (a.state && b.state) {
-            double d = diff_ratio_words(a.state, b.state, FCH_256_STATE_WORDS);
-            s.avg += d;
-            if (d < s.min) s.min = d;
-            if (d > s.max) s.max = d;
-        }
-
-        free(a.state);
-        free(b.state);
-        free(bp);
-        free(mp);
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        if (!check_schedule_case(lengths[i]))
+            return 0;
     }
 
-    free(base);
-    free(mod);
-
-    s.avg /= (double)rounds;
-    s.spread = s.max - s.min;
-    return s;
+    for (size_t leaves = 1u; leaves <= 17u; leaves++) {
+        if (!check_schedule_case(leaves * FCH_TREE_LEAF_BYTES))
+            return 0;
+    }
+    return 1;
 }
-
-static double stability_score(const stats_t *s) {
-    
-    double avg_penalty = fabs(s->avg - 0.5);
-    double spread_penalty = s->spread;
-    return 1.0 - (avg_penalty * 2.0) - (spread_penalty * 1.0);
-}
-
-static int rounds_for_len(size_t len) {
-    if (len >= 262144) return 16;
-    if (len >= 65536)  return 32;
-    if (len >= 8192)   return 64;
-    return 128;
-}
-
-
-
-#include "../src/mix.c"
-#include "../src/bitops.c"
-
-
-#define FCH_PARAMS_ALLOW_REINCLUDE 1
-#undef FCH_N_MIN
-#undef FCH_N_MAX
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_N_MIN 2
-#define FCH_N_MAX 2
-#define FCH_MAX_DEPTH_CAP 16
-#define fch_leaf_compress fch_leaf_compress_N22
-#define fch_leaf_compress_reader fch_leaf_compress_reader_N22
-#define fch_combine fch_combine_N22
-#define fch_fractal_split fch_fractal_split_N22
-#define fch_fractal_split_reader fch_fractal_split_reader_N22
-#define fch_process fch_process_N22
-#define fch_process_reader fch_process_reader_N22
-#define rotl64 rotl64_leaf_N22
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_N22
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_N22
-#define scaled_length scaled_length_N22
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_N22
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_N22 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-#undef FCH_N_MIN
-#undef FCH_N_MAX
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_N_MIN 2
-#define FCH_N_MAX 6
-#define FCH_MAX_DEPTH_CAP 16
-#define fch_leaf_compress fch_leaf_compress_N26
-#define fch_leaf_compress_reader fch_leaf_compress_reader_N26
-#define fch_combine fch_combine_N26
-#define fch_fractal_split fch_fractal_split_N26
-#define fch_fractal_split_reader fch_fractal_split_reader_N26
-#define fch_process fch_process_N26
-#define fch_process_reader fch_process_reader_N26
-#define rotl64 rotl64_leaf_N26
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_N26
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_N26
-#define scaled_length scaled_length_N26
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_N26
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_N26 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-#undef FCH_N_MIN
-#undef FCH_N_MAX
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_N_MIN 4
-#define FCH_N_MAX 6
-#define FCH_MAX_DEPTH_CAP 16
-#define fch_leaf_compress fch_leaf_compress_N46
-#define fch_leaf_compress_reader fch_leaf_compress_reader_N46
-#define fch_combine fch_combine_N46
-#define fch_fractal_split fch_fractal_split_N46
-#define fch_fractal_split_reader fch_fractal_split_reader_N46
-#define fch_process fch_process_N46
-#define fch_process_reader fch_process_reader_N46
-#define rotl64 rotl64_leaf_N46
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_N46
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_N46
-#define scaled_length scaled_length_N46
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_N46
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_N46 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-#undef FCH_N_MIN
-#undef FCH_N_MAX
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_N_MIN 6
-#define FCH_N_MAX 6
-#define FCH_MAX_DEPTH_CAP 16
-#define fch_leaf_compress fch_leaf_compress_N66
-#define fch_leaf_compress_reader fch_leaf_compress_reader_N66
-#define fch_combine fch_combine_N66
-#define fch_fractal_split fch_fractal_split_N66
-#define fch_fractal_split_reader fch_fractal_split_reader_N66
-#define fch_process fch_process_N66
-#define fch_process_reader fch_process_reader_N66
-#define rotl64 rotl64_leaf_N66
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_N66
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_N66
-#define scaled_length scaled_length_N66
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_N66
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_N66 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-
-#undef FCH_N_MIN
-#undef FCH_N_MAX
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_N_MIN 2
-#define FCH_N_MAX 6
-#define FCH_MAX_DEPTH_CAP 4
-#define fch_leaf_compress fch_leaf_compress_D4
-#define fch_leaf_compress_reader fch_leaf_compress_reader_D4
-#define fch_combine fch_combine_D4
-#define fch_fractal_split fch_fractal_split_D4
-#define fch_fractal_split_reader fch_fractal_split_reader_D4
-#define fch_process fch_process_D4
-#define fch_process_reader fch_process_reader_D4
-#define rotl64 rotl64_leaf_D4
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_D4
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_D4
-#define scaled_length scaled_length_D4
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_D4
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_D4 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_MAX_DEPTH_CAP 8
-#define fch_leaf_compress fch_leaf_compress_D8
-#define fch_leaf_compress_reader fch_leaf_compress_reader_D8
-#define fch_combine fch_combine_D8
-#define fch_fractal_split fch_fractal_split_D8
-#define fch_fractal_split_reader fch_fractal_split_reader_D8
-#define fch_process fch_process_D8
-#define fch_process_reader fch_process_reader_D8
-#define rotl64 rotl64_leaf_D8
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_D8
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_D8
-#define scaled_length scaled_length_D8
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_D8
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_D8 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_MAX_DEPTH_CAP 16
-#define fch_leaf_compress fch_leaf_compress_D16
-#define fch_leaf_compress_reader fch_leaf_compress_reader_D16
-#define fch_combine fch_combine_D16
-#define fch_fractal_split fch_fractal_split_D16
-#define fch_fractal_split_reader fch_fractal_split_reader_D16
-#define fch_process fch_process_D16
-#define fch_process_reader fch_process_reader_D16
-#define rotl64 rotl64_leaf_D16
-#include "../src/leaf.c"
-#undef rotl64
-#define rotl64 rotl64_combine_D16
-#include "../src/combine.c"
-#undef rotl64
-#define determine_n determine_n_D16
-#define scaled_length scaled_length_D16
-#include "../src/fractal_split.c"
-#undef determine_n
-#undef scaled_length
-#define fch_debug_emit_root_if fch_debug_emit_root_if_D16
-#include "../src/fractal_process.c"
-#undef fch_debug_emit_root_if
-enum { MINBLOCK_D16 = FCH_MIN_BLOCK_SIZE };
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef fch_process
-#undef fch_process_reader
-
-#undef FCH_PARAMS_ALLOW_REINCLUDE
 
 typedef struct {
-    const char *group;
-    const char *id;
-    int nmin;
-    int nmax;
-    int depthcap;
-    size_t min_block;
-    fch_process_fn fn;
-} cfg_t;
+    size_t reads;
+} counting_reader_t;
 
-static const cfg_t CFGS[] = {
-    {"n-range", "N=2..2", 2, 2, 16, MINBLOCK_N22, fch_process_N22},
-    {"n-range", "N=2..6(default)", 2, 6, 16, MINBLOCK_N26, fch_process_N26},
-    {"n-range", "N=4..6", 4, 6, 16, MINBLOCK_N46, fch_process_N46},
-    {"n-range", "N=6..6", 6, 6, 16, MINBLOCK_N66, fch_process_N66},
+static int count_read(
+    void *context,
+    size_t offset,
+    uint8_t *output,
+    size_t length
+) {
+    counting_reader_t *reader = (counting_reader_t *)context;
+    (void)offset;
+    (void)output;
+    (void)length;
+    reader->reads++;
+    return 0;
+}
 
-    {"depthcap", "D=4", 2, 6, 4, MINBLOCK_D4, fch_process_D4},
-    {"depthcap", "D=8", 2, 6, 8, MINBLOCK_D8, fch_process_D8},
-    {"depthcap", "D=16(default)", 2, 6, 16, MINBLOCK_D16, fch_process_D16},
-};
+static int schedule_does_not_read_input(void) {
+    counting_reader_t context = {0u};
+    fch_reader_t reader = {count_read, &context};
+    fch_block_t blocks[FCH_TREE_ARITY];
+    size_t count = fch_fractal_split_reader(
+        &reader,
+        0u,
+        FCH_TREE_LEAF_BYTES * 5u + 7u,
+        0,
+        blocks,
+        FCH_TREE_ARITY
+    );
 
-static int is_default_cfg(const cfg_t *c) {
-    if (!c) return 0;
-    return (c->nmin == 2 && c->nmax == 6 && c->depthcap == 16);
+    REQUIRE(count == FCH_TREE_ARITY, "reader schedule generation failed");
+    REQUIRE(context.reads == 0u, "schedule read message contents");
+    return 1;
+}
+
+static int prefix_subtrees_remain_stable(void) {
+    static const size_t completed_prefixes[] = {1u, 2u, 4u, 8u};
+
+    for (size_t i = 0;
+         i < sizeof(completed_prefixes) / sizeof(completed_prefixes[0]);
+         i++) {
+        size_t prefix_leaves = completed_prefixes[i];
+        size_t extended_leaves = prefix_leaves + 1u;
+        fch_tree_position_t root;
+        fch_tree_position_t children[FCH_TREE_ARITY];
+
+        REQUIRE(fch_tree_position_for_range(
+                    0u,
+                    extended_leaves * FCH_TREE_LEAF_BYTES,
+                    &root),
+                "extended prefix position failed");
+        REQUIRE(fch_tree_split_position(&root, children),
+                "extended prefix split failed");
+        REQUIRE(children[0].first_leaf == 0u &&
+                children[0].leaf_count == prefix_leaves &&
+                children[0].byte_offset == 0u &&
+                children[0].byte_length ==
+                    prefix_leaves * FCH_TREE_LEAF_BYTES,
+                "completed prefix subtree moved after extension");
+    }
+    return 1;
+}
+
+static int boundary_diffusion(void) {
+    static const size_t lengths[] = {
+        FCH_TREE_LEAF_BYTES - 10u,
+        FCH_TREE_LEAF_BYTES - 9u,
+        FCH_TREE_LEAF_BYTES - 8u,
+        FCH_TREE_LEAF_BYTES * 2u - 10u,
+        FCH_TREE_LEAF_BYTES * 2u - 9u,
+        FCH_TREE_LEAF_BYTES * 2u - 8u
+    };
+    uint8_t message[FCH_TREE_LEAF_BYTES * 2u];
+    uint8_t changed[FCH_TREE_LEAF_BYTES * 2u];
+    fill_pattern(message, sizeof(message), UINT32_C(0xA5A55A5A));
+
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        size_t length = lengths[i];
+        uint8_t base256[32];
+        uint8_t changed256[32];
+        uint8_t base512[64];
+        uint8_t changed512[64];
+
+        memcpy(changed, message, length);
+        changed[length / 2u] ^= (uint8_t)(1u << (i % 8u));
+        REQUIRE(fch_hash_256_checked(message, length, base256) &&
+                fch_hash_256_checked(changed, length, changed256) &&
+                fch_hash_512_checked(message, length, base512) &&
+                fch_hash_512_checked(changed, length, changed512),
+                "boundary hash failed");
+        REQUIRE(bit_diff(base256, changed256, sizeof(base256)) >= 64,
+                "weak 256-bit diffusion at a leaf boundary");
+        REQUIRE(bit_diff(base512, changed512, sizeof(base512)) >= 160,
+                "weak 512-bit diffusion at a leaf boundary");
+    }
+    return 1;
 }
 
 int main(void) {
-    const pattern_t patterns[] = { PAT_CONST, PAT_RAMP, PAT_XORSHIFT };
-    const size_t lengths[] = { 1024, 8192, 65536, 262144 };
-
-    printf("group,cfg,nmin,nmax,depthcap,len,pattern,avg,min,max,spread,score\n");
-
-    
-    double best_score_n = -1e9;
-    double best_score_d = -1e9;
-    double default_score_n = -1e9;
-    double default_score_d = -1e9;
-    const cfg_t *best_n = NULL;
-    const cfg_t *best_d = NULL;
-
-    for (size_t ci = 0; ci < sizeof(CFGS) / sizeof(CFGS[0]); ci++) {
-        const cfg_t *cfg = &CFGS[ci];
-
-        double score_sum = 0.0;
-        int score_cnt = 0;
-
-        for (size_t li = 0; li < sizeof(lengths) / sizeof(lengths[0]); li++) {
-            size_t input_len = lengths[li];
-            int rounds = rounds_for_len(input_len);
-
-            for (size_t pi = 0; pi < sizeof(patterns) / sizeof(patterns[0]); pi++) {
-                pattern_t pat = patterns[pi];
-                stats_t st = measure_diffusion(cfg->fn, cfg->min_block, pat, input_len, rounds);
-                double score = stability_score(&st);
-
-                score_sum += score;
-                score_cnt++;
-
-                printf(
-                    "%s,%s,%d,%d,%d,%u,%s,%.2f,%.2f,%.2f,%.2f,%.4f\n",
-                    cfg->group,
-                    cfg->id,
-                    cfg->nmin,
-                    cfg->nmax,
-                    cfg->depthcap,
-                    (unsigned)input_len,
-                    pattern_name(pat),
-                    st.avg * 100.0,
-                    st.min * 100.0,
-                    st.max * 100.0,
-                    st.spread * 100.0,
-                    score
-                );
-            }
-        }
-
-        double avg_score = score_sum / (double)score_cnt;
-
-        fprintf(
-            stderr,
-            "SCORE,%s,%s,avg_score=%.4f%s\n",
-            cfg->group,
-            cfg->id,
-            avg_score,
-            is_default_cfg(cfg) ? ",default" : ""
-        );
-
-        if (strcmp(cfg->group, "n-range") == 0) {
-            if (avg_score > best_score_n) {
-                best_score_n = avg_score;
-                best_n = cfg;
-            }
-        } else if (strcmp(cfg->group, "depthcap") == 0) {
-            if (avg_score > best_score_d) {
-                best_score_d = avg_score;
-                best_d = cfg;
-            }
-        }
-
-        if (is_default_cfg(cfg)) {
-            if (strcmp(cfg->group, "n-range") == 0)
-                default_score_n = avg_score;
-            else if (strcmp(cfg->group, "depthcap") == 0)
-                default_score_d = avg_score;
-            fprintf(
-                stderr,
-                "INFO: default cfg avg_score=%.4f (group=%s)\n",
-                avg_score,
-                cfg->group
-            );
-        }
-    }
-
-    if (best_n) {
-        fprintf(stderr, "BEST[n-range]: %s (avg_score=%.4f)\n", best_n->id, best_score_n);
-    }
-    if (best_d) {
-        fprintf(stderr, "BEST[depthcap]: %s (avg_score=%.4f)\n", best_d->id, best_score_d);
-    }
-
-    if (default_score_n < 0.80 || default_score_d < 0.80) {
-        fprintf(
-            stderr,
-            "SPLIT_SENSITIVITY: FAIL (default scores %.4f, %.4f)\n",
-            default_score_n,
-            default_score_d
-        );
+    if (!schedule_cases() ||
+        !schedule_does_not_read_input() ||
+        !prefix_subtrees_remain_stable() ||
+        !boundary_diffusion())
         return 1;
-    }
 
-    fprintf(
-        stderr,
-        "SPLIT_SENSITIVITY: PASS (default scores %.4f, %.4f)\n",
-        default_score_n,
-        default_score_d
-    );
-
+    puts("PASS: canonical schedule is content-independent and prefix-stable");
     return 0;
 }

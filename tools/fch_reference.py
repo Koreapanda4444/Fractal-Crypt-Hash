@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-"""Straightforward Python reference implementation of Fractal Crypt-Hash."""
-
 from __future__ import annotations
 
 import argparse
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -16,14 +14,11 @@ OUTPUT_256_WORDS = 4
 OUTPUT_512_WORDS = 8
 BLOCK_SIZE = 128
 ROUNDS = 16
-TREE_VERSION = 1
-SPLIT_VERSION = 1
-MIN_BLOCK_SIZE = 64
-MAX_DEPTH = 16
-N_MIN = 2
-N_MAX = 6
-WEIGHT_MIN = 128
-WEIGHT_MAX = 255
+TREE_VERSION = 2
+PADDING_VERSION = 1
+PADDING_MIN_BYTES = 64
+TREE_LEAF_BYTES = 1024
+TREE_ARITY = 2
 
 IV = (
     0x6A09E667F3BCC908,
@@ -55,31 +50,22 @@ SIGMA = (
     (2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9),
 )
 
-TAG_LEAF_HEADER = int.from_bytes(b"FCHLEAF1", "little")
-TAG_LEAF_DATA = int.from_bytes(b"FCHLDAT1", "little")
-TAG_NODE_HEADER = int.from_bytes(b"FCHNODE1", "little")
-TAG_NODE_CHILD = int.from_bytes(b"FCHCHLD1", "little")
-TAG_OUTPUT = int.from_bytes(b"FCHOUT01", "little")
-TAG_SPLIT_HEADER = int.from_bytes(b"FCHSPH01", "little")
-TAG_SPLIT_DATA = int.from_bytes(b"FCHSPD01", "little")
-TAG_SPLIT_OUTPUT = int.from_bytes(b"FCHSPO01", "little")
+TAG_LEAF_HEADER = int.from_bytes(b"FCHLEAF2", "little")
+TAG_LEAF_DATA = int.from_bytes(b"FCHLDAT2", "little")
+TAG_NODE_HEADER = int.from_bytes(b"FCHNODE2", "little")
+TAG_NODE_CHILD = int.from_bytes(b"FCHCHLD2", "little")
+TAG_OUTPUT = int.from_bytes(b"FCHOUT02", "little")
 
-DOMAIN_SPLIT = 0x31544C5053484346
-DOMAIN_ROOT_LEAF = 0x524F4F544C454146
-DOMAIN_INNER_LEAF = 0x494E544C45414631
-DOMAIN_ROOT_NODE = 0x524F4F544E4F4445
-DOMAIN_INNER_NODE = 0x494E544E4F444531
-DOMAIN_OUTPUT_256 = 0x4643484F55543235
-DOMAIN_OUTPUT_512 = 0x4643484F55543531
+DOMAIN_LEAF = int.from_bytes(b"FCHLDM02", "little")
+DOMAIN_NODE = int.from_bytes(b"FCHNDM02", "little")
+DOMAIN_OUTPUT_256 = int.from_bytes(b"FCHO2562", "little")
+DOMAIN_OUTPUT_512 = int.from_bytes(b"FCHO5122", "little")
 
 FLAG_LEAF_HEADER = 0x0000000000000001
 FLAG_LEAF_DATA = 0x0000000000000002
 FLAG_NODE_HEADER = 0x0000000000000004
 FLAG_NODE_CHILD = 0x0000000000000008
 FLAG_OUTPUT = 0x0000000000000010
-FLAG_SPLIT_HEADER = 0x0000000000000020
-FLAG_SPLIT_DATA = 0x0000000000000040
-FLAG_SPLIT_OUTPUT = 0x0000000000000080
 FLAG_FINAL = 0x8000000000000000
 
 
@@ -166,40 +152,63 @@ def _compress(
         ) & MASK64
 
 
-def _split_material(data: bytes, depth: int) -> list[int]:
-    state = _mix_init(DOMAIN_SPLIT)
+@dataclass
+class TreeNode:
+    state: list[int]
+    level: int
+    first_leaf: int
+    leaf_count: int
+    byte_offset: int
+    byte_length: int
+
+
+def _tree_level(leaf_count: int) -> int:
+    if leaf_count <= 0:
+        raise ValueError("tree must contain at least one leaf")
+    return (leaf_count - 1).bit_length()
+
+
+def _largest_power_of_two_below(value: int) -> int:
+    if value < 2:
+        raise ValueError("an internal node requires at least two leaves")
+    return 1 << ((value - 1).bit_length() - 1)
+
+
+def _leaf(data: bytes, byte_offset: int) -> TreeNode:
+    if not 1 <= len(data) <= TREE_LEAF_BYTES:
+        raise ValueError("invalid leaf length")
+    if byte_offset < 0 or byte_offset % TREE_LEAF_BYTES:
+        raise ValueError("leaf offset is not aligned")
+
+    first_leaf = byte_offset // TREE_LEAF_BYTES
+    state = _mix_init(DOMAIN_LEAF)
     header = bytearray(BLOCK_SIZE)
     fields = (
-        TAG_SPLIT_HEADER,
-        SPLIT_VERSION,
-        DOMAIN_SPLIT,
+        TAG_LEAF_HEADER,
+        TREE_VERSION,
+        DOMAIN_LEAF,
+        first_leaf,
+        byte_offset,
         len(data),
-        depth,
+        TREE_LEAF_BYTES,
         STATE_WORDS,
-        N_MIN,
-        N_MAX,
-        WEIGHT_MIN,
-        WEIGHT_MAX,
-        MIN_BLOCK_SIZE,
-        MAX_DEPTH,
         BLOCK_SIZE,
         ROUNDS,
-        TREE_VERSION,
+        PADDING_VERSION,
+        TREE_ARITY,
     )
     for index, value in enumerate(fields):
         _store64(header, index * 8, value)
-    _compress(state, header, BLOCK_SIZE, 0, DOMAIN_SPLIT, FLAG_SPLIT_HEADER)
+    _compress(state, header, BLOCK_SIZE, 0, DOMAIN_LEAF, FLAG_LEAF_HEADER)
 
     processed = 0
-    record_count = 0
     while processed < len(data):
         chunk = data[processed : processed + BLOCK_SIZE - 8]
         record = bytearray(BLOCK_SIZE)
-        _store64(record, 0, TAG_SPLIT_DATA)
+        _store64(record, 0, TAG_LEAF_DATA)
         record[8 : 8 + len(chunk)] = chunk
         processed += len(chunk)
-        record_count += 1
-        flags = FLAG_SPLIT_DATA
+        flags = FLAG_LEAF_DATA
         if processed == len(data):
             flags |= FLAG_FINAL
         _compress(
@@ -207,220 +216,119 @@ def _split_material(data: bytes, depth: int) -> list[int]:
             record,
             len(chunk) + 8,
             processed,
-            DOMAIN_SPLIT,
+            DOMAIN_LEAF,
             flags,
         )
 
-    rejection_threshold = (1 << 64) % (N_MAX - N_MIN + 1)
-    draw_counter = 0
-    while True:
-        output_record = bytearray(BLOCK_SIZE)
-        fields = (
-            TAG_SPLIT_OUTPUT,
-            SPLIT_VERSION,
-            draw_counter,
-            len(data),
-            depth,
-            record_count,
-            N_MIN,
-            N_MAX,
-            WEIGHT_MIN,
-            WEIGHT_MAX,
-            STATE_WORDS,
-            BLOCK_SIZE,
-            ROUNDS,
-            TREE_VERSION,
-        )
-        for index, value in enumerate(fields):
-            _store64(output_record, index * 8, value)
-        _compress(
-            state,
-            output_record,
-            BLOCK_SIZE,
-            draw_counter,
-            DOMAIN_SPLIT,
-            FLAG_SPLIT_OUTPUT | FLAG_FINAL,
-        )
-        if state[0] >= rejection_threshold:
-            return state
-        draw_counter += 1
-        if draw_counter > MASK64:
-            raise OverflowError("split output counter exhausted")
+    return TreeNode(state, 0, first_leaf, 1, byte_offset, len(data))
 
 
-def _split(data: bytes, depth: int) -> list[tuple[int, int]]:
-    if not data:
-        return [(0, 0)]
+def _combine(left: TreeNode, right: TreeNode) -> TreeNode:
+    if left.first_leaf + left.leaf_count != right.first_leaf:
+        raise ValueError("child leaf ranges are not adjacent")
+    if left.byte_offset + left.byte_length != right.byte_offset:
+        raise ValueError("child byte ranges are not adjacent")
 
-    material = _split_material(data, depth)
-    if len(data) < MIN_BLOCK_SIZE * 2:
-        count = N_MIN
-    else:
-        count = N_MIN + material[0] % (N_MAX - N_MIN + 1)
-    count = min(count, N_MAX, len(data))
+    leaf_count = left.leaf_count + right.leaf_count
+    expected_left = _largest_power_of_two_below(leaf_count)
+    if left.leaf_count != expected_left:
+        raise ValueError("children do not follow the canonical tree schedule")
 
-    weights = [WEIGHT_MIN + (material[index + 1] & 0x7F) for index in range(count)]
-    total_weight = sum(weights)
-    blocks: list[tuple[int, int]] = []
-    block_offset = 0
-
-    for index, weight in enumerate(weights):
-        remaining = len(data) - block_offset
-        blocks_left = count - index - 1
-        quotient, remainder = divmod(len(data), total_weight)
-        block_length = quotient * weight + (remainder * weight) // total_weight
-        block_length = max(block_length, 1)
-
-        if index == count - 1:
-            block_length = remaining
-        else:
-            block_length = min(block_length, remaining - blocks_left)
-
-        blocks.append((block_offset, block_length))
-        block_offset += block_length
-
-    if block_offset != len(data):
-        raise ValueError("split does not cover its parent")
-    return blocks
-
-
-def _leaf(data: bytes, depth: int) -> list[int]:
-    domain = DOMAIN_ROOT_LEAF if depth == 0 else DOMAIN_INNER_LEAF
-    state = _mix_init(domain)
-    header = bytearray(BLOCK_SIZE)
-    fields = (
-        TAG_LEAF_HEADER,
-        TREE_VERSION,
-        domain,
-        len(data),
-        depth,
-        STATE_WORDS,
-        MIN_BLOCK_SIZE,
-        MAX_DEPTH,
-        N_MIN,
-        N_MAX,
-        BLOCK_SIZE,
-        ROUNDS,
-        WEIGHT_MIN,
-        WEIGHT_MAX,
-        SPLIT_VERSION,
+    node = TreeNode(
+        [],
+        _tree_level(leaf_count),
+        left.first_leaf,
+        leaf_count,
+        left.byte_offset,
+        left.byte_length + right.byte_length,
     )
-    for index, value in enumerate(fields):
-        _store64(header, index * 8, value)
-    _compress(state, header, BLOCK_SIZE, 0, domain, FLAG_LEAF_HEADER)
-
-    if not data:
-        record = bytearray(BLOCK_SIZE)
-        _store64(record, 0, TAG_LEAF_DATA)
-        _compress(state, record, 8, 0, domain, FLAG_LEAF_DATA | FLAG_FINAL)
-        return state
-
-    processed = 0
-    while processed < len(data):
-        chunk = data[processed : processed + BLOCK_SIZE - 8]
-        record = bytearray(BLOCK_SIZE)
-        _store64(record, 0, TAG_LEAF_DATA)
-        record[8 : 8 + len(chunk)] = chunk
-        flags = FLAG_LEAF_DATA
-        if len(chunk) == len(data) - processed:
-            flags |= FLAG_FINAL
-        processed += len(chunk)
-        _compress(state, record, len(chunk) + 8, processed, domain, flags)
-    return state
-
-
-def _combine(
-    children: list[list[int]],
-    blocks: list[tuple[int, int]],
-    node_length: int,
-    depth: int,
-) -> list[int]:
-    domain = DOMAIN_ROOT_NODE if depth == 0 else DOMAIN_INNER_NODE
-    state = _mix_init(domain)
+    state = _mix_init(DOMAIN_NODE)
     header = bytearray(BLOCK_SIZE)
     fields = (
         TAG_NODE_HEADER,
         TREE_VERSION,
-        domain,
-        node_length,
-        depth,
-        len(children),
+        DOMAIN_NODE,
+        node.level,
+        node.first_leaf,
+        node.leaf_count,
+        node.byte_offset,
+        node.byte_length,
+        TREE_ARITY,
+        TREE_LEAF_BYTES,
         STATE_WORDS,
-        MIN_BLOCK_SIZE,
-        MAX_DEPTH,
-        N_MIN,
-        N_MAX,
         BLOCK_SIZE,
         ROUNDS,
-        WEIGHT_MIN,
-        WEIGHT_MAX,
-        SPLIT_VERSION,
     )
     for index, value in enumerate(fields):
         _store64(header, index * 8, value)
-    _compress(state, header, BLOCK_SIZE, 0, domain, FLAG_NODE_HEADER)
+    _compress(state, header, BLOCK_SIZE, 0, DOMAIN_NODE, FLAG_NODE_HEADER)
 
-    covered = 0
-    for child_index, (child, block) in enumerate(zip(children, blocks)):
-        offset, length = block
-        if offset != covered or length <= 0 or len(child) != STATE_WORDS:
-            raise ValueError("non-canonical child layout")
-
+    for child_index, child in enumerate((left, right)):
         record = bytearray(BLOCK_SIZE)
         fields = (
             TAG_NODE_CHILD,
             TREE_VERSION,
-            node_length,
-            depth,
-            len(children),
             child_index,
-            offset,
-            length,
+            child.level,
+            child.first_leaf,
+            child.leaf_count,
+            child.byte_offset,
+            child.byte_length,
         )
         for index, value in enumerate(fields):
             _store64(record, index * 8, value)
-        for index, word in enumerate(child):
+        for index, word in enumerate(child.state):
             _store64(record, 64 + index * 8, word)
 
         flags = FLAG_NODE_CHILD
-        if child_index + 1 == len(children):
+        if child_index + 1 == TREE_ARITY:
             flags |= FLAG_FINAL
-        _compress(state, record, BLOCK_SIZE, child_index + 1, domain, flags)
-        covered += length
+        _compress(
+            state,
+            record,
+            BLOCK_SIZE,
+            child_index + 1,
+            DOMAIN_NODE,
+            flags,
+        )
 
-    if covered != node_length:
-        raise ValueError("children do not cover their parent")
-    return state
+    node.state = state
+    return node
 
 
-def _process(data: bytes, depth: int = 0) -> list[int]:
-    if depth >= MAX_DEPTH or len(data) <= MIN_BLOCK_SIZE:
-        return _leaf(data, depth)
+def _process(data: bytes, byte_offset: int = 0) -> TreeNode:
+    if not data:
+        raise ValueError("the padded tree input cannot be empty")
+    if byte_offset < 0 or byte_offset % TREE_LEAF_BYTES:
+        raise ValueError("tree offset is not aligned")
 
-    blocks = _split(data, depth)
-    children = [
-        _process(data[offset : offset + length], depth + 1)
-        for offset, length in blocks
-    ]
-    return _combine(children, blocks, len(data), depth)
+    leaf_count = (len(data) + TREE_LEAF_BYTES - 1) // TREE_LEAF_BYTES
+    if leaf_count == 1:
+        return _leaf(data, byte_offset)
+
+    left_leaves = _largest_power_of_two_below(leaf_count)
+    left_length = left_leaves * TREE_LEAF_BYTES
+    left = _process(data[:left_length], byte_offset)
+    right = _process(data[left_length:], byte_offset + left_length)
+    return _combine(left, right)
 
 
 def _pad(message: bytes) -> bytes:
     if len(message) > (1 << 61) - 1:
         raise ValueError("message is too long for the FCH length field")
-    padded_length = max(len(message) + 9, MIN_BLOCK_SIZE)
+    padded_length = max(len(message) + 9, PADDING_MIN_BYTES)
     padding = padded_length - len(message) - 9
     return message + b"\x80" + bytes(padding) + (len(message) * 8).to_bytes(8, "little")
 
 
 def digest(message: bytes, output_bits: int = 256) -> bytes:
-    """Return an FCH-256 or FCH-512 digest."""
     if output_bits not in (256, 512):
         raise ValueError("output_bits must be 256 or 512")
 
     output_words = OUTPUT_256_WORDS if output_bits == 256 else OUTPUT_512_WORDS
     domain = DOMAIN_OUTPUT_256 if output_bits == 256 else DOMAIN_OUTPUT_512
-    state = _process(_pad(message))
+    padded = _pad(message)
+    root = _process(padded)
     record = bytearray(BLOCK_SIZE)
     fields = (
         TAG_OUTPUT,
@@ -429,18 +337,31 @@ def digest(message: bytes, output_bits: int = 256) -> bytes:
         STATE_WORDS * 64,
         BLOCK_SIZE,
         ROUNDS,
+        len(message),
+        len(padded),
+        root.leaf_count,
+        root.level,
+        root.first_leaf,
+        root.leaf_count,
+        root.byte_offset,
+        root.byte_length,
+        TREE_LEAF_BYTES,
+        PADDING_VERSION,
     )
     for index, value in enumerate(fields):
         _store64(record, index * 8, value)
     _compress(
-        state,
+        root.state,
         record,
         BLOCK_SIZE,
         output_words * 8,
         domain,
         FLAG_OUTPUT | FLAG_FINAL,
     )
-    return b"".join(word.to_bytes(8, "little") for word in state[:output_words])
+    return b"".join(
+        word.to_bytes(8, "little")
+        for word in root.state[:output_words]
+    )
 
 
 def _comparison_messages() -> list[bytes]:
@@ -473,8 +394,24 @@ def _comparison_messages() -> list[bytes]:
         511,
         512,
         513,
+        1014,
+        1015,
+        1016,
+        1023,
         1024,
+        1025,
+        2038,
+        2039,
+        2040,
+        2047,
         2048,
+        2049,
+        3062,
+        3063,
+        3064,
+        4086,
+        4087,
+        4088,
         4096,
     )
     for length in lengths:
@@ -503,7 +440,6 @@ def _c_digest(executable: Path, message: bytes, output_bits: int) -> str:
 
 
 def check_c_implementation(executable: Path) -> int:
-    """Compare the Python model with the compiled C command-line tool."""
     executable = executable.resolve()
     if not executable.is_file():
         print(f"reference check: C executable not found: {executable}", file=sys.stderr)

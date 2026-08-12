@@ -34,32 +34,18 @@
 #error "FCH output widths are fixed at 256 and 512 bits"
 #endif
 
-#ifndef FCH_MIN_BLOCK_SIZE
-#define FCH_MIN_BLOCK_SIZE 64
-#endif
-#ifndef FCH_MAX_DEPTH_CAP
-#define FCH_MAX_DEPTH_CAP 16
-#endif
+#define FCH_PADDING_MIN_BYTES 64u
+#define FCH_TREE_LEAF_BYTES 1024u
+#define FCH_TREE_ARITY 2u
 
-#ifndef FCH_N_MIN
-#define FCH_N_MIN 2
+#if FCH_PADDING_MIN_BYTES < 9u
+#error "FCH padding requires room for the marker and length field"
 #endif
-#ifndef FCH_N_MAX
-#define FCH_N_MAX 6
+#if FCH_TREE_LEAF_BYTES < FCH_PADDING_MIN_BYTES
+#error "FCH tree leaves must hold the minimum padded message"
 #endif
-
-#ifndef FCH_SPLIT_WEIGHT_MIN
-#define FCH_SPLIT_WEIGHT_MIN 128
-#endif
-#ifndef FCH_SPLIT_WEIGHT_MAX
-#define FCH_SPLIT_WEIGHT_MAX 255
-#endif
-
-#if FCH_N_MIN < 2 || FCH_N_MAX > 6 || FCH_N_MIN > FCH_N_MAX
-#error "FCH fan-out must stay within the canonical range 2..6"
-#endif
-#if FCH_SPLIT_WEIGHT_MIN != 128 || FCH_SPLIT_WEIGHT_MAX != 255
-#error "FCH split weights are fixed to the balanced range 128..255"
+#if FCH_TREE_ARITY != 2u
+#error "FCH tree encoding version 2 requires binary nodes"
 #endif
 
 #endif

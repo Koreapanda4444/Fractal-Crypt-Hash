@@ -7,6 +7,7 @@
 #include "fch.h"
 #include "fch_stream.h"
 #include "mix.h"
+#include "params.h"
 
 static int test_rotate(void) {
     const uint64_t value = UINT64_C(0x0123456789ABCDEF);
@@ -45,26 +46,32 @@ static int test_tree_encoding_tags(void) {
         FCH_TREE_TAG_LEAF_DATA,
         FCH_TREE_TAG_NODE_HEADER,
         FCH_TREE_TAG_NODE_CHILD,
-        FCH_TREE_TAG_OUTPUT,
-        FCH_SPLIT_TAG_HEADER,
-        FCH_SPLIT_TAG_DATA,
-        FCH_SPLIT_TAG_OUTPUT,
-        FCH_SPLIT_DOMAIN
+        FCH_TREE_TAG_OUTPUT
     };
     static const uint8_t expected[][8] = {
-        { 'F', 'C', 'H', 'L', 'E', 'A', 'F', '1' },
-        { 'F', 'C', 'H', 'L', 'D', 'A', 'T', '1' },
-        { 'F', 'C', 'H', 'N', 'O', 'D', 'E', '1' },
-        { 'F', 'C', 'H', 'C', 'H', 'L', 'D', '1' },
-        { 'F', 'C', 'H', 'O', 'U', 'T', '0', '1' },
-        { 'F', 'C', 'H', 'S', 'P', 'H', '0', '1' },
-        { 'F', 'C', 'H', 'S', 'P', 'D', '0', '1' },
-        { 'F', 'C', 'H', 'S', 'P', 'O', '0', '1' },
-        { 'F', 'C', 'H', 'S', 'P', 'L', 'T', '1' }
+        { 'F', 'C', 'H', 'L', 'E', 'A', 'F', '2' },
+        { 'F', 'C', 'H', 'L', 'D', 'A', 'T', '2' },
+        { 'F', 'C', 'H', 'N', 'O', 'D', 'E', '2' },
+        { 'F', 'C', 'H', 'C', 'H', 'L', 'D', '2' },
+        { 'F', 'C', 'H', 'O', 'U', 'T', '0', '2' }
+    };
+    static const uint64_t domains[] = {
+        FCH_DOMAIN_LEAF,
+        FCH_DOMAIN_NODE,
+        FCH_DOMAIN_OUTPUT_256,
+        FCH_DOMAIN_OUTPUT_512
+    };
+    static const uint8_t expected_domains[][8] = {
+        { 'F', 'C', 'H', 'L', 'D', 'M', '0', '2' },
+        { 'F', 'C', 'H', 'N', 'D', 'M', '0', '2' },
+        { 'F', 'C', 'H', 'O', '2', '5', '6', '2' },
+        { 'F', 'C', 'H', 'O', '5', '1', '2', '2' }
     };
 
-    if (FCH_TREE_ENCODING_VERSION != UINT64_C(1) ||
-        FCH_SPLIT_DERIVATION_VERSION != UINT64_C(1) ||
+    if (FCH_TREE_ENCODING_VERSION != UINT64_C(2) ||
+        FCH_PADDING_FORMAT_VERSION != UINT64_C(1) ||
+        FCH_TREE_LEAF_BYTES != 1024u ||
+        FCH_TREE_ARITY != 2u ||
         FCH_MIX_ROUNDS != 16u ||
         FCH_MIX_REDUCED_ROUND_REFERENCE != 8u ||
         FCH_MIX_ROUND_MARGIN != 8u)
@@ -74,6 +81,13 @@ static int test_tree_encoding_tags(void) {
         uint8_t encoded[8];
         fch_store_le64(encoded, tags[i]);
         if (memcmp(encoded, expected[i], sizeof(encoded)) != 0)
+            return 0;
+    }
+
+    for (size_t i = 0; i < sizeof(domains) / sizeof(domains[0]); i++) {
+        uint8_t encoded[8];
+        fch_store_le64(encoded, domains[i]);
+        if (memcmp(encoded, expected_domains[i], sizeof(encoded)) != 0)
             return 0;
     }
 
@@ -225,7 +239,7 @@ int main(void) {
         return 1;
     }
     if (!test_tree_encoding_tags()) {
-        printf("FAIL: canonical tree and split encoding tags\n");
+        printf("FAIL: canonical tree encoding tags\n");
         return 1;
     }
     if (!fch_hash_256_checked((const uint8_t *)"abc", 3, output)) {

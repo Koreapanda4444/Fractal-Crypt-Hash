@@ -1,33 +1,10 @@
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static uint32_t xorshift32(uint32_t *s) {
-    uint32_t x = *s;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    *s = x;
-    return x;
-}
-
-static void fill_random(uint8_t *buf, size_t len, uint32_t seed) {
-    uint32_t s = seed ? seed : 0xA5A5A5A5u;
-    for (size_t i = 0; i < len; i++) {
-        buf[i] = (uint8_t)(xorshift32(&s) & 0xFFu);
-    }
-}
-
-static void mutate(uint8_t *buf, size_t len, uint32_t iter) {
-    if (!buf || len == 0)
-        return;
-
-    size_t idx1 = (size_t)(iter * 1315423911u) % len;
-    size_t idx2 = (size_t)(iter * 2654435761u) % len;
-    buf[idx1] ^= (uint8_t)(iter & 0xFFu);
-    buf[idx2] ^= (uint8_t)((iter >> 8) & 0xFFu);
-}
+#include "fch.h"
+#include "fch_stream.h"
 
 typedef struct {
     size_t big_mb;
@@ -35,287 +12,238 @@ typedef struct {
     uint32_t iters_big;
     uint32_t iters_small;
     uint32_t seed;
-    int variant;
     int quiet;
 } opts_t;
 
-static void opts_default(opts_t *o) {
-    memset(o, 0, sizeof(*o));
-    o->big_mb = 32;
-    o->small_kb = 256;
-    o->iters_big = 16;
-    o->iters_small = 20000;
-    o->seed = 0x12345678u;
-    o->variant = 24;
-    o->quiet = 0;
+static uint32_t xorshift32(uint32_t *state) {
+    uint32_t value = *state;
+    value ^= value << 13u;
+    value ^= value >> 17u;
+    value ^= value << 5u;
+    *state = value;
+    return value;
 }
 
-static int parse_u32(const char *s, uint32_t *out) {
+static void fill_random(uint8_t *buffer, size_t length, uint32_t seed) {
+    uint32_t state = seed ? seed : UINT32_C(0xA5A5A5A5);
+    for (size_t i = 0; i < length; i++)
+        buffer[i] = (uint8_t)xorshift32(&state);
+}
+
+static void mutate(uint8_t *buffer, size_t length, uint32_t iteration) {
+    if (!buffer || length == 0u)
+        return;
+
+    size_t first =
+        ((size_t)iteration * UINT32_C(1315423911) + 17u) % length;
+    size_t second =
+        ((size_t)iteration * UINT32_C(2654435761) + 43u) % length;
+    buffer[first] ^= (uint8_t)(1u << (iteration % 8u));
+    buffer[second] ^= (uint8_t)(iteration * 29u + 1u);
+}
+
+static void opts_default(opts_t *options) {
+    memset(options, 0, sizeof(*options));
+    options->big_mb = 32u;
+    options->small_kb = 256u;
+    options->iters_big = 4u;
+    options->iters_small = 512u;
+    options->seed = UINT32_C(0x12345678);
+}
+
+static int parse_u32(const char *text, uint32_t *value) {
     char *end = NULL;
-    unsigned long v = strtoul(s, &end, 10);
-    if (!s || !*s || (end && *end != '\0'))
+    unsigned long parsed;
+
+    if (!text || !*text || !value)
         return 0;
-    *out = (uint32_t)v;
+    parsed = strtoul(text, &end, 10);
+    if (!end || *end != '\0' || parsed > UINT32_MAX)
+        return 0;
+    *value = (uint32_t)parsed;
     return 1;
 }
 
-static int parse_size(const char *s, size_t *out) {
+static int parse_size(const char *text, size_t *value) {
     char *end = NULL;
-    unsigned long long v = strtoull(s, &end, 10);
-    if (!s || !*s || (end && *end != '\0'))
+    unsigned long long parsed;
+
+    if (!text || !*text || !value)
         return 0;
-    *out = (size_t)v;
+    parsed = strtoull(text, &end, 10);
+    if (!end || *end != '\0' || parsed > SIZE_MAX)
+        return 0;
+    *value = (size_t)parsed;
     return 1;
 }
 
 static void usage(void) {
-    fprintf(stderr,
-        "Usage: test_stress.exe [--variant 16|24] [--big-mb N] [--small-kb N] [--iters-big N] [--iters-small N] [--seed N] [--quiet]\n"
-        "Defaults: --variant 24 --big-mb 32 --iters-big 16 --small-kb 256 --iters-small 20000\n"
+    fprintf(
+        stderr,
+        "Usage: test_stress [--big-mb N] [--small-kb N] "
+        "[--iters-big N] [--iters-small N] [--seed N] [--quiet]\n"
     );
 }
 
-static volatile int g_max_depth_16 = 0;
-static volatile int g_max_depth_24 = 0;
-
-#define FCH_PARAMS_ALLOW_REINCLUDE 1
-
-#define FCH_DEBUG_HOOKS_H 1
-#ifndef FCH_HOOK_AFTER_LEAF
-#define FCH_HOOK_AFTER_LEAF 1
-#endif
-#ifndef FCH_HOOK_AFTER_NODE
-#define FCH_HOOK_AFTER_NODE 2
-#endif
-#ifndef FCH_HOOK_AFTER_ROOT
-#define FCH_HOOK_AFTER_ROOT 3
-#endif
-
-#include "../src/mix.c"
-#include "../src/bitops.c"
-
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_MAX_DEPTH_CAP 16
-
-#define fch_hash_256 fch_hash_256_D16
-#define fch_hash_512 fch_hash_512_D16
-#define fch_hash_256_checked fch_hash_256_checked_D16
-#define fch_hash_512_checked fch_hash_512_checked_D16
-#define fch_pad fch_pad_D16
-#define fch_process fch_process_D16
-#define fch_process_reader fch_process_reader_D16
-#define fch_fractal_split fch_fractal_split_D16
-#define fch_fractal_split_reader fch_fractal_split_reader_D16
-#define determine_n determine_n_D16
-#define scaled_length scaled_length_D16
-#define fch_leaf_compress fch_leaf_compress_D16
-#define fch_leaf_compress_reader fch_leaf_compress_reader_D16
-#define fch_combine fch_combine_D16
-#define fch_debug_emit_root_if fch_debug_emit_root_if_D16
-
-#undef FCH_DEBUG_EMIT
-#define FCH_DEBUG_EMIT(_point, _depth, _state, _words) \
-    do { \
-        (void)(_point); (void)(_state); (void)(_words); \
-        if ((_depth) > g_max_depth_16) g_max_depth_16 = (_depth); \
-    } while (0)
-
-#define rotl64 rotl64_leaf_D16
-#include "../src/leaf.c"
-#undef rotl64
-
-#define rotl64 rotl64_combine_D16
-#include "../src/combine.c"
-#undef rotl64
-
-#include "../src/fractal_split.c"
-#include "../src/fractal_process.c"
-#include "../src/fch.c"
-
-#undef fch_hash_256
-#undef fch_hash_512
-#undef fch_hash_256_checked
-#undef fch_hash_512_checked
-#undef fch_pad
-#undef fch_process
-#undef fch_process_reader
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef determine_n
-#undef scaled_length
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_debug_emit_root_if
-
-#undef FCH_MAX_DEPTH_CAP
-#define FCH_MAX_DEPTH_CAP 24
-
-#define fch_hash_256 fch_hash_256_D24
-#define fch_hash_512 fch_hash_512_D24
-#define fch_hash_256_checked fch_hash_256_checked_D24
-#define fch_hash_512_checked fch_hash_512_checked_D24
-#define fch_pad fch_pad_D24
-#define fch_process fch_process_D24
-#define fch_process_reader fch_process_reader_D24
-#define fch_fractal_split fch_fractal_split_D24
-#define fch_fractal_split_reader fch_fractal_split_reader_D24
-#define determine_n determine_n_D24
-#define scaled_length scaled_length_D24
-#define fch_leaf_compress fch_leaf_compress_D24
-#define fch_leaf_compress_reader fch_leaf_compress_reader_D24
-#define fch_combine fch_combine_D24
-#define fch_debug_emit_root_if fch_debug_emit_root_if_D24
-
-#undef FCH_DEBUG_EMIT
-#define FCH_DEBUG_EMIT(_point, _depth, _state, _words) \
-    do { \
-        (void)(_point); (void)(_state); (void)(_words); \
-        if ((_depth) > g_max_depth_24) g_max_depth_24 = (_depth); \
-    } while (0)
-
-#define rotl64 rotl64_leaf_D24
-#include "../src/leaf.c"
-#undef rotl64
-
-#define rotl64 rotl64_combine_D24
-#include "../src/combine.c"
-#undef rotl64
-
-#include "../src/fractal_split.c"
-#include "../src/fractal_process.c"
-#include "../src/fch.c"
-
-#undef fch_hash_256
-#undef fch_hash_512
-#undef fch_hash_256_checked
-#undef fch_hash_512_checked
-#undef fch_pad
-#undef fch_process
-#undef fch_process_reader
-#undef fch_fractal_split
-#undef fch_fractal_split_reader
-#undef determine_n
-#undef scaled_length
-#undef fch_leaf_compress
-#undef fch_leaf_compress_reader
-#undef fch_combine
-#undef fch_debug_emit_root_if
-#undef FCH_PARAMS_ALLOW_REINCLUDE
-
-typedef void (*hash256_fn)(const uint8_t *input, size_t len, uint8_t out[32]);
-
-static void run_one_variant(
-    const char *name,
-    int cap,
-    hash256_fn fn,
-    volatile int *max_depth_ptr,
-    const opts_t *o
+static int stream_256(
+    const uint8_t *input,
+    size_t length,
+    uint32_t seed,
+    uint8_t output[32]
 ) {
-    size_t big_len = o->big_mb * 1000000u;
-    size_t small_len = o->small_kb * 1000u;
+    fch256_ctx context;
+    fch256_init(&context);
 
-    uint8_t *big = (uint8_t *)malloc(big_len);
-    uint8_t *small = (uint8_t *)malloc(small_len);
-    if (!big || !small) {
-        fprintf(stderr, "ERR: alloc failed (big=%u bytes, small=%u bytes)\n", (unsigned)big_len, (unsigned)small_len);
-        free(big);
-        free(small);
-        exit(1);
+    size_t offset = 0u;
+    uint32_t state = seed;
+    int ok = 1;
+    while (ok && offset < length) {
+        size_t chunk = 1u + (size_t)(xorshift32(&state) % 65536u);
+        if (chunk > length - offset)
+            chunk = length - offset;
+        ok = fch256_update(&context, input + offset, chunk);
+        offset += chunk;
     }
+    if (ok)
+        ok = fch256_final_checked(&context, output);
+    fch256_free(&context);
+    return ok;
+}
 
-    fill_random(big, big_len, o->seed);
-    fill_random(small, small_len, o->seed ^ 0x9E3779B9u);
+static int exercise(
+    const char *name,
+    uint8_t *buffer,
+    size_t length,
+    uint32_t iterations,
+    uint32_t seed,
+    int quiet,
+    uint32_t *sink
+) {
+    for (uint32_t iteration = 0u; iteration < iterations; iteration++) {
+        uint8_t digest256[32];
+        uint8_t repeated256[32];
+        uint8_t streamed256[32];
+        uint8_t digest512[64];
 
-    uint8_t out[32];
-    volatile uint32_t sink = 0;
+        mutate(buffer, length, iteration ^ seed);
+        if (!fch_hash_256_checked(buffer, length, digest256) ||
+            !fch_hash_256_checked(buffer, length, repeated256) ||
+            !fch_hash_512_checked(buffer, length, digest512) ||
+            !stream_256(
+                buffer,
+                length,
+                seed ^ iteration ^ UINT32_C(0x9E3779B9),
+                streamed256
+            ))
+            return 0;
 
-    *max_depth_ptr = 0;
+        if (memcmp(digest256, repeated256, sizeof(digest256)) != 0 ||
+            memcmp(digest256, streamed256, sizeof(digest256)) != 0 ||
+            memcmp(digest256, digest512, sizeof(digest256)) == 0)
+            return 0;
 
-    if (!o->quiet) {
-        fprintf(stderr, "[STRESS] variant=%s cap=%d big=%uMB it_big=%u small=%uKB it_small=%u\n",
-            name, cap, (unsigned)o->big_mb, (unsigned)o->iters_big, (unsigned)o->small_kb, (unsigned)o->iters_small);
-    }
+        *sink ^= digest256[iteration % sizeof(digest256)];
+        *sink ^= digest512[(iteration * 7u) % sizeof(digest512)];
 
-    for (uint32_t i = 0; i < o->iters_big; i++) {
-        mutate(big, big_len, i);
-        fn(big, big_len, out);
-        sink ^= out[i & 31u];
-
-        if (!o->quiet && ((i + 1) % 4u == 0u)) {
-            fprintf(stderr, "  big %u/%u (max_depth=%d)\n", (unsigned)(i + 1), (unsigned)o->iters_big, (int)(*max_depth_ptr));
+        if (!quiet && ((iteration + 1u) % 64u == 0u ||
+                       iteration + 1u == iterations)) {
+            fprintf(
+                stderr,
+                "[STRESS] %s %u/%u\n",
+                name,
+                (unsigned int)(iteration + 1u),
+                (unsigned int)iterations
+            );
         }
     }
-
-    for (uint32_t i = 0; i < o->iters_small; i++) {
-        mutate(small, small_len, 0xABC00000u ^ i);
-        fn(small, small_len, out);
-        sink ^= out[(i * 7u) & 31u];
-
-        if (!o->quiet && ((i + 1) % 2000u == 0u)) {
-            fprintf(stderr, "  small %u/%u (max_depth=%d)\n", (unsigned)(i + 1), (unsigned)o->iters_small, (int)(*max_depth_ptr));
-        }
-    }
-
-    printf(
-        "SUMMARY,%s,cap=%d,max_depth=%d,cap_margin=%d,big_mb=%u,it_big=%u,small_kb=%u,it_small=%u,sink=%u\n",
-        name,
-        cap,
-        (int)(*max_depth_ptr),
-        cap - (int)(*max_depth_ptr),
-        (unsigned)o->big_mb,
-        (unsigned)o->iters_big,
-        (unsigned)o->small_kb,
-        (unsigned)o->iters_small,
-        (unsigned)sink
-    );
-
-    free(big);
-    free(small);
+    return 1;
 }
 
 int main(int argc, char **argv) {
-    opts_t o;
-    opts_default(&o);
+    opts_t options;
+    opts_default(&options);
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+        if (strcmp(argv[i], "--help") == 0 ||
+            strcmp(argv[i], "-h") == 0) {
             usage();
             return 0;
-        } else if (strcmp(argv[i], "--quiet") == 0) {
-            o.quiet = 1;
-        } else if (strcmp(argv[i], "--variant") == 0 && i + 1 < argc) {
-            uint32_t v = 0;
-            if (!parse_u32(argv[++i], &v) || (v != 16u && v != 24u)) {
-                fprintf(stderr, "ERR: --variant must be 16 or 24\n");
-                return 2;
-            }
-            o.variant = (int)v;
+        }
+        if (strcmp(argv[i], "--quiet") == 0) {
+            options.quiet = 1;
         } else if (strcmp(argv[i], "--big-mb") == 0 && i + 1 < argc) {
-            if (!parse_size(argv[++i], &o.big_mb)) return 2;
+            if (!parse_size(argv[++i], &options.big_mb))
+                return 2;
         } else if (strcmp(argv[i], "--small-kb") == 0 && i + 1 < argc) {
-            if (!parse_size(argv[++i], &o.small_kb)) return 2;
+            if (!parse_size(argv[++i], &options.small_kb))
+                return 2;
         } else if (strcmp(argv[i], "--iters-big") == 0 && i + 1 < argc) {
-            if (!parse_u32(argv[++i], &o.iters_big)) return 2;
+            if (!parse_u32(argv[++i], &options.iters_big))
+                return 2;
         } else if (strcmp(argv[i], "--iters-small") == 0 && i + 1 < argc) {
-            if (!parse_u32(argv[++i], &o.iters_small)) return 2;
+            if (!parse_u32(argv[++i], &options.iters_small))
+                return 2;
         } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-            if (!parse_u32(argv[++i], &o.seed)) return 2;
+            if (!parse_u32(argv[++i], &options.seed))
+                return 2;
         } else {
-            fprintf(stderr, "ERR: unknown arg: %s\n", argv[i]);
+            fprintf(stderr, "ERR: unknown argument: %s\n", argv[i]);
             usage();
             return 2;
         }
     }
 
-    printf("case,fields...\n");
+    if (options.big_mb == 0u || options.small_kb == 0u ||
+        options.big_mb > SIZE_MAX / 1000000u ||
+        options.small_kb > SIZE_MAX / 1000u)
+        return 2;
 
-    if (o.variant == 16) {
-        run_one_variant("fch256_D16", 16, fch_hash_256_D16, &g_max_depth_16, &o);
-    } else {
-        run_one_variant("fch256_D24", 24, fch_hash_256_D24, &g_max_depth_24, &o);
+    size_t big_length = options.big_mb * 1000000u;
+    size_t small_length = options.small_kb * 1000u;
+    uint8_t *big = (uint8_t *)malloc(big_length);
+    uint8_t *small = (uint8_t *)malloc(small_length);
+    if (!big || !small) {
+        free(big);
+        free(small);
+        fprintf(stderr, "ERR: allocation failed\n");
+        return 1;
     }
 
-    fprintf(stderr, "STRESS: PASS (no crash observed)\n");
-    return 0;
+    fill_random(big, big_length, options.seed);
+    fill_random(small, small_length, options.seed ^ UINT32_C(0x9E3779B9));
+
+    uint32_t sink = 0u;
+    int ok = exercise(
+            "large",
+            big,
+            big_length,
+            options.iters_big,
+            options.seed,
+            options.quiet,
+            &sink
+        ) &&
+        exercise(
+            "small",
+            small,
+            small_length,
+            options.iters_small,
+            options.seed ^ UINT32_C(0x85EBCA6B),
+            options.quiet,
+            &sink
+        );
+
+    printf(
+        "stress,tree=v2,big_mb=%u,iters_big=%u,small_kb=%u,"
+        "iters_small=%u,sink=%u,%s\n",
+        (unsigned int)options.big_mb,
+        (unsigned int)options.iters_big,
+        (unsigned int)options.small_kb,
+        (unsigned int)options.iters_small,
+        (unsigned int)sink,
+        ok ? "PASS" : "FAIL"
+    );
+
+    free(big);
+    free(small);
+    return ok ? 0 : 1;
 }

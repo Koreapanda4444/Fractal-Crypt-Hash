@@ -1,12 +1,6 @@
 #include "bitops.h"
 #include "mix.h"
-
-/*
- * The G structure and rotation distances follow the 64-bit ARX quarter-round
- * used by BLAKE2b. FCH uses a different initialization, tweak layout,
- * message mode, and tree construction; it is not an implementation of
- * BLAKE2b and does not inherit BLAKE2b's security claims.
- */
+#include "params.h"
 
 static const uint64_t FCH_MIX_IV[8] = {
     UINT64_C(0x6A09E667F3BCC908),
@@ -171,16 +165,45 @@ int fch_mix_compress(
 int fch_mix_finalize_output(
     uint64_t *state,
     size_t state_words,
-    size_t output_words
+    size_t output_words,
+    size_t original_length,
+    size_t padded_length,
+    size_t root_level,
+    size_t root_first_leaf,
+    size_t root_leaf_count,
+    size_t root_byte_offset,
+    size_t root_byte_length
 ) {
     if (!state || state_words != 8u)
         return 0;
     if (output_words != 4u && output_words != 8u)
         return 0;
 
+    if (original_length > SIZE_MAX - 9u)
+        return 0;
+    size_t expected_padded_length = original_length + 9u;
+    if (expected_padded_length < FCH_PADDING_MIN_BYTES)
+        expected_padded_length = FCH_PADDING_MIN_BYTES;
+    if (padded_length != expected_padded_length ||
+        root_byte_offset != 0u ||
+        root_byte_length != padded_length ||
+        root_first_leaf != 0u)
+        return 0;
+
+    size_t expected_leaf_count =
+        1u + (padded_length - 1u) / FCH_TREE_LEAF_BYTES;
+    size_t expected_level = 0;
+    for (size_t value = expected_leaf_count - 1u;
+         value != 0u;
+         value >>= 1u)
+        expected_level++;
+    if (root_leaf_count != expected_leaf_count ||
+        root_level != expected_level)
+        return 0;
+
     const uint64_t domain = output_words == 4u
-        ? UINT64_C(0x4643484F55543235)
-        : UINT64_C(0x4643484F55543531);
+        ? FCH_DOMAIN_OUTPUT_256
+        : FCH_DOMAIN_OUTPUT_512;
     uint8_t block[FCH_MIX_BLOCK_SIZE] = {0};
 
     fch_store_le64(block + 0u, FCH_TREE_TAG_OUTPUT);
@@ -189,6 +212,16 @@ int fch_mix_finalize_output(
     fch_store_le64(block + 24u, (uint64_t)state_words * 64u);
     fch_store_le64(block + 32u, FCH_MIX_BLOCK_SIZE);
     fch_store_le64(block + 40u, FCH_MIX_ROUNDS);
+    fch_store_le64(block + 48u, (uint64_t)original_length);
+    fch_store_le64(block + 56u, (uint64_t)padded_length);
+    fch_store_le64(block + 64u, (uint64_t)expected_leaf_count);
+    fch_store_le64(block + 72u, (uint64_t)root_level);
+    fch_store_le64(block + 80u, (uint64_t)root_first_leaf);
+    fch_store_le64(block + 88u, (uint64_t)root_leaf_count);
+    fch_store_le64(block + 96u, (uint64_t)root_byte_offset);
+    fch_store_le64(block + 104u, (uint64_t)root_byte_length);
+    fch_store_le64(block + 112u, FCH_TREE_LEAF_BYTES);
+    fch_store_le64(block + 120u, FCH_PADDING_FORMAT_VERSION);
 
     return fch_mix_compress(
         state,

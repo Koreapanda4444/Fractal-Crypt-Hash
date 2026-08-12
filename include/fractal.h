@@ -4,9 +4,20 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "params.h"
+
+typedef struct {
+    size_t level;
+    size_t first_leaf;
+    size_t leaf_count;
+    size_t byte_offset;
+    size_t byte_length;
+} fch_tree_position_t;
+
 typedef struct {
     uint64_t *state;
     size_t words;
+    fch_tree_position_t tree;
 } fch_state_t;
 
 typedef struct {
@@ -30,6 +41,22 @@ typedef struct {
     const uint8_t *data;
     size_t length;
 } fch_memory_reader_t;
+
+size_t fch_tree_leaf_count_for_length(size_t length);
+size_t fch_tree_level_for_leaves(size_t leaf_count);
+
+int fch_tree_position_for_range(
+    size_t offset,
+    size_t length,
+    fch_tree_position_t *position
+);
+
+int fch_tree_position_valid(const fch_tree_position_t *position);
+
+int fch_tree_split_position(
+    const fch_tree_position_t *parent,
+    fch_tree_position_t children[FCH_TREE_ARITY]
+);
 
 static inline int fch_memory_read(
     void *context,

@@ -39,17 +39,17 @@ static const double AVG_DROP_PCT = 5.0;
 static const double SPREAD_INCR_PCT = 25.0;
 
 static const regression_baseline_t BASELINES[] = {
-    { 63,   FLIP_SWEEP, 49.88, 12.11, 49.82, 11.33 },
-    { 64,   FLIP_SWEEP, 49.93, 16.02, 50.42, 10.16 },
-    { 65,   FLIP_SWEEP, 50.42, 20.31, 50.33, 8.79 },
-    { 127,  FLIP_SWEEP, 49.62, 16.80, 49.98, 11.91 },
-    { 128,  FLIP_SWEEP, 50.42, 12.89, 50.27, 11.52 },
-    { 129,  FLIP_SWEEP, 49.77, 15.62, 50.55, 13.28 },
-    { 255,  FLIP_SWEEP, 50.01, 16.41, 49.91, 10.94 },
-    { 257,  FLIP_SWEEP, 49.71, 19.14, 50.01, 12.70 },
-    { 512,  FLIP_SWEEP, 49.51, 14.06, 50.28, 9.77 },
-    { 1024, FLIP_SWEEP, 50.43, 15.62, 50.07, 10.16 },
-    { 4096, FLIP_SWEEP, 50.47, 19.53, 49.89, 13.87 },
+    { 63,   FLIP_SWEEP, 50.02, 14.45, 50.12, 12.50 },
+    { 64,   FLIP_SWEEP, 49.45, 19.14, 49.97, 12.30 },
+    { 65,   FLIP_SWEEP, 49.96, 17.19, 50.18, 10.94 },
+    { 127,  FLIP_SWEEP, 49.84, 18.75, 49.94, 11.91 },
+    { 128,  FLIP_SWEEP, 49.66, 14.84, 50.40, 10.55 },
+    { 129,  FLIP_SWEEP, 50.02, 18.75, 50.30, 13.48 },
+    { 255,  FLIP_SWEEP, 50.34, 14.84, 50.03, 9.96 },
+    { 257,  FLIP_SWEEP, 50.09, 16.02, 49.85, 10.35 },
+    { 512,  FLIP_SWEEP, 50.25, 19.14, 50.06, 9.57 },
+    { 1024, FLIP_SWEEP, 50.01, 15.23, 50.17, 10.94 },
+    { 4096, FLIP_SWEEP, 50.08, 16.80, 49.91, 9.96 },
 };
 
 static const regression_baseline_t *find_baseline(size_t len, flip_mode_t mode) {
@@ -132,15 +132,21 @@ static int invariant_split_covers_input_check(void) {
     for (int i = 0; i < 512; i++)
         data[i] = (uint8_t)i;
 
-    fch_block_t blocks[FCH_N_MAX];
-    size_t n = fch_fractal_split(data, 512, 0, blocks, FCH_N_MAX);
+    fch_block_t blocks[FCH_TREE_ARITY];
+    size_t n = fch_fractal_split(
+        data,
+        sizeof(data),
+        0,
+        blocks,
+        FCH_TREE_ARITY
+    );
 
     size_t sum = 0;
     for (size_t i = 0; i < n; i++) {
         sum += blocks[i].length;
     }
 
-    return sum == 512;
+    return n == 1u && sum == sizeof(data);
 }
 
 static int reduced_round_margin_check(void) {
@@ -357,7 +363,7 @@ static int regression_check_row(
 }
 
 static int test_length_csv(size_t len, flip_mode_t mode) {
-    const char *baseline_id = "domain-split-baseline";
+    const char *baseline_id = "canonical-tree-v2-baseline";
     const regression_baseline_t *b = find_baseline(len, mode);
 
     avalanche_stats_t s256 = compute_stats(len, mode, 256);
