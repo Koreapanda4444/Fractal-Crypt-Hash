@@ -17,7 +17,11 @@ enum {
     MULTICOLLISION_PREFIX_BITS = 20,
     SECOND_PREIMAGE_LENGTH = 16384,
     SECOND_PREIMAGE_CANDIDATES = 512,
+    SECOND_PREIMAGE_MODES = 8,
     ATTACK_CHUNK_SIZE = 64,
+    TREE_SHAPE_MIN_LEAVES = 3,
+    TREE_SHAPE_MAX_LEAVES = 16,
+    SUBTREE_REPLACEMENT_LEAVES = 8,
     LONG_MESSAGE_LENGTH = 262144,
     LONG_CHUNK_SIZE = 4096,
     LONG_VARIANTS = 15
@@ -146,6 +150,33 @@ static int make_leaf(
     return ok;
 }
 
+static int make_subtree(
+    const uint8_t *message,
+    size_t length,
+    size_t offset,
+    state_record_t *output
+) {
+    if (!output)
+        return 0;
+
+    positioned_input_t input = { message, length, offset };
+    fch_reader_t reader = { positioned_read, &input };
+    fch_state_t state = fch_process_reader(
+        &reader,
+        offset,
+        length,
+        0,
+        FCH_INTERNAL_STATE_WORDS
+    );
+    if (!state.state)
+        return 0;
+
+    memcpy(output->words, state.state, sizeof(output->words));
+    output->tree = state.tree;
+    free(state.state);
+    return 1;
+}
+
 static fch_state_t state_view(state_record_t *record) {
     fch_state_t view = {
         record ? record->words : NULL,
@@ -153,6 +184,38 @@ static fch_state_t state_view(state_record_t *record) {
         record ? record->tree : (fch_tree_position_t){0, 0, 0, 0, 0}
     };
     return view;
+}
+
+static int same_tree_position(
+    const fch_tree_position_t *left,
+    const fch_tree_position_t *right
+) {
+    return
+        left && right &&
+        left->level == right->level &&
+        left->first_leaf == right->first_leaf &&
+        left->leaf_count == right->leaf_count &&
+        left->byte_offset == right->byte_offset &&
+        left->byte_length == right->byte_length;
+}
+
+static int same_state(
+    const state_record_t *left,
+    const state_record_t *right
+) {
+    return
+        left && right &&
+        same_tree_position(&left->tree, &right->tree) &&
+        memcmp(left->words, right->words, sizeof(left->words)) == 0;
+}
+
+static int same_state_words(
+    const state_record_t *left,
+    const state_record_t *right
+) {
+    return
+        left && right &&
+        memcmp(left->words, right->words, sizeof(left->words)) == 0;
 }
 
 static int combine_state(
@@ -267,9 +330,14 @@ static int multicollision_screen(void) {
         MULTICOLLISION_SAMPLES,
         sizeof(*nodes)
     );
-    if (!leaves || !nodes) {
+    state_record_t *roots = (state_record_t *)calloc(
+        MULTICOLLISION_SAMPLES,
+        sizeof(*roots)
+    );
+    if (!leaves || !nodes || !roots) {
         free(leaves);
         free(nodes);
+        free(roots);
         return 0;
     }
 
@@ -290,13 +358,60 @@ static int multicollision_screen(void) {
         )) {
         free(leaves);
         free(nodes);
+        free(roots);
         return 0;
     }
 
-    const fch_block_t blocks[2] = {
+    state_record_t fixed_leaves[2];
+    uint8_t fixed_messages[2][FCH_TREE_LEAF_BYTES];
+    uint64_t fixed_stream = UINT64_C(0x51B11A65EED00002);
+    for (size_t i = 0; i < 2u; i++) {
+        fill_bytes(
+            fixed_messages[i],
+            sizeof(fixed_messages[i]),
+            &fixed_stream
+        );
+        if (!make_leaf(
+                fixed_messages[i],
+                sizeof(fixed_messages[i]),
+                (i + 2u) * FCH_TREE_LEAF_BYTES,
+                2,
+                &fixed_leaves[i]
+            )) {
+            free(leaves);
+            free(nodes);
+            free(roots);
+            return 0;
+        }
+    }
+
+    const fch_block_t leaf_blocks[2] = {
         { 0u, FCH_TREE_LEAF_BYTES },
         { FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES }
     };
+    const fch_block_t subtree_blocks[2] = {
+        { 0u, FCH_TREE_LEAF_BYTES * 2u },
+        { FCH_TREE_LEAF_BYTES * 2u, FCH_TREE_LEAF_BYTES * 2u }
+    };
+    state_record_t fixed_subtree;
+    fch_state_t fixed_children[2] = {
+        state_view(&fixed_leaves[0]),
+        state_view(&fixed_leaves[1])
+    };
+    if (!combine_state(
+            fixed_children,
+            leaf_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            1,
+            &fixed_subtree
+        )) {
+        free(leaves);
+        free(nodes);
+        free(roots);
+        return 0;
+    }
+
     uint64_t stream = UINT64_C(0xC0111510A5EED801);
     int generated = 1;
     for (size_t sample = 0;
@@ -323,7 +438,7 @@ static int multicollision_screen(void) {
         };
         if (!combine_state(
                 children,
-                blocks,
+                leaf_blocks,
                 2,
                 FCH_TREE_LEAF_BYTES * 2u,
                 1,
@@ -332,10 +447,27 @@ static int multicollision_screen(void) {
             generated = 0;
             break;
         }
+
+        fch_state_t root_children[2] = {
+            state_view(&nodes[sample]),
+            state_view(&fixed_subtree)
+        };
+        if (!combine_state(
+                root_children,
+                subtree_blocks,
+                2u,
+                FCH_TREE_LEAF_BYTES * 4u,
+                0,
+                &roots[sample]
+            )) {
+            generated = 0;
+            break;
+        }
     }
 
     collision_stats_t leaf_stats;
     collision_stats_t node_stats;
+    collision_stats_t root_stats;
     int ok = generated &&
         collision_stats(
             leaves,
@@ -346,16 +478,24 @@ static int multicollision_screen(void) {
             nodes,
             MULTICOLLISION_SAMPLES,
             &node_stats
+        ) &&
+        collision_stats(
+            roots,
+            MULTICOLLISION_SAMPLES,
+            &root_stats
         );
 
     if (ok) {
         ok =
             leaf_stats.exact_collisions == 0u &&
             node_stats.exact_collisions == 0u &&
+            root_stats.exact_collisions == 0u &&
             leaf_stats.truncated_pairs <= 64u &&
             node_stats.truncated_pairs <= 64u &&
+            root_stats.truncated_pairs <= 64u &&
             leaf_stats.maximum_bucket <= 4u &&
-            node_stats.maximum_bucket <= 4u;
+            node_stats.maximum_bucket <= 4u &&
+            root_stats.maximum_bucket <= 4u;
 
         printf(
             "multicollision,leaf,samples=%u,prefix_bits=%u,"
@@ -377,10 +517,21 @@ static int multicollision_screen(void) {
             (unsigned int)node_stats.exact_collisions,
             ok ? "PASS" : "FAIL"
         );
+        printf(
+            "multicollision,root,samples=%u,prefix_bits=%u,"
+            "pairs=%llu,max_bucket=%u,exact=%u,%s\n",
+            MULTICOLLISION_SAMPLES,
+            MULTICOLLISION_PREFIX_BITS,
+            (unsigned long long)root_stats.truncated_pairs,
+            (unsigned int)root_stats.maximum_bucket,
+            (unsigned int)root_stats.exact_collisions,
+            ok ? "PASS" : "FAIL"
+        );
     }
 
     free(leaves);
     free(nodes);
+    free(roots);
     return ok;
 }
 
@@ -634,6 +785,375 @@ static int tree_shape_screen(void) {
     return ok;
 }
 
+static int canonical_partition_screen(void) {
+    uint8_t message[TREE_SHAPE_MAX_LEAVES * FCH_TREE_LEAF_BYTES];
+    uint64_t stream = UINT64_C(0xCA110CA17AEE0001);
+    fill_bytes(message, sizeof(message), &stream);
+
+    unsigned int accepted = 0;
+    unsigned int rejected = 0;
+    unsigned int expected_rejected = 0;
+
+    for (size_t leaf_count = TREE_SHAPE_MIN_LEAVES;
+         leaf_count <= TREE_SHAPE_MAX_LEAVES;
+         leaf_count++) {
+        size_t length = leaf_count * FCH_TREE_LEAF_BYTES;
+        fch_tree_position_t parent;
+        fch_tree_position_t expected_children[2];
+        if (!fch_tree_position_for_range(0u, length, &parent) ||
+            !fch_tree_split_position(&parent, expected_children))
+            return 0;
+
+        state_record_t direct;
+        state_record_t left;
+        state_record_t right;
+        state_record_t combined;
+        state_record_t rejected_output;
+        if (!make_subtree(message, length, 0u, &direct) ||
+            !make_subtree(
+                message,
+                expected_children[0].byte_length,
+                expected_children[0].byte_offset,
+                &left
+            ) ||
+            !make_subtree(
+                message + expected_children[1].byte_offset,
+                expected_children[1].byte_length,
+                expected_children[1].byte_offset,
+                &right
+            ))
+            return 0;
+
+        fch_block_t canonical_blocks[2] = {
+            {0u, expected_children[0].byte_length},
+            {
+                expected_children[0].byte_length,
+                expected_children[1].byte_length
+            }
+        };
+        fch_state_t canonical_children[2] = {
+            state_view(&left),
+            state_view(&right)
+        };
+        if (!combine_state(
+                canonical_children,
+                canonical_blocks,
+                2u,
+                length,
+                0,
+                &combined
+            ) ||
+            !same_state(&direct, &combined))
+            return 0;
+        accepted++;
+
+        fch_state_t reversed_children[2] = {
+            state_view(&right),
+            state_view(&left)
+        };
+        expected_rejected++;
+        if (combine_state(
+                reversed_children,
+                canonical_blocks,
+                2u,
+                length,
+                0,
+                &rejected_output
+            ))
+            return 0;
+        rejected++;
+
+        for (size_t split = 1u; split < leaf_count; split++) {
+            if (split == expected_children[0].leaf_count)
+                continue;
+
+            size_t left_length = split * FCH_TREE_LEAF_BYTES;
+            size_t right_length = length - left_length;
+            state_record_t alternative_left;
+            state_record_t alternative_right;
+            if (!make_subtree(
+                    message,
+                    left_length,
+                    0u,
+                    &alternative_left
+                ) ||
+                !make_subtree(
+                    message + left_length,
+                    right_length,
+                    left_length,
+                    &alternative_right
+                ))
+                return 0;
+
+            fch_state_t alternative_children[2] = {
+                state_view(&alternative_left),
+                state_view(&alternative_right)
+            };
+            fch_block_t alternative_blocks[2] = {
+                {0u, left_length},
+                {left_length, right_length}
+            };
+            expected_rejected++;
+            if (combine_state(
+                    alternative_children,
+                    alternative_blocks,
+                    2u,
+                    length,
+                    0,
+                    &rejected_output
+                ))
+                return 0;
+            rejected++;
+        }
+    }
+
+    unsigned int expected_accepted =
+        TREE_SHAPE_MAX_LEAVES - TREE_SHAPE_MIN_LEAVES + 1u;
+    int ok =
+        accepted == expected_accepted &&
+        rejected == expected_rejected;
+    printf(
+        "canonical_partition,leaf_counts=%u-%u,accepted=%u,"
+        "alternatives_rejected=%u,%s\n",
+        TREE_SHAPE_MIN_LEAVES,
+        TREE_SHAPE_MAX_LEAVES,
+        accepted,
+        rejected,
+        ok ? "PASS" : "FAIL"
+    );
+    return ok;
+}
+
+static int subtree_replacement_screen(void) {
+    uint8_t message[
+        SUBTREE_REPLACEMENT_LEAVES * FCH_TREE_LEAF_BYTES
+    ];
+    size_t half_length = sizeof(message) / 2u;
+    uint64_t stream = UINT64_C(0x5AB7AEE5EED00001);
+    fill_bytes(message, half_length, &stream);
+    memcpy(message + half_length, message, half_length);
+
+    state_record_t leaf_left;
+    state_record_t leaf_next;
+    state_record_t leaf_relocated;
+    state_record_t pair_left;
+    state_record_t pair_middle;
+    state_record_t pair_relocated;
+    state_record_t pair_tail;
+    state_record_t quad_left;
+    state_record_t quad_right;
+    state_record_t root;
+    if (!make_leaf(
+            message,
+            FCH_TREE_LEAF_BYTES,
+            0u,
+            0,
+            &leaf_left
+        ) ||
+        !make_leaf(
+            message + FCH_TREE_LEAF_BYTES,
+            FCH_TREE_LEAF_BYTES,
+            FCH_TREE_LEAF_BYTES,
+            0,
+            &leaf_next
+        ) ||
+        !make_leaf(
+            message + FCH_TREE_LEAF_BYTES * 4u,
+            FCH_TREE_LEAF_BYTES,
+            FCH_TREE_LEAF_BYTES * 4u,
+            0,
+            &leaf_relocated
+        ) ||
+        !make_subtree(
+            message,
+            FCH_TREE_LEAF_BYTES * 2u,
+            0u,
+            &pair_left
+        ) ||
+        !make_subtree(
+            message + FCH_TREE_LEAF_BYTES * 2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            &pair_middle
+        ) ||
+        !make_subtree(
+            message + FCH_TREE_LEAF_BYTES * 4u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            FCH_TREE_LEAF_BYTES * 4u,
+            &pair_relocated
+        ) ||
+        !make_subtree(
+            message + FCH_TREE_LEAF_BYTES * 6u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            FCH_TREE_LEAF_BYTES * 6u,
+            &pair_tail
+        ) ||
+        !make_subtree(message, half_length, 0u, &quad_left) ||
+        !make_subtree(
+            message + half_length,
+            half_length,
+            half_length,
+            &quad_right
+        ) ||
+        !make_subtree(message, sizeof(message), 0u, &root))
+        return 0;
+
+    if (same_state_words(&leaf_left, &leaf_relocated) ||
+        same_state_words(&pair_left, &pair_relocated) ||
+        same_state_words(&quad_left, &quad_right))
+        return 0;
+
+    const fch_block_t leaf_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES},
+        {FCH_TREE_LEAF_BYTES, FCH_TREE_LEAF_BYTES}
+    };
+    const fch_block_t pair_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES * 2u},
+        {FCH_TREE_LEAF_BYTES * 2u, FCH_TREE_LEAF_BYTES * 2u}
+    };
+    const fch_block_t quad_blocks[2] = {
+        {0u, FCH_TREE_LEAF_BYTES * 4u},
+        {FCH_TREE_LEAF_BYTES * 4u, FCH_TREE_LEAF_BYTES * 4u}
+    };
+
+    unsigned int rejected = 0;
+    state_record_t output;
+    fch_state_t wrong_left_pair[2] = {
+        state_view(&pair_relocated),
+        state_view(&pair_middle)
+    };
+    if (!combine_state(
+            wrong_left_pair,
+            pair_blocks,
+            2u,
+            half_length,
+            0,
+            &output
+        ))
+        rejected++;
+
+    fch_state_t wrong_right_pair[2] = {
+        state_view(&pair_left),
+        state_view(&pair_tail)
+    };
+    if (!combine_state(
+            wrong_right_pair,
+            pair_blocks,
+            2u,
+            half_length,
+            0,
+            &output
+        ))
+        rejected++;
+
+    fch_state_t swapped_quads[2] = {
+        state_view(&quad_right),
+        state_view(&quad_left)
+    };
+    if (!combine_state(
+            swapped_quads,
+            quad_blocks,
+            2u,
+            sizeof(message),
+            0,
+            &output
+        ))
+        rejected++;
+
+    for (unsigned int field = 0; field < 5u; field++) {
+        state_record_t forged = pair_middle;
+        if (field == 0u)
+            forged.tree.level++;
+        else if (field == 1u)
+            forged.tree.first_leaf++;
+        else if (field == 2u)
+            forged.tree.leaf_count++;
+        else if (field == 3u)
+            forged.tree.byte_offset += FCH_TREE_LEAF_BYTES;
+        else
+            forged.tree.byte_length--;
+
+        fch_state_t forged_children[2] = {
+            state_view(&pair_left),
+            state_view(&forged)
+        };
+        if (!combine_state(
+                forged_children,
+                pair_blocks,
+                2u,
+                half_length,
+                0,
+                &output
+            ))
+            rejected++;
+    }
+
+    unsigned int grafts_detected = 0;
+    state_record_t grafted_leaf = leaf_relocated;
+    grafted_leaf.tree = leaf_left.tree;
+    fch_state_t leaf_graft_children[2] = {
+        state_view(&grafted_leaf),
+        state_view(&leaf_next)
+    };
+    if (!combine_state(
+            leaf_graft_children,
+            leaf_blocks,
+            2u,
+            FCH_TREE_LEAF_BYTES * 2u,
+            0,
+            &output
+        ) ||
+        same_state(&output, &pair_left))
+        return 0;
+    grafts_detected++;
+
+    state_record_t grafted_pair = pair_relocated;
+    grafted_pair.tree = pair_left.tree;
+    fch_state_t pair_graft_children[2] = {
+        state_view(&grafted_pair),
+        state_view(&pair_middle)
+    };
+    if (!combine_state(
+            pair_graft_children,
+            pair_blocks,
+            2u,
+            half_length,
+            0,
+            &output
+        ) ||
+        same_state(&output, &quad_left))
+        return 0;
+    grafts_detected++;
+
+    state_record_t grafted_quad = quad_right;
+    grafted_quad.tree = quad_left.tree;
+    fch_state_t quad_graft_children[2] = {
+        state_view(&grafted_quad),
+        state_view(&quad_right)
+    };
+    if (!combine_state(
+            quad_graft_children,
+            quad_blocks,
+            2u,
+            sizeof(message),
+            0,
+            &output
+        ) ||
+        same_state(&output, &root))
+        return 0;
+    grafts_detected++;
+
+    int ok = rejected == 8u && grafts_detected == 3u;
+    printf(
+        "subtree_replacement,position_bound_levels=3,"
+        "invalid_rejected=%u,grafts_detected=%u,%s\n",
+        rejected,
+        grafts_detected,
+        ok ? "PASS" : "FAIL"
+    );
+    return ok;
+}
+
 static void mutate_second_preimage(
     uint8_t *candidate,
     const uint8_t *target,
@@ -642,13 +1162,15 @@ static void mutate_second_preimage(
 ) {
     memcpy(candidate, target, length);
     const size_t chunk_count = length / ATTACK_CHUNK_SIZE;
+    const size_t leaf_count = length / FCH_TREE_LEAF_BYTES;
+    const size_t mode_sample = sample / SECOND_PREIMAGE_MODES;
 
-    switch (sample % 4u) {
+    switch (sample % SECOND_PREIMAGE_MODES) {
         case 0: {
             size_t position =
                 ((size_t)sample * 2654435761u + 17u) % length;
             candidate[position] ^=
-                (uint8_t)(1u << ((sample / 4u) % 8u));
+                (uint8_t)(1u << (mode_sample % 8u));
             break;
         }
         case 1: {
@@ -686,7 +1208,7 @@ static void mutate_second_preimage(
             );
             break;
         }
-        default: {
+        case 3: {
             size_t source = ((size_t)sample * 43u) % chunk_count;
             size_t destination =
                 ((size_t)sample * 101u + 3u) % chunk_count;
@@ -697,6 +1219,71 @@ static void mutate_second_preimage(
                 target + source * ATTACK_CHUNK_SIZE,
                 ATTACK_CHUNK_SIZE
             );
+            break;
+        }
+        case 4: {
+            size_t leaf = (mode_sample * 11u + 3u) % leaf_count;
+            uint64_t stream =
+                UINT64_C(0x1EAF5EED00000001) ^ sample;
+            fill_bytes(
+                candidate + leaf * FCH_TREE_LEAF_BYTES,
+                FCH_TREE_LEAF_BYTES,
+                &stream
+            );
+            break;
+        }
+        case 5: {
+            size_t first = (mode_sample * 5u) % leaf_count;
+            size_t second =
+                (mode_sample * 13u + 1u) % leaf_count;
+            if (first == second)
+                second = (second + 1u) % leaf_count;
+            uint8_t temporary[FCH_TREE_LEAF_BYTES];
+            memcpy(
+                temporary,
+                candidate + first * FCH_TREE_LEAF_BYTES,
+                sizeof(temporary)
+            );
+            memcpy(
+                candidate + first * FCH_TREE_LEAF_BYTES,
+                candidate + second * FCH_TREE_LEAF_BYTES,
+                FCH_TREE_LEAF_BYTES
+            );
+            memcpy(
+                candidate + second * FCH_TREE_LEAF_BYTES,
+                temporary,
+                sizeof(temporary)
+            );
+            break;
+        }
+        case 6: {
+            size_t subtree_count = leaf_count / 2u;
+            size_t source = (mode_sample * 3u) % subtree_count;
+            size_t destination =
+                (source + 1u +
+                 mode_sample * 5u % (subtree_count - 1u)) %
+                subtree_count;
+            memcpy(
+                candidate + destination * FCH_TREE_LEAF_BYTES * 2u,
+                target + source * FCH_TREE_LEAF_BYTES * 2u,
+                FCH_TREE_LEAF_BYTES * 2u
+            );
+            break;
+        }
+        default: {
+            uint8_t temporary[SECOND_PREIMAGE_LENGTH];
+            size_t multiplier = 1u + 2u * (mode_sample % 8u);
+            size_t shift = 1u + mode_sample / 8u % 8u;
+            memcpy(temporary, candidate, length);
+            for (size_t i = 0; i < leaf_count; i++) {
+                size_t source =
+                    (multiplier * i + shift) % leaf_count;
+                memcpy(
+                    candidate + i * FCH_TREE_LEAF_BYTES,
+                    temporary + source * FCH_TREE_LEAF_BYTES,
+                    FCH_TREE_LEAF_BYTES
+                );
+            }
             break;
         }
     }
@@ -799,10 +1386,11 @@ static int second_preimage_screen(void) {
         average512 >= 47.0 && average512 <= 53.0;
 
     printf(
-        "second_preimage,candidates=%u,avg256=%.2f,"
+        "second_preimage,candidates=%u,modes=%u,avg256=%.2f,"
         "min256=%d,matches256=%u,avg512=%.2f,"
         "min512=%d,matches512=%u,%s\n",
         SECOND_PREIMAGE_CANDIDATES,
+        SECOND_PREIMAGE_MODES,
         average256,
         minimum256,
         matches256,
@@ -1051,6 +1639,10 @@ int main(void) {
     if (!multicollision_screen())
         ok = 0;
     if (!tree_shape_screen())
+        ok = 0;
+    if (!canonical_partition_screen())
+        ok = 0;
+    if (!subtree_replacement_screen())
         ok = 0;
     if (!second_preimage_screen())
         ok = 0;
