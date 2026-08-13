@@ -278,6 +278,41 @@ static int check_combine_validation(void) {
     REQUIRE(parent.tree.level == 1u && parent.tree.leaf_count == 2u,
         "parent descriptor mismatch");
 
+    uint64_t workspace_words[FCH_INTERNAL_STATE_WORDS] = {0};
+    fch_state_t workspace_parent = {
+        workspace_words,
+        FCH_INTERNAL_STATE_WORDS,
+        { 0, 0, 0, 0, 0 }
+    };
+    REQUIRE(
+        fch_combine_into(
+            children,
+            blocks,
+            FCH_TREE_ARITY,
+            sizeof(data),
+            FCH_INTERNAL_STATE_WORDS,
+            0,
+            &workspace_parent
+        ),
+        "caller-owned combine failed"
+    );
+    REQUIRE(
+        memcmp(
+            parent.state,
+            workspace_parent.state,
+            sizeof(workspace_words)
+        ) == 0,
+        "caller-owned combine changed the state"
+    );
+    REQUIRE(
+        parent.tree.level == workspace_parent.tree.level &&
+            parent.tree.first_leaf == workspace_parent.tree.first_leaf &&
+            parent.tree.leaf_count == workspace_parent.tree.leaf_count &&
+            parent.tree.byte_offset == workspace_parent.tree.byte_offset &&
+            parent.tree.byte_length == workspace_parent.tree.byte_length,
+        "caller-owned combine changed the position"
+    );
+
     fch_state_t swapped[FCH_TREE_ARITY] = { children[1], children[0] };
     fch_state_t rejected_swap = fch_combine(
         swapped,

@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "combine.h"
 #include "bitops.h"
@@ -18,39 +19,35 @@ static int same_position(
         left->byte_length == right->byte_length;
 }
 
-fch_state_t fch_combine(
+int fch_combine_into(
     fch_state_t *children,
     const fch_block_t *blocks,
     size_t count,
     size_t node_length,
     size_t state_words,
-    int depth
+    int depth,
+    fch_state_t *output
 ) {
-    fch_state_t out = {
-        NULL,
-        state_words,
-        { 0, 0, 0, 0, 0 }
-    };
-
-    if (!children || !blocks || depth < 0)
-        return out;
+    if (!children || !blocks || !output || !output->state || depth < 0)
+        return 0;
     if (count != FCH_TREE_ARITY ||
-        state_words != FCH_INTERNAL_STATE_WORDS)
-        return out;
+        state_words != FCH_INTERNAL_STATE_WORDS ||
+        output->words != state_words)
+        return 0;
 
     for (size_t i = 0; i < count; i++) {
         if (!children[i].state || children[i].words != state_words ||
             !fch_tree_position_valid(&children[i].tree))
-            return out;
+            return 0;
     }
 
     if (children[0].tree.byte_length >
         SIZE_MAX - children[1].tree.byte_length)
-        return out;
+        return 0;
     size_t combined_length =
         children[0].tree.byte_length + children[1].tree.byte_length;
     if (combined_length != node_length)
-        return out;
+        return 0;
 
     fch_tree_position_t parent;
     if (!fch_tree_position_for_range(
@@ -58,29 +55,23 @@ fch_state_t fch_combine(
             combined_length,
             &parent
         ))
-        return out;
+        return 0;
 
     fch_tree_position_t expected[FCH_TREE_ARITY];
     if (!fch_tree_split_position(&parent, expected) ||
         !same_position(&children[0].tree, &expected[0]) ||
         !same_position(&children[1].tree, &expected[1]))
-        return out;
+        return 0;
 
     if (blocks[0].offset != 0u ||
         blocks[0].length != children[0].tree.byte_length ||
         blocks[1].offset != children[0].tree.byte_length ||
         blocks[1].length != children[1].tree.byte_length)
-        return out;
+        return 0;
 
-    out.state = (uint64_t *)calloc(state_words, sizeof(uint64_t));
-    if (!out.state)
-        return out;
-
-    if (!fch_mix_init(out.state, state_words, FCH_DOMAIN_NODE)) {
-        free(out.state);
-        out.state = NULL;
-        return out;
-    }
+    uint64_t working[FCH_INTERNAL_STATE_WORDS];
+    if (!fch_mix_init(working, state_words, FCH_DOMAIN_NODE))
+        return 0;
 
     uint8_t input[FCH_MIX_BLOCK_SIZE] = {0};
     fch_store_le64(input + 0u, FCH_TREE_TAG_NODE_HEADER);
@@ -98,18 +89,15 @@ fch_state_t fch_combine(
     fch_store_le64(input + 96u, FCH_MIX_ROUNDS);
 
     if (!fch_mix_compress(
-            out.state,
+            working,
             state_words,
             input,
             sizeof(input),
             0,
             FCH_DOMAIN_NODE,
             FCH_MIX_FLAG_NODE_HEADER
-        )) {
-        free(out.state);
-        out.state = NULL;
-        return out;
-    }
+        ))
+        return 0;
 
     for (size_t child_index = 0; child_index < count; child_index++) {
         const fch_state_t *child = &children[child_index];
@@ -132,20 +120,66 @@ fch_state_t fch_combine(
             flags |= FCH_MIX_FLAG_FINAL;
 
         if (!fch_mix_compress(
-                out.state,
+                working,
                 state_words,
                 input,
                 sizeof(input),
                 (uint64_t)child_index + 1u,
                 FCH_DOMAIN_NODE,
                 flags
-            )) {
-            free(out.state);
-            out.state = NULL;
-            return out;
-        }
+            ))
+            return 0;
     }
 
-    out.tree = parent;
+    memcpy(
+        output->state,
+        working,
+        state_words * sizeof(*working)
+    );
+    output->tree = parent;
+    return 1;
+}
+
+fch_state_t fch_combine(
+    fch_state_t *children,
+    const fch_block_t *blocks,
+    size_t count,
+    size_t node_length,
+    size_t state_words,
+    int depth
+) {
+    fch_state_t out = {
+        NULL,
+        state_words,
+        { 0, 0, 0, 0, 0 }
+    };
+    uint64_t working[FCH_INTERNAL_STATE_WORDS];
+    fch_state_t prepared = {
+        working,
+        state_words,
+        { 0, 0, 0, 0, 0 }
+    };
+
+    if (!fch_combine_into(
+            children,
+            blocks,
+            count,
+            node_length,
+            state_words,
+            depth,
+            &prepared
+        ))
+        return out;
+
+    out.state = (uint64_t *)malloc(state_words * sizeof(*out.state));
+    if (!out.state)
+        return out;
+
+    memcpy(
+        out.state,
+        prepared.state,
+        state_words * sizeof(*out.state)
+    );
+    out.tree = prepared.tree;
     return out;
 }
