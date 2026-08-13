@@ -23,9 +23,9 @@ byte range. Root status is added only by output finalization.
   binary child boundaries.
 - `src/leaf.c` encodes leaf headers and data records.
 - `src/combine.c` validates two child descriptors and encodes a parent.
-- `src/fractal_process.c` walks the canonical tree from left to right.
+- `src/fractal_process.c` reduces the canonical tree in left-to-right order.
 - `src/fch.c` applies one-shot padding and serializes the digest.
-- `src/fch_stream.c` implements temporary-file-backed update/final handling.
+- `src/fch_stream.c` implements incremental leaf and subtree processing.
 
 `fch_state_t` carries both state words and `fch_tree_position_t`. Keeping the
 descriptor beside the state makes it harder for callers to combine a state at
@@ -53,29 +53,26 @@ layouts.
 ## One-shot path
 
 The one-shot API allocates the complete padded message, exposes it through a
-memory reader, and recursively processes the canonical descriptors. Message
-bytes are read once as leaf data; internal-node construction uses only child
-states and descriptors.
+memory reader, and processes leaves from left to right. A binary-carry
+workspace retains at most one completed subtree per level; internal-node
+construction uses only child states and descriptors.
 
-The padded buffer uses `O(L)` memory. The recursive walk retains at most one
-completed left subtree per active level, so tree-state overhead is
-`O(log leaf_count)`. Tree work is linear in the padded input plus the number of
-nodes.
+The padded buffer uses `O(L)` memory. The tree workspace has a fixed number of
+slots derived from the width of `size_t`. Tree work is linear in the padded
+input plus the number of nodes.
 
 ## Streaming path
 
-Update calls append input to an anonymous file created with `tmpfile()`.
-Finalization presents stored bytes and virtual padding through the same reader
-interface used by the one-shot tree walk. Leaves are requested in increasing
-offset order, so version 2 no longer rereads complete ancestor ranges to choose
-splits.
+Update calls fill one 1,024-byte buffer. Each complete leaf is compressed
+immediately and merged through a binary-carry subtree workspace. Finalization
+constructs at most 1,033 bytes of pending data and padding, processes the last
+one or two leaves, and folds the saved subtrees into the canonical root.
 
-This keeps application RAM bounded but still uses `O(L)` temporary storage and
-requires temporary-file support. It is not yet a fully online tree hash:
-updates do not produce persistent leaf states, and all tree compression happens
-during finalization. The canonical schedule makes a future power-of-two
-subtree stack possible without changing the digest, but that optimization is
-not part of the current code.
+The stream retains no complete-message copy, performs no input replay, and
+requires no temporary file. Its storage is bounded by one partial leaf, the
+final padding buffer, and a fixed set of subtree states. The digest remains
+identical for every update partition because leaf offsets, tree descriptors,
+and final padding are unchanged.
 
 ## Portability
 
@@ -107,7 +104,7 @@ and must not be copied or accessed concurrently.
 
 The regular and extended suites check fixed vectors, C/Python agreement,
 record bytes, canonical boundaries, content independence, prefix stability,
-tree-layout rejection, one-shot/streaming equivalence, reduced-round
+tree-layout rejection, streaming boundary equivalence, reduced-round
 diffusion, bounded cryptanalytic searches, long messages, lifecycle failures,
 fuzz paths, and sanitizer builds.
 

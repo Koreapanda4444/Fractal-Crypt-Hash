@@ -408,19 +408,18 @@ the destination buffer instead of returning a partial digest.
 
 ## 11. Streaming behavior
 
-The current C streaming API appends update data to an anonymous temporary file.
-Finalization exposes the stored bytes and virtual padding through a reader,
-then runs the same canonical tree and output procedure as the one-shot API.
+The C streaming API consumes complete 1,024-byte leaves during update. It keeps
+one partial leaf and a binary-carry workspace containing at most one completed
+subtree per level. Finalization appends the padding bytes, consumes the last one
+or two leaves, folds the workspace into the canonical root, and applies the
+same output procedure as the one-shot API.
 
-Tree scheduling does not read message contents. During finalization, padded
-bytes are requested once in increasing leaf order; the former repeated reads
-for content-derived split selection no longer exist. Application RAM is bounded
-by fixed buffers and `O(log leaf_count)` recursive states, while temporary
-storage is `O(L)`.
+The complete input is neither retained nor replayed. No temporary file is
+required. Context storage is bounded by the partial-leaf buffer and a fixed
+number of subtree slots derived from the width of `size_t`; message length does
+not increase stored input bytes.
 
-This is not yet a fully online tree implementation: leaf states are not
-finalized during update, and temporary-file support is still required. An
-active context has one owner, must not be copied or used concurrently, and
+An active context has one owner, must not be copied or used concurrently, and
 rejects updates or repeated finalization after its final call.
 
 ## 12. Analysis and implementation status

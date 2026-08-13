@@ -102,6 +102,88 @@ static int all_zero(const uint8_t *data, size_t length) {
     return 1;
 }
 
+static int stream_boundary_case(
+    const uint8_t *data,
+    size_t length,
+    size_t chunk_size
+) {
+    uint8_t direct256[32];
+    uint8_t direct512[64];
+    uint8_t streamed256[32];
+    uint8_t streamed512[64];
+
+    if (!fch_hash_256_checked(data, length, direct256) ||
+        !fch_hash_512_checked(data, length, direct512))
+        return 0;
+
+    fch256_ctx ctx256;
+    fch512_ctx ctx512;
+    fch256_init(&ctx256);
+    fch512_init(&ctx512);
+
+    int ok = fch256_update(&ctx256, NULL, 0u) &&
+        fch512_update(&ctx512, NULL, 0u);
+    size_t offset = 0u;
+    while (ok && offset < length) {
+        size_t count = chunk_size;
+        if (count > length - offset)
+            count = length - offset;
+        ok = fch256_update(&ctx256, data + offset, count) &&
+            fch512_update(&ctx512, data + offset, count);
+        offset += count;
+    }
+
+    if (ok)
+        ok = ctx256.length == length && ctx512.length == length;
+    if (ok && length > 0u)
+        ok = ctx256.storage != NULL && ctx512.storage != NULL;
+    if (ok)
+        ok = fch256_final_checked(&ctx256, streamed256) &&
+            fch512_final_checked(&ctx512, streamed512);
+    if (ok)
+        ok = ctx256.storage == NULL && ctx512.storage == NULL;
+    if (ok)
+        ok = memcmp(direct256, streamed256, sizeof(direct256)) == 0 &&
+            memcmp(direct512, streamed512, sizeof(direct512)) == 0;
+
+    fch256_free(&ctx256);
+    fch512_free(&ctx512);
+    return ok;
+}
+
+static int test_stream_boundaries(void) {
+    static const size_t lengths[] = {
+        0u, 1u, 54u, 55u, 56u, 63u, 64u, 65u,
+        1014u, 1015u, 1016u, 1017u, 1022u, 1023u,
+        1024u, 1025u, 1031u, 1032u, 2038u, 2039u,
+        2040u, 2047u, 2048u, 2049u, 3071u, 3072u,
+        4095u, 4096u, 4097u
+    };
+    static const size_t chunks[] = {
+        1u, 7u, 1023u, 1024u, 1025u, 4097u
+    };
+    uint8_t data[4097];
+
+    for (size_t i = 0u; i < sizeof(data); i++)
+        data[i] = (uint8_t)(i * 131u + i / 17u);
+
+    for (size_t length_index = 0u;
+         length_index < sizeof(lengths) / sizeof(lengths[0]);
+         length_index++) {
+        for (size_t chunk_index = 0u;
+             chunk_index < sizeof(chunks) / sizeof(chunks[0]);
+             chunk_index++) {
+            if (!stream_boundary_case(
+                    data,
+                    lengths[length_index],
+                    chunks[chunk_index]
+                ))
+                return 0;
+        }
+    }
+    return 1;
+}
+
 static int test_bounded_streaming(void) {
     const size_t length = 262273u;
     const size_t chunks[] = { 1u, 7u, 4093u, 65537u, 31u };
@@ -264,6 +346,10 @@ int main(void) {
     }
     if (!test_bounded_streaming()) {
         printf("FAIL: bounded streaming\n");
+        return 1;
+    }
+    if (!test_stream_boundaries()) {
+        printf("FAIL: streaming boundaries\n");
         return 1;
     }
     if (!test_stream_failure_state()) {

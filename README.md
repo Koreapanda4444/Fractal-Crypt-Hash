@@ -77,11 +77,12 @@ original `void` signatures are also available.
 
 ### Streaming
 
-The streaming API stores incoming chunks in an anonymous temporary file and
-reads each leaf through fixed-size buffers during finalization. The canonical
-schedule no longer scans message contents to choose splits. Application RAM
-usage stays bounded, temporary storage grows with the input, and the result is
-identical to the one-shot API.
+The streaming API compresses each complete 1,024-byte leaf during `update`.
+The context keeps only one unfinished leaf and one completed subtree per tree
+level. `final` adds the padding, processes the remaining leaf data, and folds
+the saved subtrees into the root. It does not retain or replay the complete
+input, requires no temporary file, and produces the same result as the one-shot
+API.
 
 ```c
 #include "fch_stream.h"
