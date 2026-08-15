@@ -17,8 +17,10 @@ static uint8_t *fch_pad(
 
     if (length > SIZE_MAX - 9u)
         return NULL;
+#if SIZE_MAX > UINT64_MAX / 8u
     if (length > UINT64_MAX / 8u)
         return NULL;
+#endif
     if (length > 0 && !input)
         return NULL;
 

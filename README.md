@@ -183,4 +183,5 @@ through QEMU. Linux jobs include AddressSanitizer and UndefinedBehaviorSanitizer
 ## Documentation
 
 - [Algorithm specification](spec/fch_spec.md)
+- [Security analysis](spec/security_analysis.md)
 - [Implementation notes](spec/implementation_notes.md)

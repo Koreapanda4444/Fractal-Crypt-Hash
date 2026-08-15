@@ -179,4 +179,5 @@ QEMU에서 고정 벡터, 스트리밍, 구조 불변식과 실패 경로를 검
 ## 문서
 
 - [알고리즘 사양서](spec/fch_spec.ko.md)
+- [보안 분석](spec/security_analysis.ko.md)
 - [구현 노트](spec/implementation_notes.ko.md)
