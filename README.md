@@ -144,7 +144,7 @@ The repository includes tests for:
 - domain separation and portable little-endian serialization
 - bounded differential, linear, fixed-point, cycle, and near-collision searches
 - multicollision, second-preimage, grafting, and long-message tree patterns
-- one-shot and streaming equivalence, API lifecycle, and reader failures
+- one-shot and streaming equivalence, API lifecycle, and forced allocation failures
 - sanitizer and libFuzzer smoke runs
 - bounded-memory processing of an 8 MiB input
 
@@ -169,8 +169,9 @@ make fuzz-smoke
 ```
 
 CI builds and tests the code with GCC and Clang on Linux, Clang on macOS, and
-UCRT64 GCC on Windows. Linux jobs also run AddressSanitizer and
-UndefinedBehaviorSanitizer.
+UCRT64 GCC on Windows. It also runs a 32-bit x86 build and executes the fixed
+vectors, streaming checks, invariants, and failure paths on big-endian PowerPC
+through QEMU. Linux jobs include AddressSanitizer and UndefinedBehaviorSanitizer.
 
 ## Documentation
 

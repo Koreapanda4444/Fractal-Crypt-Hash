@@ -85,9 +85,9 @@ The implementation avoids native byte-order assumptions:
 - structural values use fixed 64-bit record fields; and
 - range calculations check addition and multiplication before use.
 
-Current CI builds x86-64 Linux, macOS, and Windows configurations. The test
-suite verifies serialization explicitly. Direct 32-bit and big-endian runtime
-coverage remains a separate portability task.
+CI covers x86-64 Linux, macOS, and Windows, a native 32-bit x86 build, and a
+big-endian PowerPC build executed through QEMU. Fixed vectors and explicit
+little-endian serialization checks run on the emulated big-endian target.
 
 ## Error handling
 
@@ -100,11 +100,17 @@ A failed streaming context remains failed until freed. Repeated finalization
 clears the destination and fails. Active contexts have single-owner semantics
 and must not be copied or accessed concurrently.
 
+The failure-path test replaces `malloc` and `calloc` at build time, rejects each
+one-shot allocation in turn, rejects stream-context allocation, verifies that
+stream finalization performs no new allocation, and checks output clearing and
+context cleanup after every failure.
+
 ## Tests and benchmark
 
 The regular and extended suites check fixed vectors, C/Python agreement,
 record bytes, canonical boundaries, content independence, prefix stability,
-tree-layout rejection, streaming boundary equivalence, reduced-round
+tree-layout rejection, streaming boundary equivalence, forced allocation
+failures, reduced-round
 diffusion, bounded cryptanalytic searches, long messages, lifecycle failures,
 fuzz paths, and sanitizer builds.
 

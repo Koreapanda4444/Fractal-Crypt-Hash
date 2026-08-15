@@ -25,7 +25,8 @@ TESTS = test_consistency \
         test_avalanche \
         test_cryptanalysis \
         test_tree_attacks \
-        test_hardening
+        test_hardening \
+        test_failures
 
 EXTENDED_TESTS = test_length_variation \
                  test_depth_diffusion \
@@ -68,6 +69,11 @@ test_tree_attacks: ../tests/test_tree_attacks.c $(SRC)
 
 test_hardening: ../tests/test_hardening.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_FUZZ_STANDALONE -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_failures: ../tests/test_failures.c $(SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) \
+		-Dmalloc=fch_test_malloc -Dcalloc=fch_test_calloc \
+		-o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 check: test
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done

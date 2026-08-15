@@ -428,8 +428,9 @@ C 스트리밍 API는 update 중 완성된 1,024바이트 리프를 바로 처�
 - 16 KiB 목표에 대한 관련 후보 512개의 제2원상 검사
 - 정규 트리 허용과 순서 변경·편향·평면·경계 이동·위조·음수 depth 거부
 - 256 KiB 장문 변형 15개
-- 원샷/스트리밍 동일성, 수명주기, 리더 실패, fuzz, sanitizer와 stress 경로
-- Linux·macOS·Windows CI 빌드
+- 원샷/스트리밍 동일성, 수명주기, 리더 실패, 강제 할당 실패, fuzz,
+  sanitizer와 stress 경로
+- Linux·macOS·Windows·32비트 x86 및 에뮬레이션된 big-endian PowerPC CI 실행
 
 모두 범위가 제한된 회귀 검사이며 보안 증명이 아닙니다. 전체 압축 코어,
 트리 멀티콜리전 경계, 장문 제2원상 논증과 코어·인코딩 트리의 상호작용은

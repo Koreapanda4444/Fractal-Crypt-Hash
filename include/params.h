@@ -5,6 +5,11 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <limits.h>
+
+#if CHAR_BIT != 8
+#error "FCH requires eight-bit bytes"
+#endif
 
 #ifndef FCH_INTERNAL_STATE_WORDS
 #define FCH_INTERNAL_STATE_WORDS 8

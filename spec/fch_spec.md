@@ -437,9 +437,9 @@ The automated suite includes:
 - canonical tree acceptance and reordered, skewed, flat, shifted, forged, and
   negative-depth rejection checks;
 - fifteen 256 KiB long-message variants;
-- one-shot/streaming equivalence, lifecycle, reader-failure, fuzz, sanitizer,
-  and stress paths; and
-- Linux, macOS, and Windows CI builds.
+- one-shot/streaming equivalence, lifecycle, reader-failure, forced-allocation,
+  fuzz, sanitizer, and stress paths; and
+- Linux, macOS, Windows, 32-bit x86, and emulated big-endian PowerPC CI runs.
 
 These are bounded regression checks, not a security proof. The design still
 requires independent cryptanalysis, especially for the full compression core,

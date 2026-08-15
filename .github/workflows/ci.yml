@@ -90,3 +90,57 @@ jobs:
         run: |
           make clean
           make all bench check check-extended CC=gcc
+
+  x86-32:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install 32-bit toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      - name: Build and test
+        working-directory: build
+        run: |
+          make clean
+          make all bench check check-extended \
+            CC=gcc \
+            CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2 -m32" \
+            LDFLAGS="-m32"
+
+  big-endian:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PowerPC emulator and compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-powerpc64-linux-gnu qemu-user
+
+      - name: Build
+        working-directory: build
+        run: |
+          make clean
+          make fch test_consistency test_boundaries test_invariants \
+            test_portability test_vectors test_failures \
+            CC=powerpc64-linux-gnu-gcc \
+            CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+
+      - name: Run under qemu
+        working-directory: build
+        run: |
+          for test_bin in \
+            test_consistency \
+            test_boundaries \
+            test_invariants \
+            test_portability \
+            test_vectors \
+            test_failures
+          do
+            qemu-ppc64 -L /usr/powerpc64-linux-gnu "./$test_bin"
+          done
