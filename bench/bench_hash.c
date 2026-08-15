@@ -1,26 +1,117 @@
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+
+#undef malloc
+#undef calloc
+#undef free
+
+#include <stdlib.h>
 
 #include "fch.h"
 #include "fch_stream.h"
+#include "params.h"
+
+typedef union {
+    max_align_t alignment;
+    size_t size;
+} fch_bench_allocation_header_t;
+
+static size_t allocation_current;
+static size_t allocation_peak;
+static size_t allocation_calls;
+static int allocation_error;
+
+static void allocation_reset(void) {
+    allocation_current = 0u;
+    allocation_peak = 0u;
+    allocation_calls = 0u;
+    allocation_error = 0;
+}
+
+void *fch_bench_malloc(size_t size) {
+    allocation_calls++;
+    if (size > SIZE_MAX - sizeof(fch_bench_allocation_header_t)) {
+        allocation_error = 1;
+        return NULL;
+    }
+
+    fch_bench_allocation_header_t *header =
+        (fch_bench_allocation_header_t *)malloc(
+            sizeof(*header) + size
+        );
+    if (!header)
+        return NULL;
+
+    if (allocation_current > SIZE_MAX - size) {
+        allocation_error = 1;
+        free(header);
+        return NULL;
+    }
+
+    header->size = size;
+    allocation_current += size;
+    if (allocation_current > allocation_peak)
+        allocation_peak = allocation_current;
+    return header + 1;
+}
+
+void *fch_bench_calloc(size_t count, size_t size) {
+    if (count != 0u && size > SIZE_MAX / count) {
+        allocation_calls++;
+        allocation_error = 1;
+        return NULL;
+    }
+
+    size_t total = count * size;
+    void *pointer = fch_bench_malloc(total);
+    if (pointer)
+        memset(pointer, 0, total);
+    return pointer;
+}
+
+void fch_bench_free(void *pointer) {
+    if (!pointer)
+        return;
+
+    fch_bench_allocation_header_t *header =
+        (fch_bench_allocation_header_t *)pointer - 1;
+    if (header->size > allocation_current) {
+        allocation_error = 1;
+        allocation_current = 0u;
+    } else {
+        allocation_current -= header->size;
+    }
+    free(header);
+}
 
 typedef int (*bench_fn)(
     const uint8_t *input,
     size_t length,
+    size_t chunk_size,
     uint8_t output[64]
 );
+
+typedef enum {
+    BENCH_ONE_SHOT,
+    BENCH_STREAM
+} bench_kind_t;
 
 typedef struct {
     const char *name;
     bench_fn hash;
+    size_t chunk_size;
+    bench_kind_t kind;
 } bench_target_t;
 
-static uint64_t now_ns(void) {
-    return (uint64_t)clock() *
-        (UINT64_C(1000000000) / (uint64_t)CLOCKS_PER_SEC);
-}
+typedef struct {
+    double seconds;
+    double throughput;
+    size_t peak_heap;
+    size_t allocations_per_hash;
+} bench_result_t;
 
 static uint32_t xorshift32(uint32_t *state) {
     uint32_t value = *state;
@@ -33,42 +124,50 @@ static uint32_t xorshift32(uint32_t *state) {
 
 static void fill_random(uint8_t *buffer, size_t length) {
     uint32_t state = UINT32_C(0xC001D00D);
-    for (size_t i = 0; i < length; i++)
+    for (size_t i = 0u; i < length; i++)
         buffer[i] = (uint8_t)xorshift32(&state);
 }
 
 static int hash_256_once(
     const uint8_t *input,
     size_t length,
+    size_t chunk_size,
     uint8_t output[64]
 ) {
+    (void)chunk_size;
     return fch_hash_256_checked(input, length, output);
 }
 
 static int hash_512_once(
     const uint8_t *input,
     size_t length,
+    size_t chunk_size,
     uint8_t output[64]
 ) {
+    (void)chunk_size;
     return fch_hash_512_checked(input, length, output);
 }
 
 static int hash_256_stream(
     const uint8_t *input,
     size_t length,
+    size_t chunk_size,
     uint8_t output[64]
 ) {
+    if (chunk_size == 0u)
+        return 0;
+
     fch256_ctx context;
     fch256_init(&context);
 
     size_t offset = 0u;
     int ok = 1;
     while (ok && offset < length) {
-        size_t chunk = 64u * 1024u;
-        if (chunk > length - offset)
-            chunk = length - offset;
-        ok = fch256_update(&context, input + offset, chunk);
-        offset += chunk;
+        size_t count = chunk_size;
+        if (count > length - offset)
+            count = length - offset;
+        ok = fch256_update(&context, input + offset, count);
+        offset += count;
     }
     if (ok)
         ok = fch256_final_checked(&context, output);
@@ -76,13 +175,42 @@ static int hash_256_stream(
     return ok;
 }
 
-static unsigned int iterations_for_length(size_t length) {
+static int hash_512_stream(
+    const uint8_t *input,
+    size_t length,
+    size_t chunk_size,
+    uint8_t output[64]
+) {
+    if (chunk_size == 0u)
+        return 0;
+
+    fch512_ctx context;
+    fch512_init(&context);
+
+    size_t offset = 0u;
+    int ok = 1;
+    while (ok && offset < length) {
+        size_t count = chunk_size;
+        if (count > length - offset)
+            count = length - offset;
+        ok = fch512_update(&context, input + offset, count);
+        offset += count;
+    }
+    if (ok)
+        ok = fch512_final_checked(&context, output);
+    fch512_free(&context);
+    return ok;
+}
+
+static unsigned int iterations_for_length(size_t length, int quick) {
+    if (quick)
+        return length < 1024u ? 16u : 1u;
+    if (length >= 8u * 1024u * 1024u)
+        return 2u;
     if (length >= 1024u * 1024u)
         return 4u;
     if (length >= 256u * 1024u)
         return 8u;
-    if (length >= 64u * 1024u)
-        return 16u;
     if (length >= 16u * 1024u)
         return 32u;
     if (length >= 1024u)
@@ -95,86 +223,203 @@ static int measure(
     const uint8_t *buffer,
     size_t length,
     unsigned int iterations,
-    volatile uint32_t *sink
+    volatile uint32_t *sink,
+    bench_result_t *result
 ) {
+    if (!target || !target->hash || !buffer || iterations == 0u ||
+        !sink || !result)
+        return 0;
+
     uint8_t output[64];
-    uint64_t start = now_ns();
+    allocation_reset();
+    clock_t start = clock();
+    if (start == (clock_t)-1)
+        return 0;
 
     for (unsigned int i = 0u; i < iterations; i++) {
-        if (!target->hash(buffer, length, output))
+        if (!target->hash(
+                buffer,
+                length,
+                target->chunk_size,
+                output
+            ))
             return 0;
-        *sink ^= output[i % sizeof(output)];
+        if (allocation_error || allocation_current != 0u)
+            return 0;
+        *sink ^= output[i % 32u];
     }
 
-    uint64_t end = now_ns();
-    double seconds = (double)(end - start) / 1000000000.0;
+    clock_t end = clock();
+    if (end == (clock_t)-1 || end < start)
+        return 0;
+    if (allocation_calls % iterations != 0u)
+        return 0;
+
+    result->seconds =
+        (double)(end - start) / (double)CLOCKS_PER_SEC;
     double megabytes =
         ((double)length * (double)iterations) / 1000000.0;
-    double throughput = seconds > 0.0 ? megabytes / seconds : 0.0;
-
-    printf(
-        "%s,%u,%u,%.3f\n",
-        target->name,
-        (unsigned int)length,
-        iterations,
-        throughput
-    );
+    result->throughput = result->seconds > 0.0
+        ? megabytes / result->seconds
+        : 0.0;
+    result->peak_heap = allocation_peak;
+    result->allocations_per_hash = allocation_calls / iterations;
     return 1;
 }
 
-int main(void) {
-    static const size_t lengths[] = {
-        32u,
+static int validate_scaling(
+    const bench_target_t *target,
+    size_t length,
+    const bench_result_t *result,
+    size_t *stream_peak
+) {
+    if (!target || !result || !stream_peak)
+        return 0;
+
+    if (target->kind == BENCH_ONE_SHOT) {
+        size_t padded_length = length + 9u;
+        if (padded_length < FCH_PADDING_MIN_BYTES)
+            padded_length = FCH_PADDING_MIN_BYTES;
+        size_t expected_peak = padded_length +
+            FCH_INTERNAL_STATE_WORDS * sizeof(uint64_t);
+        return result->allocations_per_hash == 2u &&
+            result->peak_heap == expected_peak;
+    }
+
+    if (result->allocations_per_hash != 1u || result->peak_heap == 0u)
+        return 0;
+    if (*stream_peak == 0u) {
+        *stream_peak = result->peak_heap;
+        return 1;
+    }
+    return result->peak_heap == *stream_peak;
+}
+
+static void print_result(
+    const bench_target_t *target,
+    size_t length,
+    unsigned int iterations,
+    const bench_result_t *result
+) {
+    printf(
+        "%s,%zu,%zu,%u,%.6f,%.3f,%zu,%zu\n",
+        target->name,
+        length,
+        target->chunk_size,
+        iterations,
+        result->seconds,
+        result->throughput,
+        result->peak_heap,
+        result->allocations_per_hash
+    );
+}
+
+static void usage(const char *program) {
+    fprintf(stderr, "Usage: %s [--quick]\n", program);
+}
+
+int main(int argc, char **argv) {
+    static const size_t full_lengths[] = {
         64u,
-        128u,
-        512u,
         1024u,
-        4096u,
         16384u,
-        65536u,
         262144u,
+        1048576u,
+        8388608u
+    };
+    static const size_t quick_lengths[] = {
+        64u,
+        1024u,
+        65536u,
         1048576u
     };
     static const bench_target_t targets[] = {
-        {"fch256-one-shot", hash_256_once},
-        {"fch512-one-shot", hash_512_once},
-        {"fch256-stream-64k", hash_256_stream}
+        {"fch256-one-shot", hash_256_once, 0u, BENCH_ONE_SHOT},
+        {"fch512-one-shot", hash_512_once, 0u, BENCH_ONE_SHOT},
+        {"fch256-stream", hash_256_stream, 1u, BENCH_STREAM},
+        {"fch256-stream", hash_256_stream, 64u, BENCH_STREAM},
+        {"fch256-stream", hash_256_stream, 1024u, BENCH_STREAM},
+        {"fch256-stream", hash_256_stream, 65536u, BENCH_STREAM},
+        {"fch512-stream", hash_512_stream, 1024u, BENCH_STREAM},
+        {"fch512-stream", hash_512_stream, 65536u, BENCH_STREAM}
     };
 
-    uint8_t *buffer = (uint8_t *)malloc(lengths[
-        sizeof(lengths) / sizeof(lengths[0]) - 1u
-    ]);
+    int quick = 0;
+    if (argc == 2 && strcmp(argv[1], "--quick") == 0) {
+        quick = 1;
+    } else if (argc != 1) {
+        usage(argv[0]);
+        return 2;
+    }
+
+    const size_t *lengths = quick ? quick_lengths : full_lengths;
+    size_t length_count = quick
+        ? sizeof(quick_lengths) / sizeof(quick_lengths[0])
+        : sizeof(full_lengths) / sizeof(full_lengths[0]);
+    size_t maximum_length = lengths[length_count - 1u];
+
+    uint8_t *buffer = (uint8_t *)malloc(maximum_length);
     if (!buffer) {
-        fprintf(stderr, "benchmark allocation failed\n");
+        fprintf(stderr, "benchmark input allocation failed\n");
         return 1;
     }
-    fill_random(
-        buffer,
-        lengths[sizeof(lengths) / sizeof(lengths[0]) - 1u]
-    );
+    fill_random(buffer, maximum_length);
 
     volatile uint32_t sink = 0u;
-    puts("algorithm,bytes,iterations,mb_per_second");
-    for (size_t target_index = 0;
+    size_t stream_peak = 0u;
+    puts(
+        "algorithm,bytes,chunk_bytes,iterations,seconds,"
+        "mb_per_second,peak_heap_bytes,allocations_per_hash"
+    );
+
+    for (size_t target_index = 0u;
          target_index < sizeof(targets) / sizeof(targets[0]);
          target_index++) {
-        for (size_t length_index = 0;
-             length_index < sizeof(lengths) / sizeof(lengths[0]);
+        for (size_t length_index = 0u;
+             length_index < length_count;
              length_index++) {
+            unsigned int iterations =
+                iterations_for_length(lengths[length_index], quick);
+            bench_result_t result;
             if (!measure(
                     &targets[target_index],
                     buffer,
                     lengths[length_index],
-                    iterations_for_length(lengths[length_index]),
-                    &sink
+                    iterations,
+                    &sink,
+                    &result
+                ) ||
+                !validate_scaling(
+                    &targets[target_index],
+                    lengths[length_index],
+                    &result,
+                    &stream_peak
                 )) {
+                fprintf(
+                    stderr,
+                    "benchmark validation failed: %s bytes=%zu chunk=%zu\n",
+                    targets[target_index].name,
+                    lengths[length_index],
+                    targets[target_index].chunk_size
+                );
                 free(buffer);
                 return 1;
             }
+            print_result(
+                &targets[target_index],
+                lengths[length_index],
+                iterations,
+                &result
+            );
         }
     }
 
-    fprintf(stderr, "benchmark sink=%u\n", (unsigned int)sink);
+    fprintf(
+        stderr,
+        "benchmark sink=%u stream_peak_heap_bytes=%zu\n",
+        (unsigned int)sink,
+        stream_peak
+    );
     free(buffer);
     return 0;
 }

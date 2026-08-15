@@ -29,7 +29,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all bench check check-extended CC="$CC"
+          make all check check-extended bench-check CC="$CC"
 
       - name: Set up Python
         if: matrix.reference
@@ -89,7 +89,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all bench check check-extended CC=gcc
+          make all check check-extended bench-check CC=gcc
 
   x86-32:
     runs-on: ubuntu-latest
@@ -106,7 +106,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all bench check check-extended \
+          make all check check-extended bench-check \
             CC=gcc \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2 -m32" \
             LDFLAGS="-m32"

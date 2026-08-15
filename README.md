@@ -156,11 +156,18 @@ make check
 make check-extended
 ```
 
-Build the one-shot and streaming throughput benchmark:
+Build and run the full scaling benchmark:
 
 ```sh
 make bench
+./bench_hash
 ```
+
+Use `make bench-check` for the shorter CI run. The CSV output reports input
+size, streaming chunk size, iterations, processor time, throughput, peak internal
+heap use, and allocations per hash. The benchmark covers both digest sizes in
+one-shot and streaming modes and checks that streaming memory stays bounded as
+the input grows.
 
 Run the bounded libFuzzer target with Clang:
 

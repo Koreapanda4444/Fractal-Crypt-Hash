@@ -114,9 +114,18 @@ failures, reduced-round
 diffusion, bounded cryptanalytic searches, long messages, lifecycle failures,
 fuzz paths, and sanitizer builds.
 
-`bench/bench_hash.c` measures FCH-256 and FCH-512 one-shot throughput and
-FCH-256 streaming throughput with 64 KiB updates. It benchmarks the current
-format directly; it no longer recompiles obsolete depth-cap variants.
+`bench/bench_hash.c` measures processor time and throughput across inputs from 64
+bytes through 8 MiB. It covers FCH-256 and FCH-512 one-shot hashing, FCH-256
+streaming with 1-byte through 64 KiB updates, and FCH-512 streaming with 1 KiB
+and 64 KiB updates.
+
+The benchmark replaces the implementation allocator only for this executable.
+Its input buffer and allocator metadata are excluded from the reported heap
+total. Each result records peak requested heap and allocation count per hash.
+The run fails if one-shot memory does not follow the padded input size, if a
+streaming hash performs more than its context allocation, if streaming peak
+memory changes with input or chunk size, or if any allocation remains live.
+`--quick` uses a smaller matrix for CI while preserving the scaling checks.
 
 ## Compatibility policy
 

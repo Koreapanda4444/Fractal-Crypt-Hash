@@ -104,7 +104,12 @@ check-extended: test-extended
 bench: bench_hash
 
 bench_hash: ../bench/bench_hash.c $(SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) \
+		-Dmalloc=fch_bench_malloc -Dcalloc=fch_bench_calloc \
+		-Dfree=fch_bench_free -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+bench-check: bench_hash
+	./bench_hash --quick
 
 fuzz_hash: ../tests/test_hardening.c $(SRC)
 	clang $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
@@ -118,4 +123,4 @@ fuzz-smoke: fuzz_hash
 clean:
 	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
 
-.PHONY: all test check check-reference test-extended check-extended bench fuzz-smoke clean
+.PHONY: all test check check-reference test-extended check-extended bench bench-check fuzz-smoke clean
