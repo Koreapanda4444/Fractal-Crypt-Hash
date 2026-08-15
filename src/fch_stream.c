@@ -41,8 +41,10 @@ static int stream_length_supported(size_t current, size_t added, size_t *result)
     size_t length = current + added;
     if (length > SIZE_MAX - 9u)
         return 0;
-    if ((uintmax_t)length > UINT64_MAX / UINT64_C(8))
+#if SIZE_MAX > UINT64_MAX / UINT64_C(8)
+    if (length > UINT64_MAX / UINT64_C(8))
         return 0;
+#endif
 
     *result = length;
     return 1;
