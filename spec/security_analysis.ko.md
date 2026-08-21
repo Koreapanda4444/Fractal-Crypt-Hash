@@ -86,6 +86,7 @@ FCH는 공개된 비키 해시로 가정합니다. 공격자는 메시지를 자
 - big-endian CI를 포함한 little-endian 직렬화 확인
 - 메모리 할당, reader, 오버플로와 API 수명주기 실패 처리
 - AddressSanitizer, UndefinedBehaviorSanitizer와 libFuzzer 스모크 실행
+- 경고를 오류로 처리하는 GCC 경로 기반 정적 분석
 - 8 MiB 입력의 제한 메모리 스트리밍
 - CI에서 시간, 할당 횟수와 최대 힙 스케일링 확인
 
@@ -102,7 +103,7 @@ FCH는 공개된 비키 해시로 가정합니다. 공격자는 메시지를 자
 4. ARX 코어의 회전·가산 차분, rebound, meet-in-the-middle과 관련 영역 분석
 5. 전체 트리의 멀티콜리전, expandable message, herding, 다중 표적 공격과
    FCH-256·FCH-512 사이의 상태 재사용 분석
-6. 더 긴 퍼징, 정적 분석, 실행 시간 검토와 최적화 구현의 부채널 평가
+6. 더 긴 퍼징, 더 넓은 정적 분석, 실행 시간 검토와 최적화 구현의 부채널 평가
 7. 양자 보안 목표를 제시하기 전 별도의 양자 공격 모델 작성
 
 현재 탐색에서 공격을 찾지 못한 결과는 이 작업들의 출발점으로 봐야 하며,
@@ -119,6 +120,7 @@ make check-extended
 make check-reference
 make bench-check
 make fuzz-smoke
+make analyze
 ```
 
 `test_cryptanalysis`와 `test_tree_attacks`는 표본 수와 측정값을 직접 출력합니다.

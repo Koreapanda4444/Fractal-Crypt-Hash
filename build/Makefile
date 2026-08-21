@@ -1,6 +1,8 @@
 CC = gcc
+ANALYZER ?= gcc
 PYTHON ?= python3
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
+ANALYZEFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O1
 CPPFLAGS = -I../include
 LDFLAGS =
 LDLIBS =
@@ -15,6 +17,8 @@ SRC = ../src/fch.c \
       ../src/fch_stream.c
 
 OBJ = $(SRC:.c=.o)
+
+ANALYZE_SOURCES = $(SRC) ../tools/fch.c
 
 TESTS = test_consistency \
         test_boundaries \
@@ -120,7 +124,13 @@ fuzz-smoke: fuzz_hash
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
 		./fuzz_hash -runs=512 -max_len=8192 -seed=164981
 
+analyze:
+	@set -e; for source in $(ANALYZE_SOURCES); do \
+		$(ANALYZER) $(CPPFLAGS) $(ANALYZEFLAGS) -fanalyzer \
+			-c "$$source" -o /dev/null; \
+	done
+
 clean:
 	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
 
-.PHONY: all test check check-reference test-extended check-extended bench bench-check fuzz-smoke clean
+.PHONY: all test check check-reference test-extended check-extended bench bench-check fuzz-smoke analyze clean

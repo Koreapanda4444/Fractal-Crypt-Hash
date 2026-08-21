@@ -59,6 +59,16 @@ jobs:
             CC=clang \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
 
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run GCC static analyzer
+        working-directory: build
+        run: make analyze
+
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:

@@ -89,6 +89,7 @@ algorithm and the shipped code aligned:
 - explicit little-endian serialization checks, including big-endian CI;
 - rejection of allocation, reader, overflow, and API-lifecycle failures;
 - AddressSanitizer, UndefinedBehaviorSanitizer, and libFuzzer smoke runs;
+- GCC path-sensitive static analysis with warnings treated as errors;
 - an 8 MiB bounded-memory streaming test; and
 - time, allocation-count, and peak-heap scaling checks in CI.
 
@@ -108,8 +109,8 @@ The most important remaining work is:
    and related-domain analysis of the ARX core;
 5. full-tree study of multicollisions, expandable messages, herding,
    multi-target attacks, and state reuse between FCH-256 and FCH-512;
-6. larger fuzzing campaigns, static analysis, timing review, and side-channel
-   evaluation of optimized implementations; and
+6. larger fuzzing campaigns, broader static analysis, timing review, and
+   side-channel evaluation of optimized implementations; and
 7. a separate quantum attack model before making quantum security targets.
 
 Negative results from the bundled searches should be treated as starting
@@ -126,6 +127,7 @@ make check-extended
 make check-reference
 make bench-check
 make fuzz-smoke
+make analyze
 ```
 
 `test_cryptanalysis` and `test_tree_attacks` print the measured bounds and
