@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bitops.h"
 #include "fch.h"
 #include "mix.h"
 #include "test_utils.h"
@@ -15,6 +16,9 @@ enum {
     TRAIL_BASES = 4,
     TRAIL_PATTERN_COUNT = 6,
     TRAIL_ROUND_COUNT = 16,
+    ARX_PAIR_SAMPLES = 512,
+    ARX_ROTATION_COUNT = 6,
+    ARX_ADDITIVE_CASES = 4,
     NEAR_COLLISION_SAMPLES = 2048,
     NEAR_COLLISION_MESSAGE_SIZE = 64
 };
@@ -477,6 +481,283 @@ static void record_trail_stats(
         stats->minimum_active_words = active;
 }
 
+static void rotate_message_words(
+    uint8_t output[FCH_MIX_BLOCK_SIZE],
+    const uint8_t input[FCH_MIX_BLOCK_SIZE],
+    unsigned int rotation
+) {
+    for (size_t word = 0; word < 16u; word++) {
+        uint64_t value = fch_load_le64(input + word * 8u);
+        fch_store_le64(output + word * 8u, fch_rotl64(value, rotation));
+    }
+}
+
+static int rotational_pair_check(void) {
+    static const unsigned int rotations[ARX_ROTATION_COUNT] = {
+        1u, 8u, 16u, 24u, 32u, 63u
+    };
+    static const unsigned int round_counts[] = {
+        1u, 2u, 4u, FCH_MIX_REDUCED_ROUND_REFERENCE, FCH_MIX_ROUNDS
+    };
+    int all_ok = 1;
+
+    printf(
+        "rotational_pair,rounds,pairs,avg,min,max,min_active_words,"
+        "max_rotation_bias,exact_relations,status\n"
+    );
+    for (size_t ri = 0;
+         ri < sizeof(round_counts) / sizeof(round_counts[0]);
+         ri++) {
+        unsigned int rounds = round_counts[ri];
+        trail_stats_t stats;
+        double maximum_rotation_bias = 0.0;
+
+        reset_trail_stats(&stats);
+        for (size_t rotation_index = 0;
+             rotation_index < ARX_ROTATION_COUNT;
+             rotation_index++) {
+            unsigned int rotation = rotations[rotation_index];
+            uint64_t stream =
+                UINT64_C(0x524F745041495201) ^
+                ((uint64_t)rounds << 32u) ^ rotation;
+            uint64_t rotation_weight = 0u;
+
+            for (unsigned int sample = 0;
+                 sample < ARX_PAIR_SAMPLES;
+                 sample++) {
+                uint8_t base[FCH_MIX_BLOCK_SIZE];
+                uint8_t rotated[FCH_MIX_BLOCK_SIZE];
+                uint64_t output_a[8];
+                uint64_t output_b[8];
+                uint64_t rotated_output[8];
+
+                fill_bytes(base, sizeof(base), &stream);
+                rotate_message_words(rotated, base, rotation);
+                if (!core_output(
+                        base,
+                        sample,
+                        UINT64_C(0x524F544154453031),
+                        FCH_MIX_FLAG_LEAF_DATA,
+                        rounds,
+                        output_a
+                    ) ||
+                    !core_output(
+                        rotated,
+                        sample,
+                        UINT64_C(0x524F544154453031),
+                        FCH_MIX_FLAG_LEAF_DATA,
+                        rounds,
+                        output_b
+                    ))
+                    return 0;
+
+                for (size_t word = 0; word < 8u; word++) {
+                    rotated_output[word] =
+                        fch_rotl64(output_a[word], rotation);
+                }
+                int weight = bit_diff(
+                    (const uint8_t *)rotated_output,
+                    (const uint8_t *)output_b,
+                    sizeof(output_b)
+                );
+                unsigned int active = active_difference_words(
+                    rotated_output,
+                    output_b
+                );
+                record_trail_stats(
+                    &stats,
+                    weight,
+                    active,
+                    (unsigned int)rotation_index,
+                    0u,
+                    sample,
+                    rotation
+                );
+                rotation_weight += (uint64_t)weight;
+            }
+
+            double rotation_average =
+                (double)rotation_weight /
+                ((double)ARX_PAIR_SAMPLES * 512.0) * 100.0;
+            double rotation_bias = rotation_average >= 50.0
+                ? rotation_average - 50.0
+                : 50.0 - rotation_average;
+            if (rotation_bias > maximum_rotation_bias)
+                maximum_rotation_bias = rotation_bias;
+        }
+
+        const uint64_t pairs =
+            (uint64_t)ARX_PAIR_SAMPLES * ARX_ROTATION_COUNT;
+        double average =
+            (double)stats.total_weight /
+            ((double)pairs * 512.0) * 100.0;
+        int strong =
+            average >= 47.0 && average <= 53.0 &&
+            stats.minimum_weight >= 160 &&
+            stats.minimum_active_words == 8u &&
+            maximum_rotation_bias <= 4.0;
+        int ok = stats.zero_differences == 0u &&
+            (rounds == 1u || strong);
+
+        printf(
+            "rotational_pair,%u,%llu,%.2f,%d,%d,%u,%.2f,%u,%s\n",
+            rounds,
+            (unsigned long long)pairs,
+            average,
+            stats.minimum_weight,
+            stats.maximum_weight,
+            stats.minimum_active_words,
+            maximum_rotation_bias,
+            stats.zero_differences,
+            strong ? "PASS" : (ok ? "WEAK" : "FAIL")
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    return all_ok;
+}
+
+static int additive_differential_check(void) {
+    static const size_t message_words[ARX_ADDITIVE_CASES] = {
+        0u, 5u, 10u, 15u
+    };
+    static const uint64_t deltas[ARX_ADDITIVE_CASES] = {
+        UINT64_C(0x0000000000000001),
+        UINT64_C(0x0000000080000000),
+        UINT64_C(0x8000000000000000),
+        UINT64_C(0x0101010101010101)
+    };
+    static const unsigned int round_counts[] = {
+        1u, 2u, 4u, FCH_MIX_REDUCED_ROUND_REFERENCE, FCH_MIX_ROUNDS
+    };
+    int all_ok = 1;
+
+    printf(
+        "additive_differential,rounds,pairs,avg,min,max,min_active_words,"
+        "max_bit_bias,zero_differences,status\n"
+    );
+    for (size_t ri = 0;
+         ri < sizeof(round_counts) / sizeof(round_counts[0]);
+         ri++) {
+        unsigned int rounds = round_counts[ri];
+        trail_stats_t stats;
+        uint32_t flip_counts[512] = {0};
+
+        reset_trail_stats(&stats);
+        for (size_t case_index = 0;
+             case_index < ARX_ADDITIVE_CASES;
+             case_index++) {
+            uint64_t stream =
+                UINT64_C(0xADD1D1FF5EED0001) ^
+                ((uint64_t)rounds << 32u) ^ case_index;
+
+            for (unsigned int sample = 0;
+                 sample < ARX_PAIR_SAMPLES;
+                 sample++) {
+                uint8_t base[FCH_MIX_BLOCK_SIZE];
+                uint8_t changed[FCH_MIX_BLOCK_SIZE];
+                uint64_t output_a[8];
+                uint64_t output_b[8];
+                size_t message_word = message_words[case_index];
+                uint64_t value;
+
+                fill_bytes(base, sizeof(base), &stream);
+                memcpy(changed, base, sizeof(changed));
+                value = fch_load_le64(changed + message_word * 8u);
+                fch_store_le64(
+                    changed + message_word * 8u,
+                    value + deltas[case_index]
+                );
+                if (!core_output(
+                        base,
+                        sample + case_index * ARX_PAIR_SAMPLES,
+                        UINT64_C(0x4144444449463031),
+                        FCH_MIX_FLAG_LEAF_DATA,
+                        rounds,
+                        output_a
+                    ) ||
+                    !core_output(
+                        changed,
+                        sample + case_index * ARX_PAIR_SAMPLES,
+                        UINT64_C(0x4144444449463031),
+                        FCH_MIX_FLAG_LEAF_DATA,
+                        rounds,
+                        output_b
+                    ))
+                    return 0;
+
+                int weight = bit_diff(
+                    (const uint8_t *)output_a,
+                    (const uint8_t *)output_b,
+                    sizeof(output_a)
+                );
+                unsigned int active = active_difference_words(
+                    output_a,
+                    output_b
+                );
+                record_trail_stats(
+                    &stats,
+                    weight,
+                    active,
+                    (unsigned int)case_index,
+                    0u,
+                    sample,
+                    message_word
+                );
+                for (size_t word = 0; word < 8u; word++) {
+                    uint64_t difference = output_a[word] ^ output_b[word];
+                    for (size_t bit = 0; bit < 64u; bit++) {
+                        flip_counts[word * 64u + bit] +=
+                            (uint32_t)((difference >> bit) & 1u);
+                    }
+                }
+            }
+        }
+
+        const uint64_t pairs =
+            (uint64_t)ARX_PAIR_SAMPLES * ARX_ADDITIVE_CASES;
+        double maximum_bit_bias = 0.0;
+        for (size_t bit = 0; bit < 512u; bit++) {
+            double probability =
+                (double)flip_counts[bit] / (double)pairs * 100.0;
+            double bias = probability >= 50.0
+                ? probability - 50.0
+                : 50.0 - probability;
+            if (bias > maximum_bit_bias)
+                maximum_bit_bias = bias;
+        }
+
+        double average =
+            (double)stats.total_weight /
+            ((double)pairs * 512.0) * 100.0;
+        int strong =
+            average >= 47.0 && average <= 53.0 &&
+            stats.minimum_weight >= 160 &&
+            stats.minimum_active_words == 8u &&
+            maximum_bit_bias <= 7.0;
+        int ok = stats.zero_differences == 0u &&
+            (rounds == 1u || strong);
+
+        printf(
+            "additive_differential,%u,%llu,%.2f,%d,%d,%u,%.2f,%u,%s\n",
+            rounds,
+            (unsigned long long)pairs,
+            average,
+            stats.minimum_weight,
+            stats.maximum_weight,
+            stats.minimum_active_words,
+            maximum_bit_bias,
+            stats.zero_differences,
+            strong ? "PASS" : (ok ? "WEAK" : "FAIL")
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    return all_ok;
+}
+
 static int print_best_trail(
     uint8_t bases[TRAIL_BASES][FCH_MIX_BLOCK_SIZE],
     const trail_stats_t *best,
@@ -932,6 +1213,10 @@ int main(void) {
     if (!reduced_round_search())
         ok = 0;
     if (!reduced_round_trail_search())
+        ok = 0;
+    if (!rotational_pair_check())
+        ok = 0;
+    if (!additive_differential_check())
         ok = 0;
     if (!fixed_point_search())
         ok = 0;

@@ -54,6 +54,8 @@ The current deterministic run produced the following results:
 | Linear correlation | 8,192 inputs and 32 masks for 8 and 16 rounds | Maximum absolute correlation 3.32% and 2.27% |
 | Low-weight trails | 24,576 candidates at every round from 1 through 16 | One round was weak; at 8 and 16 rounds the minimum output weights were 212 and 210 of 512 bits |
 | Rotation-related patterns | Six 4,096-candidate pattern sets | One round was weak; tested sets had all eight state words active from round 2 onward |
+| Rotational pairs | 3,072 pairs at 1, 2, 4, 8, and 16 rounds over six word rotations | No exact relation; round averages stayed between 49.95% and 50.02% |
+| Additive differentials | 2,048 pairs at 1, 2, 4, 8, and 16 rounds over four modular input differences | One round was weak; from round 2 all output words were active and the maximum bit bias was 4.44% |
 | Fixed points and two-cycles | 4,096 samples for 4, 8, and 16-round cores, plus both complete hashes | No tested fixed point or two-cycle was found |
 | Near collisions | All pairs among 2,048 64-byte messages | No exact collision; minimum distances were 90 bits for FCH-256 and 199 bits for FCH-512 |
 
@@ -89,6 +91,29 @@ bit vectors and replays every reported minimum-weight witness. CI rejects a
 disagreement between the two models. These are exact results only inside the
 declared 8-bit families; they do not bound wider differentials, multi-bit
 linear masks, or the 8- and 16-round cores.
+
+### Rotational and additive screens
+
+The rotational-pair screen rotates every 64-bit message word by 1, 8, 16, 24,
+32, or 63 bits and compares the resulting compression output with the same
+rotation applied to the original output. Across 3,072 pairs per reported round,
+no exact rotational relation occurred. Every output word was active, the
+minimum distance was at least 210 bits, and the largest deviation of a
+per-rotation average from 50% was 0.21%.
+
+The additive screen changes message words 0, 5, 10, and 15 with four modular
+differences chosen to exercise short carries, a 32-bit boundary, the top bit,
+and repeated-byte carries. One round remained visibly weak: its average was
+20.74%, its minimum distance was 14 bits, and some pairs activated only four
+output words. From round 2 onward, the average stayed between 49.93% and
+50.02%, every pair activated all eight output words, and the minimum distance
+was at least 206 bits. No tested pair produced a zero output difference.
+
+These checks cover the compression function with its fixed IV, domains,
+counters, and flags. Those constants help break simple word-wise rotational
+symmetry, so this result does not exclude internal rotational characteristics,
+related-tweak attacks, or high-probability additive trails outside the sampled
+differences.
 
 ## Tree-mode results
 
@@ -217,8 +242,9 @@ The most important remaining work is:
    conditional localization argument above;
 3. expand the automated trail search to wider input spaces, multi-bit output
    masks, and rounds 5 through 8 with MILP, SAT, or SMT;
-4. dedicated rotational, additive-differential, rebound, meet-in-the-middle,
-   and related-domain analysis of the ARX core;
+4. extend the fixed-context rotational and additive screens to characteristic
+   searches with probability estimates, related tweaks and domains, rebound,
+   and meet-in-the-middle analysis;
 5. full-tree study of multicollisions, expandable messages, herding,
    multi-target attacks, and state reuse between FCH-256 and FCH-512;
 6. larger fuzzing campaigns, broader static analysis, timing review, and
