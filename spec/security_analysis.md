@@ -63,6 +63,33 @@ rounds. Near-50% diffusion after two rounds is not a security margin on its own:
 the eight-round reference remains the reduced-round boundary, and the deployed
 core adds eight more rounds.
 
+### Automated reduced-round trail search
+
+`tools/fch_trail_search.py` examines two fixed 8-bit input families. One
+replaces the low byte of message word 0 and applies XOR difference `0x01`; the
+other replaces the high byte of word 15 and applies `0x80`. For each family and
+round count, all 256 byte values are evaluated. The search records the lightest
+512-bit output difference and checks every nonzero input-byte mask against
+every single output bit with an exact Walsh transform.
+
+| Rounds | Word 0 minimum weight | Word 15 minimum weight | Word 0 maximum correlation | Word 15 maximum correlation |
+| ------ | --------------------- | ---------------------- | -------------------------- | --------------------------- |
+| 1 | 178 | 4 | 100.00% | 100.00% |
+| 2 | 232 | 222 | 28.13% | 37.50% |
+| 3 | 226 | 217 | 29.69% | 31.25% |
+| 4 | 231 | 223 | 30.47% | 29.69% |
+
+No zero-output difference occurred in these eight exhaustive searches. All
+eight output words were active from round 2 onward. The 1-round result again
+exposes a weak trail instead of treating early diffusion as security evidence.
+
+The concrete evaluator is checked against the 16-round Python reference before
+each run. A second implementation models the same ARX operations as 64-bit Z3
+bit vectors and replays every reported minimum-weight witness. CI rejects a
+disagreement between the two models. These are exact results only inside the
+declared 8-bit families; they do not bound wider differentials, multi-bit
+linear masks, or the 8- and 16-round cores.
+
 ## Tree-mode results
 
 | Check | Coverage | Result |
@@ -168,6 +195,7 @@ The security tests are backed by implementation checks that keep the analyzed
 algorithm and the shipped code aligned:
 
 - fixed vectors and 96 C/Python reference comparisons;
+- exhaustive 8-bit reduced-round searches with Z3 witness replay;
 - one-shot and streaming equivalence across boundary and chunk patterns;
 - explicit little-endian serialization checks, including big-endian CI;
 - rejection of allocation, reader, overflow, and API-lifecycle failures;
@@ -187,8 +215,8 @@ The most important remaining work is:
 2. a quantitative reduction for collision and second-preimage preservation,
    including exact tree-size loss and long-message bounds beyond the
    conditional localization argument above;
-3. automated differential and linear trail searches with tools such as
-   MILP, SAT, or SMT, especially across reduced rounds;
+3. expand the automated trail search to wider input spaces, multi-bit output
+   masks, and rounds 5 through 8 with MILP, SAT, or SMT;
 4. dedicated rotational, additive-differential, rebound, meet-in-the-middle,
    and related-domain analysis of the ARX core;
 5. full-tree study of multicollisions, expandable messages, herding,
@@ -209,6 +237,7 @@ make clean
 make check
 make check-extended
 make check-reference
+make check-trails
 make bench-check
 make fuzz-smoke
 make analyze

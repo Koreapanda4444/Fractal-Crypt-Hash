@@ -37,10 +37,19 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install Z3
+        if: matrix.reference
+        run: python -m pip install --disable-pip-version-check z3-solver==4.13.1.0
+
       - name: Cross-check Python reference
         if: matrix.reference
         working-directory: build
         run: make check-reference
+
+      - name: Search reduced-round trails
+        if: matrix.reference
+        working-directory: build
+        run: make check-trails
 
   sanitizers:
     runs-on: ubuntu-latest

@@ -85,6 +85,9 @@ check: test
 check-reference: fch
 	$(PYTHON) ../tools/fch_reference.py --check-c ./fch
 
+check-trails:
+	$(PYTHON) ../tools/fch_trail_search.py
+
 test-extended: $(EXTENDED_TESTS)
 
 test_length_variation: ../tests/test_length_variation.c $(SRC)
@@ -133,4 +136,4 @@ analyze:
 clean:
 	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
 
-.PHONY: all test check check-reference test-extended check-extended bench bench-check fuzz-smoke analyze clean
+.PHONY: all test check check-reference check-trails test-extended check-extended bench bench-check fuzz-smoke analyze clean
