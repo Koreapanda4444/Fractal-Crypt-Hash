@@ -58,6 +58,8 @@ The current deterministic run produced the following results:
 | Additive differentials | 2,048 pairs at 1, 2, 4, 8, and 16 rounds over four modular input differences | One round was weak; from round 2 all output words were active and the maximum bit bias was 4.44% |
 | Projected differential probability | Eight XOR characteristics with 4,096 samples each at 1, 2, 4, 8, and 16 rounds | The largest observed 16-bit projection probability was 0.0977%; no zero output difference occurred |
 | Related contexts | 4,096 pairs per round over eight counter, domain, and flag relations | One round was weak; from round 2 all output words were active and the maximum bit bias was 2.95% |
+| Rebound-style inbound screen | 4,095 nonzero 12-bit message differences at 4, 8, and 16 rounds, split after 2, 4, and 8 rounds | Minimum middle-state weights were 373, 455, and 460 of 1,024 bits; no candidate was at or below 256 bits |
+| Meet-in-the-middle screen | 4,096 candidates over an 8-round core split 4+4 with a 24-bit middle-state projection | One projected pair and one exact pair occurred; the known 12-bit target was the only exact match |
 | Fixed points and two-cycles | 4,096 samples for 4, 8, and 16-round cores, plus both complete hashes | No tested fixed point or two-cycle was found |
 | Near collisions | All pairs among 2,048 64-byte messages | No exact collision; minimum distances were 90 bits for FCH-256 and 199 bits for FCH-512 |
 
@@ -144,6 +146,40 @@ Domains, counters, and flags are fixed by valid FCH encodings rather than
 chosen through the public hash API. This test checks separation between those
 internal contexts; it is not a related-key proof or a bound on rebound and
 meet-in-the-middle attacks.
+
+### Rebound and meet-in-the-middle screens
+
+The reduced-round test build now exposes preparation, forward-round, and
+inverse-round operations for the internal 1,024-bit work state. The inverse was
+checked over a complete eight-round path and a four-round window beginning at
+round 2. Returning to the exact starting state is required, and the forward
+state is also checked against the normal compression output. These functions
+are compiled only with `FCH_ENABLE_REDUCED_ROUND_TESTS` and do not change the
+production hash interface.
+
+The rebound-style screen changes 12 message bits spread across the first and
+last block bytes and enumerates all 4,095 nonzero differences. It measures the
+full work-state difference at 2+2, 4+4, and 8+8 round splits. The lightest
+middle states had weights 373, 455, and 460 of 1,024 bits. Every middle and end
+state activated all 16 words, no difference was zero, and no middle state had
+weight at or below 256 bits. The corresponding minimum end-state weights were
+455, 460, and 462 bits.
+
+The meet-in-the-middle screen uses a deliberately small 12-bit candidate space
+and an eight-round core split after round 4. It stores 4,096 forward middle
+states, reverses four rounds from a known full internal target for another
+4,096 candidates, and first matches a 24-bit projection before checking all
+1,024 bits. The run produced one projected pair and one exact pair, recovering
+only the planted candidate.
+
+This recovery is a consistency check, not a preimage attack on FCH. It assumes
+the complete internal target state and all but 12 message bits are known. The
+same candidate must be evaluated on both sides because every round injects all
+16 message words, so this construction costs 4,096 forward and 4,096 backward
+evaluations without an independent early/late variable split. The rebound
+screen likewise enumerates a fixed difference family rather than solving an
+optimized inbound phase. Neither result bounds stronger rebound,
+meet-in-the-middle, splice, or output-only attacks.
 
 ## Tree-mode results
 
@@ -273,8 +309,9 @@ The most important remaining work is:
 3. expand the automated trail search to wider input spaces, multi-bit output
    masks, and rounds 5 through 8 with MILP, SAT, or SMT;
 4. replace the projected empirical probabilities with full-state
-   characteristic searches and quantitative bounds, then study rebound and
-   meet-in-the-middle attacks across related internal contexts;
+   characteristic searches and quantitative bounds, then extend the bounded
+   rebound and meet-in-the-middle screens to optimized inbound solving,
+   independent neutral variables, and output-only targets;
 5. full-tree study of multicollisions, expandable messages, herding,
    multi-target attacks, and state reuse between FCH-256 and FCH-512;
 6. larger fuzzing campaigns, broader static analysis, timing review, and

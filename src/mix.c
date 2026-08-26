@@ -72,6 +72,107 @@ static void fch_mix_round(
     fch_mix_g(v, 3, 4, 9, 14, message[s[14]], message[s[15]]);
 }
 
+#ifdef FCH_ENABLE_REDUCED_ROUND_TESTS
+static void fch_mix_g_inverse(
+    uint64_t v[16],
+    size_t a,
+    size_t b,
+    size_t c,
+    size_t d,
+    uint64_t x,
+    uint64_t y
+) {
+    v[b] = fch_rotl64(v[b], 63u) ^ v[c];
+    v[c] -= v[d];
+    v[d] = fch_rotl64(v[d], 16u) ^ v[a];
+    v[a] -= v[b] + y;
+    v[b] = fch_rotl64(v[b], 24u) ^ v[c];
+    v[c] -= v[d];
+    v[d] = fch_rotl64(v[d], 32u) ^ v[a];
+    v[a] -= v[b] + x;
+}
+
+static void fch_mix_round_inverse(
+    uint64_t v[16],
+    const uint64_t message[16],
+    unsigned int round
+) {
+    const uint8_t *s = FCH_MIX_SIGMA[round];
+
+    fch_mix_g_inverse(v, 3, 4, 9, 14, message[s[14]], message[s[15]]);
+    fch_mix_g_inverse(v, 2, 7, 8, 13, message[s[12]], message[s[13]]);
+    fch_mix_g_inverse(v, 1, 6, 11, 12, message[s[10]], message[s[11]]);
+    fch_mix_g_inverse(v, 0, 5, 10, 15, message[s[8]], message[s[9]]);
+    fch_mix_g_inverse(v, 3, 7, 11, 15, message[s[6]], message[s[7]]);
+    fch_mix_g_inverse(v, 2, 6, 10, 14, message[s[4]], message[s[5]]);
+    fch_mix_g_inverse(v, 1, 5, 9, 13, message[s[2]], message[s[3]]);
+    fch_mix_g_inverse(v, 0, 4, 8, 12, message[s[0]], message[s[1]]);
+}
+
+int fch_mix_test_prepare(
+    uint64_t work[16],
+    uint64_t message[16],
+    const uint64_t state[8],
+    const uint8_t block[FCH_MIX_BLOCK_SIZE],
+    size_t block_length,
+    uint64_t counter,
+    uint64_t domain,
+    uint64_t flags
+) {
+    if (!work || !message || !state || !block ||
+        block_length > FCH_MIX_BLOCK_SIZE)
+        return 0;
+
+    for (size_t i = 0; i < 16u; i++)
+        message[i] = fch_load_le64(block + i * 8u);
+    for (size_t i = 0; i < 8u; i++) {
+        work[i] = state[i];
+        work[i + 8u] = FCH_MIX_IV[i];
+    }
+
+    work[12] ^= counter;
+    work[13] ^= (uint64_t)block_length;
+    work[13] ^= UINT64_C(8) << 56u;
+    work[14] ^= domain;
+    work[15] ^= flags;
+    return 1;
+}
+
+int fch_mix_test_forward(
+    uint64_t work[16],
+    const uint64_t message[16],
+    unsigned int start_round,
+    unsigned int round_count
+) {
+    if (!work || !message || round_count == 0u ||
+        start_round >= FCH_MIX_ROUNDS ||
+        round_count > FCH_MIX_ROUNDS - start_round)
+        return 0;
+
+    for (unsigned int round = start_round;
+         round < start_round + round_count;
+         round++)
+        fch_mix_round(work, message, round);
+    return 1;
+}
+
+int fch_mix_test_inverse(
+    uint64_t work[16],
+    const uint64_t message[16],
+    unsigned int start_round,
+    unsigned int round_count
+) {
+    if (!work || !message || round_count == 0u ||
+        start_round >= FCH_MIX_ROUNDS ||
+        round_count > FCH_MIX_ROUNDS - start_round)
+        return 0;
+
+    for (unsigned int offset = round_count; offset != 0u; offset--)
+        fch_mix_round_inverse(work, message, start_round + offset - 1u);
+    return 1;
+}
+#endif
+
 int fch_mix_init(
     uint64_t *state,
     size_t state_words,

@@ -58,6 +58,31 @@ int fch_mix_compress_rounds(
     uint64_t flags,
     unsigned int rounds
 );
+
+int fch_mix_test_prepare(
+    uint64_t work[16],
+    uint64_t message[16],
+    const uint64_t state[8],
+    const uint8_t block[FCH_MIX_BLOCK_SIZE],
+    size_t block_length,
+    uint64_t counter,
+    uint64_t domain,
+    uint64_t flags
+);
+
+int fch_mix_test_forward(
+    uint64_t work[16],
+    const uint64_t message[16],
+    unsigned int start_round,
+    unsigned int round_count
+);
+
+int fch_mix_test_inverse(
+    uint64_t work[16],
+    const uint64_t message[16],
+    unsigned int start_round,
+    unsigned int round_count
+);
 #endif
 
 int fch_mix_finalize_output(

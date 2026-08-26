@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bitops.h"
@@ -24,6 +25,10 @@ enum {
     DIFFERENTIAL_PROJECTIONS = 4,
     RELATED_CONTEXT_SAMPLES = 512,
     RELATED_CONTEXT_CASES = 8,
+    REBOUND_CANDIDATES = 4096,
+    REBOUND_CASES = 3,
+    MITM_CANDIDATES = 4096,
+    MITM_PREFIX_BITS = 24,
     NEAR_COLLISION_SAMPLES = 2048,
     NEAR_COLLISION_MESSAGE_SIZE = 64
 };
@@ -39,6 +44,12 @@ typedef struct {
     size_t best_bit_a;
     size_t best_bit_b;
 } trail_stats_t;
+
+typedef struct {
+    uint32_t key;
+    unsigned int candidate;
+    uint64_t state[16];
+} mitm_entry_t;
 
 static uint64_t splitmix64_next(uint64_t *state) {
     uint64_t value;
@@ -1068,6 +1079,414 @@ static int related_context_check(void) {
     return all_ok;
 }
 
+static int prepare_test_work(
+    const uint8_t block[FCH_MIX_BLOCK_SIZE],
+    uint64_t counter,
+    uint64_t domain,
+    uint64_t flags,
+    uint64_t work[16],
+    uint64_t message[16]
+) {
+    uint64_t state[8];
+
+    if (!fch_mix_init(state, 8u, domain))
+        return 0;
+    return fch_mix_test_prepare(
+        work,
+        message,
+        state,
+        block,
+        FCH_MIX_BLOCK_SIZE,
+        counter,
+        domain,
+        flags
+    );
+}
+
+static unsigned int active_work_words(
+    const uint64_t a[16],
+    const uint64_t b[16]
+) {
+    unsigned int active = 0u;
+
+    for (size_t word = 0; word < 16u; word++) {
+        if ((a[word] ^ b[word]) != 0u)
+            active++;
+    }
+    return active;
+}
+
+static void candidate_block(
+    uint8_t output[FCH_MIX_BLOCK_SIZE],
+    const uint8_t base[FCH_MIX_BLOCK_SIZE],
+    unsigned int candidate
+) {
+    memcpy(output, base, FCH_MIX_BLOCK_SIZE);
+    output[0] ^= (uint8_t)candidate;
+    output[FCH_MIX_BLOCK_SIZE - 1u] ^=
+        (uint8_t)((candidate >> 8u) & 0x0fu);
+}
+
+static uint32_t work_projection(const uint64_t state[16]) {
+    uint64_t value = UINT64_C(0x4D49544D50524F4A);
+
+    for (size_t word = 0; word < 16u; word++) {
+        value ^= fch_rotl64(
+            state[word],
+            (unsigned int)((word * 13u + 7u) & 63u)
+        );
+        value *= UINT64_C(0x9E3779B185EBCA87);
+    }
+    value ^= value >> 32u;
+    value ^= value >> 16u;
+    return (uint32_t)(value & ((UINT32_C(1) << MITM_PREFIX_BITS) - 1u));
+}
+
+static int mitm_entry_compare(const void *left, const void *right) {
+    const mitm_entry_t *a = left;
+    const mitm_entry_t *b = right;
+
+    if (a->key < b->key)
+        return -1;
+    if (a->key > b->key)
+        return 1;
+    if (a->candidate < b->candidate)
+        return -1;
+    if (a->candidate > b->candidate)
+        return 1;
+    return 0;
+}
+
+static size_t mitm_lower_bound(
+    const mitm_entry_t entries[MITM_CANDIDATES],
+    uint32_t key
+) {
+    size_t left = 0u;
+    size_t right = MITM_CANDIDATES;
+
+    while (left < right) {
+        size_t middle = left + (right - left) / 2u;
+        if (entries[middle].key < key)
+            left = middle + 1u;
+        else
+            right = middle;
+    }
+    return left;
+}
+
+static int mix_roundtrip_check(void) {
+    uint8_t block[FCH_MIX_BLOCK_SIZE];
+    uint64_t stream = UINT64_C(0x494E564552534531);
+    uint64_t initial[16];
+    uint64_t work[16];
+    uint64_t message[16];
+    uint64_t roundtrip[16];
+    uint64_t checkpoint[16];
+    uint64_t expected[8];
+    uint64_t derived[8];
+    const uint64_t counter = UINT64_C(0x1020304050607080);
+    const uint64_t domain = UINT64_C(0x494E565445535431);
+    const uint64_t flags = FCH_MIX_FLAG_LEAF_DATA;
+
+    fill_bytes(block, sizeof(block), &stream);
+    if (!prepare_test_work(
+            block,
+            counter,
+            domain,
+            flags,
+            work,
+            message
+        ))
+        return 0;
+    memcpy(initial, work, sizeof(initial));
+    if (!fch_mix_test_forward(work, message, 0u, 8u))
+        return 0;
+
+    if (!fch_mix_init(derived, 8u, domain) ||
+        !core_output(block, counter, domain, flags, 8u, expected))
+        return 0;
+    for (size_t word = 0; word < 8u; word++)
+        derived[word] ^= work[word] ^ work[word + 8u];
+    if (memcmp(derived, expected, sizeof(derived)) != 0)
+        return 0;
+
+    memcpy(roundtrip, work, sizeof(roundtrip));
+    if (!fch_mix_test_inverse(roundtrip, message, 0u, 8u) ||
+        memcmp(roundtrip, initial, sizeof(roundtrip)) != 0)
+        return 0;
+
+    memcpy(roundtrip, initial, sizeof(roundtrip));
+    if (!fch_mix_test_forward(roundtrip, message, 0u, 2u))
+        return 0;
+    memcpy(checkpoint, roundtrip, sizeof(checkpoint));
+    if (!fch_mix_test_forward(roundtrip, message, 2u, 4u) ||
+        !fch_mix_test_inverse(roundtrip, message, 2u, 4u) ||
+        memcmp(roundtrip, checkpoint, sizeof(roundtrip)) != 0)
+        return 0;
+
+    printf("inverse_roundtrip,full=8,window=2+4,status=PASS\n");
+    return 1;
+}
+
+static int rebound_screen(void) {
+    static const unsigned int total_rounds[REBOUND_CASES] = {
+        4u, 8u, 16u
+    };
+    static const unsigned int split_rounds[REBOUND_CASES] = {
+        2u, 4u, 8u
+    };
+    uint8_t base[FCH_MIX_BLOCK_SIZE];
+    uint64_t stream = UINT64_C(0x5245424F554E4431);
+    const uint64_t counter = UINT64_C(0x5245424F554E4401);
+    const uint64_t domain = UINT64_C(0x5245424F554E4432);
+    const uint64_t flags = FCH_MIX_FLAG_LEAF_DATA;
+    int all_ok = 1;
+
+    fill_bytes(base, sizeof(base), &stream);
+    printf(
+        "rebound_screen,total_rounds,split_round,candidates,min_middle,"
+        "min_middle_active,low_middle,min_end,min_end_active,zero_middle,"
+        "zero_end,status\n"
+    );
+    for (unsigned int case_index = 0;
+         case_index < REBOUND_CASES;
+         case_index++) {
+        unsigned int total = total_rounds[case_index];
+        unsigned int split = split_rounds[case_index];
+        uint64_t base_work[16];
+        uint64_t base_message[16];
+        uint64_t base_middle[16];
+        uint64_t base_end[16];
+        int minimum_middle = 1024;
+        int minimum_end = 1024;
+        unsigned int minimum_middle_active = 16u;
+        unsigned int minimum_end_active = 16u;
+        unsigned int low_middle = 0u;
+        unsigned int zero_middle = 0u;
+        unsigned int zero_end = 0u;
+
+        if (!prepare_test_work(
+                base,
+                counter,
+                domain,
+                flags,
+                base_work,
+                base_message
+            ) ||
+            !fch_mix_test_forward(base_work, base_message, 0u, split))
+            return 0;
+        memcpy(base_middle, base_work, sizeof(base_middle));
+        if (!fch_mix_test_forward(
+                base_work,
+                base_message,
+                split,
+                total - split
+            ))
+            return 0;
+        memcpy(base_end, base_work, sizeof(base_end));
+
+        for (unsigned int candidate = 1u;
+             candidate < REBOUND_CANDIDATES;
+             candidate++) {
+            uint8_t changed[FCH_MIX_BLOCK_SIZE];
+            uint64_t work[16];
+            uint64_t message[16];
+
+            candidate_block(changed, base, candidate);
+            if (!prepare_test_work(
+                    changed,
+                    counter,
+                    domain,
+                    flags,
+                    work,
+                    message
+                ) ||
+                !fch_mix_test_forward(work, message, 0u, split))
+                return 0;
+
+            int middle_weight = bit_diff(
+                (const uint8_t *)base_middle,
+                (const uint8_t *)work,
+                sizeof(work)
+            );
+            unsigned int middle_active = active_work_words(base_middle, work);
+            if (middle_weight < minimum_middle)
+                minimum_middle = middle_weight;
+            if (middle_active < minimum_middle_active)
+                minimum_middle_active = middle_active;
+            if (middle_weight <= 256)
+                low_middle++;
+            if (middle_weight == 0)
+                zero_middle++;
+
+            if (!fch_mix_test_forward(
+                    work,
+                    message,
+                    split,
+                    total - split
+                ))
+                return 0;
+            int end_weight = bit_diff(
+                (const uint8_t *)base_end,
+                (const uint8_t *)work,
+                sizeof(work)
+            );
+            unsigned int end_active = active_work_words(base_end, work);
+            if (end_weight < minimum_end)
+                minimum_end = end_weight;
+            if (end_active < minimum_end_active)
+                minimum_end_active = end_active;
+            if (end_weight == 0)
+                zero_end++;
+        }
+
+        int ok =
+            minimum_middle >= 256 &&
+            minimum_end >= 320 &&
+            minimum_middle_active == 16u &&
+            minimum_end_active == 16u &&
+            low_middle == 0u &&
+            zero_middle == 0u &&
+            zero_end == 0u;
+        printf(
+            "rebound_screen,%u,%u,%u,%d,%u,%u,%d,%u,%u,%u,%s\n",
+            total,
+            split,
+            REBOUND_CANDIDATES - 1u,
+            minimum_middle,
+            minimum_middle_active,
+            low_middle,
+            minimum_end,
+            minimum_end_active,
+            zero_middle,
+            zero_end,
+            ok ? "PASS" : "FAIL"
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    return all_ok;
+}
+
+static int mitm_screen(void) {
+    static mitm_entry_t entries[MITM_CANDIDATES];
+    uint8_t base[FCH_MIX_BLOCK_SIZE];
+    uint64_t stream = UINT64_C(0x4D49544D53435231);
+    const uint64_t counter = UINT64_C(0x4D49544D00000001);
+    const uint64_t domain = UINT64_C(0x4D49544D00000002);
+    const uint64_t flags = FCH_MIX_FLAG_LEAF_DATA;
+    const unsigned int target_candidate = 0xA5Bu;
+    uint64_t target_work[16];
+    uint64_t target_message[16];
+    uint64_t prefix_pairs = 0u;
+    unsigned int exact_matches = 0u;
+    unsigned int recovered = 0u;
+
+    fill_bytes(base, sizeof(base), &stream);
+    uint8_t target_block[FCH_MIX_BLOCK_SIZE];
+    candidate_block(target_block, base, target_candidate);
+    if (!prepare_test_work(
+            target_block,
+            counter,
+            domain,
+            flags,
+            target_work,
+            target_message
+        ) ||
+        !fch_mix_test_forward(target_work, target_message, 0u, 8u))
+        return 0;
+
+    for (unsigned int candidate = 0u;
+         candidate < MITM_CANDIDATES;
+         candidate++) {
+        uint8_t block[FCH_MIX_BLOCK_SIZE];
+        uint64_t message[16];
+
+        candidate_block(block, base, candidate);
+        if (!prepare_test_work(
+                block,
+                counter,
+                domain,
+                flags,
+                entries[candidate].state,
+                message
+            ) ||
+            !fch_mix_test_forward(
+                entries[candidate].state,
+                message,
+                0u,
+                4u
+            ))
+            return 0;
+        entries[candidate].key = work_projection(entries[candidate].state);
+        entries[candidate].candidate = candidate;
+    }
+    qsort(entries, MITM_CANDIDATES, sizeof(entries[0]), mitm_entry_compare);
+
+    for (unsigned int candidate = 0u;
+         candidate < MITM_CANDIDATES;
+         candidate++) {
+        uint8_t block[FCH_MIX_BLOCK_SIZE];
+        uint64_t unused_work[16];
+        uint64_t message[16];
+        uint64_t backward[16];
+
+        candidate_block(block, base, candidate);
+        if (!prepare_test_work(
+                block,
+                counter,
+                domain,
+                flags,
+                unused_work,
+                message
+            ))
+            return 0;
+        memcpy(backward, target_work, sizeof(backward));
+        if (!fch_mix_test_inverse(backward, message, 4u, 4u))
+            return 0;
+
+        uint32_t key = work_projection(backward);
+        size_t position = mitm_lower_bound(entries, key);
+        while (position < MITM_CANDIDATES &&
+               entries[position].key == key) {
+            prefix_pairs++;
+            if (memcmp(
+                    entries[position].state,
+                    backward,
+                    sizeof(backward)
+                ) == 0) {
+                exact_matches++;
+                if (candidate == target_candidate &&
+                    entries[position].candidate == target_candidate)
+                    recovered = 1u;
+            }
+            position++;
+        }
+    }
+
+    int ok =
+        prefix_pairs >= 1u &&
+        prefix_pairs <= 64u &&
+        exact_matches == 1u &&
+        recovered == 1u;
+    printf(
+        "mitm_screen,rounds=8,split=4,candidates=%u,prefix_bits=%u,"
+        "forward=%u,backward=%u,prefix_pairs=%llu,exact_matches=%u,"
+        "target=0x%03x,recovered=%s,status=%s\n",
+        MITM_CANDIDATES,
+        MITM_PREFIX_BITS,
+        MITM_CANDIDATES,
+        MITM_CANDIDATES,
+        (unsigned long long)prefix_pairs,
+        exact_matches,
+        target_candidate,
+        recovered ? "yes" : "no",
+        ok ? "PASS" : "FAIL"
+    );
+    return ok;
+}
+
 static int print_best_trail(
     uint8_t bases[TRAIL_BASES][FCH_MIX_BLOCK_SIZE],
     const trail_stats_t *best,
@@ -1531,6 +1950,12 @@ int main(void) {
     if (!differential_probability_check())
         ok = 0;
     if (!related_context_check())
+        ok = 0;
+    if (!mix_roundtrip_check())
+        ok = 0;
+    if (!rebound_screen())
+        ok = 0;
+    if (!mitm_screen())
         ok = 0;
     if (!fixed_point_search())
         ok = 0;
