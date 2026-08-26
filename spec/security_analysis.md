@@ -56,6 +56,8 @@ The current deterministic run produced the following results:
 | Rotation-related patterns | Six 4,096-candidate pattern sets | One round was weak; tested sets had all eight state words active from round 2 onward |
 | Rotational pairs | 3,072 pairs at 1, 2, 4, 8, and 16 rounds over six word rotations | No exact relation; round averages stayed between 49.95% and 50.02% |
 | Additive differentials | 2,048 pairs at 1, 2, 4, 8, and 16 rounds over four modular input differences | One round was weak; from round 2 all output words were active and the maximum bit bias was 4.44% |
+| Projected differential probability | Eight XOR characteristics with 4,096 samples each at 1, 2, 4, 8, and 16 rounds | The largest observed 16-bit projection probability was 0.0977%; no zero output difference occurred |
+| Related contexts | 4,096 pairs per round over eight counter, domain, and flag relations | One round was weak; from round 2 all output words were active and the maximum bit bias was 2.95% |
 | Fixed points and two-cycles | 4,096 samples for 4, 8, and 16-round cores, plus both complete hashes | No tested fixed point or two-cycle was found |
 | Near collisions | All pairs among 2,048 64-byte messages | No exact collision; minimum distances were 90 bits for FCH-256 and 199 bits for FCH-512 |
 
@@ -112,8 +114,36 @@ was at least 206 bits. No tested pair produced a zero output difference.
 These checks cover the compression function with its fixed IV, domains,
 counters, and flags. Those constants help break simple word-wise rotational
 symmetry, so this result does not exclude internal rotational characteristics,
-related-tweak attacks, or high-probability additive trails outside the sampled
-differences.
+deeper related-tweak attacks, or high-probability additive trails outside the
+sampled differences.
+
+### Differential probability and related contexts
+
+The empirical probability screen uses four single-bit and four two-bit XOR
+input characteristics. Each characteristic is sampled 4,096 times, and each
+512-bit output difference is mapped through four fixed 16-bit projections. The
+largest bucket contained four samples, or 0.0977%, at rounds 2, 4, 8, and 16;
+the one-round maximum was three samples, or 0.0732%. No pair produced a zero
+512-bit output difference.
+
+This is a reproducible screen for conspicuous differential concentration. It
+does not estimate the probability of a complete 512-bit characteristic, and a
+16-bit projection cannot provide an upper bound for an untested full-state
+trail.
+
+The related-context screen keeps the 128-byte block fixed while changing one of
+eight public compression contexts. The pairs cover adjacent and high-bit
+counters, leaf, node, and output domains and flags, FCH-256 versus FCH-512
+output contexts, a one-bit domain relation, and a combined change. One round
+was weak with a 43.14% average, a 76-bit minimum distance, and 22.78% maximum
+bit bias. From round 2 onward, averages stayed between 49.92% and 49.99%, every
+output word was active, minimum distance was at least 211 bits, and maximum bit
+bias was at most 2.95%. No related pair produced the same output.
+
+Domains, counters, and flags are fixed by valid FCH encodings rather than
+chosen through the public hash API. This test checks separation between those
+internal contexts; it is not a related-key proof or a bound on rebound and
+meet-in-the-middle attacks.
 
 ## Tree-mode results
 
@@ -242,9 +272,9 @@ The most important remaining work is:
    conditional localization argument above;
 3. expand the automated trail search to wider input spaces, multi-bit output
    masks, and rounds 5 through 8 with MILP, SAT, or SMT;
-4. extend the fixed-context rotational and additive screens to characteristic
-   searches with probability estimates, related tweaks and domains, rebound,
-   and meet-in-the-middle analysis;
+4. replace the projected empirical probabilities with full-state
+   characteristic searches and quantitative bounds, then study rebound and
+   meet-in-the-middle attacks across related internal contexts;
 5. full-tree study of multicollisions, expandable messages, herding,
    multi-target attacks, and state reuse between FCH-256 and FCH-512;
 6. larger fuzzing campaigns, broader static analysis, timing review, and

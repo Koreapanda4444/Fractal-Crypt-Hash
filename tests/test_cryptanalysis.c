@@ -19,6 +19,11 @@ enum {
     ARX_PAIR_SAMPLES = 512,
     ARX_ROTATION_COUNT = 6,
     ARX_ADDITIVE_CASES = 4,
+    DIFFERENTIAL_PROBABILITY_SAMPLES = 4096,
+    DIFFERENTIAL_PROBABILITY_CASES = 8,
+    DIFFERENTIAL_PROJECTIONS = 4,
+    RELATED_CONTEXT_SAMPLES = 512,
+    RELATED_CONTEXT_CASES = 8,
     NEAR_COLLISION_SAMPLES = 2048,
     NEAR_COLLISION_MESSAGE_SIZE = 64
 };
@@ -758,6 +763,311 @@ static int additive_differential_check(void) {
     return all_ok;
 }
 
+static uint16_t differential_projection(
+    const uint64_t difference[8],
+    unsigned int projection
+) {
+    uint64_t value = UINT64_C(0x9E3779B97F4A7C15) *
+        (uint64_t)(projection + 1u);
+
+    for (size_t word = 0; word < 8u; word++) {
+        unsigned int rotation =
+            (unsigned int)((word * 11u + projection * 17u) & 63u);
+        value ^= fch_rotl64(difference[word], rotation);
+    }
+    value ^= value >> 32u;
+    value ^= value >> 16u;
+    return (uint16_t)value;
+}
+
+static int differential_probability_check(void) {
+    static const size_t bit_a[DIFFERENTIAL_PROBABILITY_CASES] = {
+        0u, 63u, 64u, 511u, 0u, 0u, 63u, 511u
+    };
+    static const size_t bit_b[DIFFERENTIAL_PROBABILITY_CASES] = {
+        SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX,
+        32u, 64u, 127u, 1023u
+    };
+    static const unsigned int round_counts[] = {
+        1u, 2u, 4u, FCH_MIX_REDUCED_ROUND_REFERENCE, FCH_MIX_ROUNDS
+    };
+    static uint16_t buckets[DIFFERENTIAL_PROJECTIONS][UINT16_MAX + 1u];
+    int all_ok = 1;
+
+    printf(
+        "differential_probability,rounds,characteristics,samples_each,pairs,"
+        "max_projection_count,max_projection_probability,zero_differences,"
+        "status\n"
+    );
+    for (size_t ri = 0;
+         ri < sizeof(round_counts) / sizeof(round_counts[0]);
+         ri++) {
+        unsigned int rounds = round_counts[ri];
+        unsigned int maximum_count = 0u;
+        unsigned int zero_differences = 0u;
+
+        for (size_t characteristic = 0;
+             characteristic < DIFFERENTIAL_PROBABILITY_CASES;
+             characteristic++) {
+            uint64_t stream =
+                UINT64_C(0xD1FF50524F423031) ^
+                ((uint64_t)rounds << 32u) ^ characteristic;
+
+            memset(buckets, 0, sizeof(buckets));
+            for (unsigned int sample = 0;
+                 sample < DIFFERENTIAL_PROBABILITY_SAMPLES;
+                 sample++) {
+                uint8_t base[FCH_MIX_BLOCK_SIZE];
+                uint8_t changed[FCH_MIX_BLOCK_SIZE];
+                uint64_t output_a[8];
+                uint64_t output_b[8];
+                uint64_t difference[8];
+
+                fill_bytes(base, sizeof(base), &stream);
+                memcpy(changed, base, sizeof(changed));
+                changed[bit_a[characteristic] / 8u] ^=
+                    (uint8_t)(1u <<
+                        (unsigned int)(bit_a[characteristic] % 8u));
+                if (bit_b[characteristic] != SIZE_MAX) {
+                    changed[bit_b[characteristic] / 8u] ^=
+                        (uint8_t)(1u <<
+                            (unsigned int)(bit_b[characteristic] % 8u));
+                }
+
+                uint64_t counter =
+                    sample +
+                    characteristic * DIFFERENTIAL_PROBABILITY_SAMPLES;
+                if (!core_output(
+                        base,
+                        counter,
+                        UINT64_C(0x445046524F423031),
+                        FCH_MIX_FLAG_LEAF_DATA,
+                        rounds,
+                        output_a
+                    ) ||
+                    !core_output(
+                        changed,
+                        counter,
+                        UINT64_C(0x445046524F423031),
+                        FCH_MIX_FLAG_LEAF_DATA,
+                        rounds,
+                        output_b
+                    ))
+                    return 0;
+
+                uint64_t combined = 0u;
+                for (size_t word = 0; word < 8u; word++) {
+                    difference[word] = output_a[word] ^ output_b[word];
+                    combined |= difference[word];
+                }
+                if (combined == 0u)
+                    zero_differences++;
+
+                for (unsigned int projection = 0;
+                     projection < DIFFERENTIAL_PROJECTIONS;
+                     projection++) {
+                    uint16_t value = differential_projection(
+                        difference,
+                        projection
+                    );
+                    buckets[projection][value]++;
+                }
+            }
+
+            for (unsigned int projection = 0;
+                 projection < DIFFERENTIAL_PROJECTIONS;
+                 projection++) {
+                for (size_t value = 0; value <= UINT16_MAX; value++) {
+                    if (buckets[projection][value] > maximum_count)
+                        maximum_count = buckets[projection][value];
+                }
+            }
+        }
+
+        const uint64_t pairs =
+            (uint64_t)DIFFERENTIAL_PROBABILITY_CASES *
+            DIFFERENTIAL_PROBABILITY_SAMPLES;
+        double maximum_probability =
+            (double)maximum_count /
+            (double)DIFFERENTIAL_PROBABILITY_SAMPLES * 100.0;
+        int strong =
+            zero_differences == 0u &&
+            maximum_probability <= 1.0;
+        int ok = zero_differences == 0u &&
+            (rounds == 1u || strong);
+
+        printf(
+            "differential_probability,%u,%u,%u,%llu,%u,%.4f,%u,%s\n",
+            rounds,
+            DIFFERENTIAL_PROBABILITY_CASES,
+            DIFFERENTIAL_PROBABILITY_SAMPLES,
+            (unsigned long long)pairs,
+            maximum_count,
+            maximum_probability,
+            zero_differences,
+            strong ? "PASS" : (ok ? "WEAK" : "FAIL")
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    return all_ok;
+}
+
+static int related_context_check(void) {
+    static const unsigned int round_counts[] = {
+        1u, 2u, 4u, FCH_MIX_REDUCED_ROUND_REFERENCE, FCH_MIX_ROUNDS
+    };
+    int all_ok = 1;
+
+    printf(
+        "related_context,rounds,pairs,avg,min,max,min_active_words,"
+        "max_bit_bias,zero_differences,status\n"
+    );
+    for (size_t ri = 0;
+         ri < sizeof(round_counts) / sizeof(round_counts[0]);
+         ri++) {
+        unsigned int rounds = round_counts[ri];
+        trail_stats_t stats;
+        uint32_t flip_counts[512] = {0};
+
+        reset_trail_stats(&stats);
+        for (unsigned int context = 0;
+             context < RELATED_CONTEXT_CASES;
+             context++) {
+            uint64_t stream =
+                UINT64_C(0x52454C4354583031) ^
+                ((uint64_t)rounds << 32u) ^ context;
+
+            for (unsigned int sample = 0;
+                 sample < RELATED_CONTEXT_SAMPLES;
+                 sample++) {
+                uint8_t block[FCH_MIX_BLOCK_SIZE];
+                uint64_t output_a[8];
+                uint64_t output_b[8];
+                uint64_t counter_a =
+                    sample + context * RELATED_CONTEXT_SAMPLES;
+                uint64_t counter_b = counter_a;
+                uint64_t domain_a = FCH_DOMAIN_LEAF;
+                uint64_t domain_b = domain_a;
+                uint64_t flags_a = FCH_MIX_FLAG_LEAF_DATA;
+                uint64_t flags_b = flags_a;
+
+                if (context == 0u)
+                    counter_b++;
+                else if (context == 1u)
+                    counter_b ^= UINT64_C(0x8000000000000000);
+                else if (context == 2u) {
+                    domain_b = FCH_DOMAIN_NODE;
+                    flags_b = FCH_MIX_FLAG_NODE_CHILD;
+                } else if (context == 3u) {
+                    domain_b = FCH_DOMAIN_OUTPUT_256;
+                    flags_b = FCH_MIX_FLAG_OUTPUT | FCH_MIX_FLAG_FINAL;
+                } else if (context == 4u) {
+                    domain_a = FCH_DOMAIN_OUTPUT_256;
+                    domain_b = FCH_DOMAIN_OUTPUT_512;
+                    flags_a = FCH_MIX_FLAG_OUTPUT | FCH_MIX_FLAG_FINAL;
+                    flags_b = flags_a;
+                } else if (context == 5u) {
+                    flags_b = FCH_MIX_FLAG_LEAF_HEADER;
+                } else if (context == 6u) {
+                    domain_b ^= UINT64_C(1);
+                } else {
+                    counter_b++;
+                    domain_b ^= UINT64_C(1);
+                    flags_b = FCH_MIX_FLAG_NODE_CHILD;
+                }
+
+                fill_bytes(block, sizeof(block), &stream);
+                if (!core_output(
+                        block,
+                        counter_a,
+                        domain_a,
+                        flags_a,
+                        rounds,
+                        output_a
+                    ) ||
+                    !core_output(
+                        block,
+                        counter_b,
+                        domain_b,
+                        flags_b,
+                        rounds,
+                        output_b
+                    ))
+                    return 0;
+
+                int weight = bit_diff(
+                    (const uint8_t *)output_a,
+                    (const uint8_t *)output_b,
+                    sizeof(output_a)
+                );
+                unsigned int active = active_difference_words(
+                    output_a,
+                    output_b
+                );
+                record_trail_stats(
+                    &stats,
+                    weight,
+                    active,
+                    context,
+                    0u,
+                    sample,
+                    0u
+                );
+                for (size_t word = 0; word < 8u; word++) {
+                    uint64_t difference = output_a[word] ^ output_b[word];
+                    for (size_t bit = 0; bit < 64u; bit++) {
+                        flip_counts[word * 64u + bit] +=
+                            (uint32_t)((difference >> bit) & 1u);
+                    }
+                }
+            }
+        }
+
+        const uint64_t pairs =
+            (uint64_t)RELATED_CONTEXT_CASES * RELATED_CONTEXT_SAMPLES;
+        double maximum_bit_bias = 0.0;
+        for (size_t bit = 0; bit < 512u; bit++) {
+            double probability =
+                (double)flip_counts[bit] / (double)pairs * 100.0;
+            double bias = probability >= 50.0
+                ? probability - 50.0
+                : 50.0 - probability;
+            if (bias > maximum_bit_bias)
+                maximum_bit_bias = bias;
+        }
+
+        double average =
+            (double)stats.total_weight /
+            ((double)pairs * 512.0) * 100.0;
+        int strong =
+            average >= 47.0 && average <= 53.0 &&
+            stats.minimum_weight >= 160 &&
+            stats.minimum_active_words == 8u &&
+            maximum_bit_bias <= 7.0;
+        int ok = stats.zero_differences == 0u &&
+            (rounds == 1u || strong);
+
+        printf(
+            "related_context,%u,%llu,%.2f,%d,%d,%u,%.2f,%u,%s\n",
+            rounds,
+            (unsigned long long)pairs,
+            average,
+            stats.minimum_weight,
+            stats.maximum_weight,
+            stats.minimum_active_words,
+            maximum_bit_bias,
+            stats.zero_differences,
+            strong ? "PASS" : (ok ? "WEAK" : "FAIL")
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    return all_ok;
+}
+
 static int print_best_trail(
     uint8_t bases[TRAIL_BASES][FCH_MIX_BLOCK_SIZE],
     const trail_stats_t *best,
@@ -1217,6 +1527,10 @@ int main(void) {
     if (!rotational_pair_check())
         ok = 0;
     if (!additive_differential_check())
+        ok = 0;
+    if (!differential_probability_check())
+        ok = 0;
+    if (!related_context_check())
         ok = 0;
     if (!fixed_point_search())
         ok = 0;
