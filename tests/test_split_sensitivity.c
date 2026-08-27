@@ -52,7 +52,12 @@ static int same_blocks(
 static int check_schedule_case(size_t length) {
     uint8_t *first = (uint8_t *)malloc(length);
     uint8_t *second = (uint8_t *)malloc(length);
-    REQUIRE(first && second, "schedule test allocation failed");
+    if (!first || !second) {
+        free(first);
+        free(second);
+        fprintf(stderr, "FAIL: schedule test allocation failed\n");
+        return 0;
+    }
 
     fill_pattern(first, length, UINT32_C(0x12345678));
     fill_pattern(second, length, UINT32_C(0xD00DFEED));

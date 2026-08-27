@@ -10,8 +10,9 @@
 
 enum {
     FCH_FUZZ_MAX_INPUT = 1024 * 1024,
-    FCH_FUZZ_SMOKE_CASES = 256,
-    FCH_FUZZ_SMOKE_MAX_LENGTH = 8192,
+    FCH_FUZZ_SMOKE_CASES = 1024,
+    FCH_FUZZ_SMOKE_MAX_LENGTH = 65536,
+    FCH_FUZZ_STRUCTURED_PATTERNS = 4,
     FCH_LARGE_STREAM_BYTES = 8 * 1024 * 1024,
     FCH_LARGE_STREAM_BUFFER = 64 * 1024
 };
@@ -158,22 +159,48 @@ static void fill_random(uint8_t *data, size_t length, uint64_t *state) {
     }
 }
 
+static void fill_structured(
+    uint8_t *data,
+    size_t length,
+    unsigned int pattern
+) {
+    for (size_t i = 0; i < length; i++) {
+        if (pattern == 0u)
+            data[i] = 0u;
+        else if (pattern == 1u)
+            data[i] = 0xFFu;
+        else if (pattern == 2u)
+            data[i] = (uint8_t)(i * 131u + i / 17u);
+        else
+            data[i] = (uint8_t)((i & 1u) ? 0xAAu : 0x55u);
+    }
+}
+
 static int test_fuzz_smoke(void) {
     static const size_t boundary_lengths[] = {
         0u, 1u, 7u, 8u, 31u, 32u, 63u, 64u, 65u,
         127u, 128u, 129u, 255u, 256u, 257u,
-        511u, 512u, 513u, 1023u, 1024u, 4096u, 8192u
+        511u, 512u, 513u, 1023u, 1024u, 1025u,
+        4095u, 4096u, 4097u, 8191u, 8192u, 8193u,
+        16383u, 16384u, 16385u, 32767u, 32768u,
+        32769u, 65535u, 65536u
     };
     uint8_t *data = (uint8_t *)malloc(FCH_FUZZ_SMOKE_MAX_LENGTH);
     if (!data)
         return 0;
 
     uint64_t state = UINT64_C(0x48415244454E494E);
+    unsigned int structured_cases = 0u;
     for (size_t i = 0;
          i < sizeof(boundary_lengths) / sizeof(boundary_lengths[0]);
          i++) {
-        fill_random(data, boundary_lengths[i], &state);
-        (void)LLVMFuzzerTestOneInput(data, boundary_lengths[i]);
+        for (unsigned int pattern = 0;
+             pattern < FCH_FUZZ_STRUCTURED_PATTERNS;
+             pattern++) {
+            fill_structured(data, boundary_lengths[i], pattern);
+            (void)LLVMFuzzerTestOneInput(data, boundary_lengths[i]);
+            structured_cases++;
+        }
     }
 
     for (unsigned int sample = 0;
@@ -193,11 +220,14 @@ static int test_fuzz_smoke(void) {
 
     free(data);
     printf(
-        "hardening,fuzz_smoke_cases=%u,boundaries=%u,PASS\n",
+        "hardening,fuzz_smoke_cases=%u,structured_cases=%u,"
+        "boundaries=%u,max_length=%u,PASS\n",
         (unsigned int)FCH_FUZZ_SMOKE_CASES,
+        structured_cases,
         (unsigned int)(
             sizeof(boundary_lengths) / sizeof(boundary_lengths[0])
-        )
+        ),
+        (unsigned int)FCH_FUZZ_SMOKE_MAX_LENGTH
     );
     return 1;
 }

@@ -113,6 +113,15 @@ typedef struct {
     size_t allocations_per_hash;
 } bench_result_t;
 
+enum {
+    TIMING_PATTERN_COUNT = 4,
+    TIMING_TRIALS = 7,
+    TIMING_ITERATIONS = 16,
+    TIMING_LENGTH = 65536
+};
+
+static const double TIMING_RATIO_LIMIT = 1.50;
+
 static uint32_t xorshift32(uint32_t *state) {
     uint32_t value = *state;
     value ^= value << 13u;
@@ -267,6 +276,173 @@ static int measure(
     return 1;
 }
 
+static void fill_timing_pattern(
+    uint8_t *buffer,
+    size_t length,
+    unsigned int pattern
+) {
+    if (pattern == 0u) {
+        memset(buffer, 0, length);
+        return;
+    }
+    if (pattern == 1u) {
+        memset(buffer, 0xFF, length);
+        return;
+    }
+    if (pattern == 2u) {
+        for (size_t i = 0u; i < length; i++)
+            buffer[i] = (uint8_t)(i * 131u + i / 17u);
+        return;
+    }
+    fill_random(buffer, length);
+}
+
+static int compare_double(const void *left, const void *right) {
+    double a = *(const double *)left;
+    double b = *(const double *)right;
+    return (a > b) - (a < b);
+}
+
+static double median_time(const double values[TIMING_TRIALS]) {
+    double ordered[TIMING_TRIALS];
+    memcpy(ordered, values, sizeof(ordered));
+    qsort(
+        ordered,
+        TIMING_TRIALS,
+        sizeof(ordered[0]),
+        compare_double
+    );
+    return ordered[TIMING_TRIALS / 2u];
+}
+
+static int run_timing_check(void) {
+    static const bench_target_t targets[] = {
+        {"fch256-one-shot", hash_256_once, 0u, BENCH_ONE_SHOT},
+        {"fch512-one-shot", hash_512_once, 0u, BENCH_ONE_SHOT},
+        {"fch256-stream", hash_256_stream, 1024u, BENCH_STREAM},
+        {"fch512-stream", hash_512_stream, 1024u, BENCH_STREAM}
+    };
+    uint8_t *patterns = (uint8_t *)malloc(
+        (size_t)TIMING_PATTERN_COUNT * TIMING_LENGTH
+    );
+    if (!patterns)
+        return 0;
+
+    for (unsigned int pattern = 0u;
+         pattern < TIMING_PATTERN_COUNT;
+         pattern++) {
+        fill_timing_pattern(
+            patterns + (size_t)pattern * TIMING_LENGTH,
+            TIMING_LENGTH,
+            pattern
+        );
+    }
+
+    volatile uint32_t sink = 0u;
+    int ok = 1;
+    for (size_t target_index = 0u;
+         target_index < sizeof(targets) / sizeof(targets[0]);
+         target_index++) {
+        double samples[TIMING_PATTERN_COUNT][TIMING_TRIALS];
+        size_t expected_peak = 0u;
+        size_t expected_allocations = 0u;
+        int profiles_equal = 1;
+
+        for (unsigned int pattern = 0u;
+             pattern < TIMING_PATTERN_COUNT;
+             pattern++) {
+            bench_result_t warmup;
+            if (!measure(
+                    &targets[target_index],
+                    patterns + (size_t)pattern * TIMING_LENGTH,
+                    TIMING_LENGTH,
+                    2u,
+                    &sink,
+                    &warmup
+                )) {
+                free(patterns);
+                return 0;
+            }
+        }
+
+        for (unsigned int trial = 0u;
+             trial < TIMING_TRIALS;
+             trial++) {
+            for (unsigned int slot = 0u;
+                 slot < TIMING_PATTERN_COUNT;
+                 slot++) {
+                unsigned int pattern =
+                    (slot + trial) % TIMING_PATTERN_COUNT;
+                bench_result_t result;
+                if (!measure(
+                        &targets[target_index],
+                        patterns + (size_t)pattern * TIMING_LENGTH,
+                        TIMING_LENGTH,
+                        TIMING_ITERATIONS,
+                        &sink,
+                        &result
+                    )) {
+                    free(patterns);
+                    return 0;
+                }
+                samples[pattern][trial] =
+                    result.seconds / (double)TIMING_ITERATIONS;
+                if (trial == 0u && slot == 0u) {
+                    expected_peak = result.peak_heap;
+                    expected_allocations =
+                        result.allocations_per_hash;
+                } else if (result.peak_heap != expected_peak ||
+                           result.allocations_per_hash !=
+                               expected_allocations) {
+                    profiles_equal = 0;
+                }
+            }
+        }
+
+        double minimum = 0.0;
+        double maximum = 0.0;
+        for (unsigned int pattern = 0u;
+             pattern < TIMING_PATTERN_COUNT;
+             pattern++) {
+            double median = median_time(samples[pattern]);
+            if (pattern == 0u || median < minimum)
+                minimum = median;
+            if (pattern == 0u || median > maximum)
+                maximum = median;
+        }
+
+        double ratio = minimum > 0.0 ? maximum / minimum : 0.0;
+        int target_ok =
+            profiles_equal &&
+            minimum > 0.0 &&
+            ratio <= TIMING_RATIO_LIMIT;
+        printf(
+            "timing_content,algorithm=%s,bytes=%u,patterns=%u,"
+            "trials=%u,iterations=%u,min_median_us=%.3f,"
+            "max_median_us=%.3f,ratio=%.3f,limit=%.2f,"
+            "allocations=%zu,peak_heap=%zu,%s\n",
+            targets[target_index].name,
+            TIMING_LENGTH,
+            TIMING_PATTERN_COUNT,
+            TIMING_TRIALS,
+            TIMING_ITERATIONS,
+            minimum * 1000000.0,
+            maximum * 1000000.0,
+            ratio,
+            TIMING_RATIO_LIMIT,
+            expected_allocations,
+            expected_peak,
+            target_ok ? "PASS" : "FAIL"
+        );
+        if (!target_ok)
+            ok = 0;
+    }
+
+    fprintf(stderr, "timing sink=%u\n", (unsigned int)sink);
+    free(patterns);
+    return ok;
+}
+
 static int validate_scaling(
     const bench_target_t *target,
     size_t length,
@@ -315,7 +491,7 @@ static void print_result(
 }
 
 static void usage(const char *program) {
-    fprintf(stderr, "Usage: %s [--quick]\n", program);
+    fprintf(stderr, "Usage: %s [--quick|--timing-check]\n", program);
 }
 
 int main(int argc, char **argv) {
@@ -347,6 +523,9 @@ int main(int argc, char **argv) {
     int quick = 0;
     if (argc == 2 && strcmp(argv[1], "--quick") == 0) {
         quick = 1;
+    } else if (argc == 2 &&
+               strcmp(argv[1], "--timing-check") == 0) {
+        return run_timing_check() ? 0 : 1;
     } else if (argc != 1) {
         usage(argv[0]);
         return 2;

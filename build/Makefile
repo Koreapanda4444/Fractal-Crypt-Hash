@@ -18,7 +18,25 @@ SRC = ../src/fch.c \
 
 OBJ = $(SRC:.c=.o)
 
-ANALYZE_SOURCES = $(SRC) ../tools/fch.c
+ANALYZE_SOURCES = $(SRC) \
+        ../tools/fch.c \
+        ../bench/bench_hash.c \
+        ../tests/test_consistency.c \
+        ../tests/test_boundaries.c \
+        ../tests/test_invariants.c \
+        ../tests/test_tree_encoding.c \
+        ../tests/test_portability.c \
+        ../tests/test_vectors.c \
+        ../tests/test_tree_attacks.c \
+        ../tests/test_hardening.c \
+        ../tests/test_failures.c \
+        ../tests/test_length_variation.c \
+        ../tests/test_depth_diffusion.c \
+        ../tests/test_stress.c \
+        ../tests/test_split_sensitivity.c
+
+ANALYZE_REDUCED_SOURCES = ../tests/test_avalanche.c \
+        ../tests/test_cryptanalysis.c
 
 TESTS = test_consistency \
         test_boundaries \
@@ -118,6 +136,9 @@ bench_hash: ../bench/bench_hash.c $(SRC)
 bench-check: bench_hash
 	./bench_hash --quick
 
+timing-check: bench_hash
+	./bench_hash --timing-check
+
 fuzz_hash: ../tests/test_hardening.c $(SRC)
 	clang $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
@@ -125,15 +146,23 @@ fuzz_hash: ../tests/test_hardening.c $(SRC)
 
 fuzz-smoke: fuzz_hash
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_hash -runs=512 -max_len=8192 -seed=164981
+		./fuzz_hash -runs=2048 -max_len=65536 -seed=164981
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+		./fuzz_hash -runs=2048 -max_len=65536 -seed=271828
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+		./fuzz_hash -runs=2048 -max_len=65536 -seed=314159
 
 analyze:
 	@set -e; for source in $(ANALYZE_SOURCES); do \
 		$(ANALYZER) $(CPPFLAGS) $(ANALYZEFLAGS) -fanalyzer \
+			-c "$$source" -o /dev/null; \
+	done; for source in $(ANALYZE_REDUCED_SOURCES); do \
+		$(ANALYZER) $(CPPFLAGS) $(ANALYZEFLAGS) -fanalyzer \
+			-DFCH_ENABLE_REDUCED_ROUND_TESTS \
 			-c "$$source" -o /dev/null; \
 	done
 
 clean:
 	rm -f $(OBJ) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
 
-.PHONY: all test check check-reference check-trails test-extended check-extended bench bench-check fuzz-smoke analyze clean
+.PHONY: all test check check-reference check-trails test-extended check-extended bench bench-check timing-check fuzz-smoke analyze clean

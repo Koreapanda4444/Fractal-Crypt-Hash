@@ -78,6 +78,10 @@ jobs:
         working-directory: build
         run: make analyze
 
+      - name: Run content timing check
+        working-directory: build
+        run: make timing-check
+
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
