@@ -24,7 +24,18 @@ enum {
     SUBTREE_REPLACEMENT_LEAVES = 8,
     LONG_MESSAGE_LENGTH = 262144,
     LONG_CHUNK_SIZE = 4096,
-    LONG_VARIANTS = 15
+    LONG_VARIANTS = 15,
+    EXPANDABLE_PAIRS = 96,
+    EXPANDABLE_SUFFIX_LENGTH = 2048,
+    EXPANDABLE_MAX_EXTRA_LEAVES = 4,
+    HERDING_PREFIX_BITS = 8,
+    HERDING_PREFIXES = 1 << HERDING_PREFIX_BITS,
+    HERDING_MESSAGE_LENGTH = 4096,
+    MULTI_TARGET_TARGETS = 64,
+    MULTI_TARGET_CANDIDATES = 256,
+    MULTI_TARGET_LENGTH = 4096,
+    VARIANT_REUSE_SAMPLES = 256,
+    VARIANT_REUSE_MAX_LENGTH = 8192
 };
 
 typedef struct {
@@ -45,6 +56,8 @@ typedef struct {
 } collision_stats_t;
 
 static int g_current_max_depth = 0;
+static uint64_t g_last_root[FCH_INTERNAL_STATE_WORDS];
+static int g_last_root_valid = 0;
 
 void fch_debug_hook(
     fch_hook_point_t point,
@@ -52,12 +65,13 @@ void fch_debug_hook(
     const uint64_t *state,
     size_t state_words
 ) {
-    (void)point;
-    (void)state;
-    (void)state_words;
-
     if (depth > g_current_max_depth)
         g_current_max_depth = depth;
+    if (point == FCH_HOOK_AFTER_ROOT && state &&
+        state_words == FCH_INTERNAL_STATE_WORDS) {
+        memcpy(g_last_root, state, sizeof(g_last_root));
+        g_last_root_valid = 1;
+    }
 }
 
 static uint64_t splitmix64_next(uint64_t *state) {
@@ -82,6 +96,35 @@ static void fill_bytes(uint8_t *output, size_t length, uint64_t *state) {
     }
 }
 
+static int hash_both_capture(
+    const uint8_t *message,
+    size_t length,
+    uint8_t output256[32],
+    uint8_t output512[64],
+    uint64_t root256[FCH_INTERNAL_STATE_WORDS],
+    uint64_t root512[FCH_INTERNAL_STATE_WORDS],
+    int *maximum_depth
+) {
+    g_current_max_depth = 0;
+    g_last_root_valid = 0;
+    if (!fch_hash_256_checked(message, length, output256) ||
+        !g_last_root_valid)
+        return 0;
+    if (root256)
+        memcpy(root256, g_last_root, sizeof(g_last_root));
+
+    g_last_root_valid = 0;
+    if (!fch_hash_512_checked(message, length, output512) ||
+        !g_last_root_valid)
+        return 0;
+    if (root512)
+        memcpy(root512, g_last_root, sizeof(g_last_root));
+
+    if (maximum_depth)
+        *maximum_depth = g_current_max_depth;
+    return 1;
+}
+
 static int hash_both(
     const uint8_t *message,
     size_t length,
@@ -89,14 +132,15 @@ static int hash_both(
     uint8_t output512[64],
     int *maximum_depth
 ) {
-    g_current_max_depth = 0;
-    if (!fch_hash_256_checked(message, length, output256) ||
-        !fch_hash_512_checked(message, length, output512))
-        return 0;
-
-    if (maximum_depth)
-        *maximum_depth = g_current_max_depth;
-    return 1;
+    return hash_both_capture(
+        message,
+        length,
+        output256,
+        output512,
+        NULL,
+        NULL,
+        maximum_depth
+    );
 }
 
 static int positioned_read(
@@ -1633,6 +1677,477 @@ static int long_message_screen(void) {
     return ok;
 }
 
+static int expandable_message_screen(void) {
+    const size_t maximum_length =
+        FCH_TREE_LEAF_BYTES * (1u + EXPANDABLE_MAX_EXTRA_LEAVES) +
+        EXPANDABLE_SUFFIX_LENGTH;
+    uint8_t *short_message = (uint8_t *)malloc(maximum_length);
+    uint8_t *long_message = (uint8_t *)malloc(maximum_length);
+    uint8_t suffix[EXPANDABLE_SUFFIX_LENGTH];
+    if (!short_message || !long_message) {
+        free(short_message);
+        free(long_message);
+        return 0;
+    }
+
+    uint64_t suffix_stream = UINT64_C(0xE7AADA81E5EED001);
+    uint64_t message_stream = UINT64_C(0xE7AADA81E5EED002);
+    fill_bytes(suffix, sizeof(suffix), &suffix_stream);
+
+    int minimum_root = 512;
+    int minimum256 = 256;
+    int minimum512 = 512;
+    unsigned int root_matches = 0;
+    unsigned int matches256 = 0;
+    unsigned int matches512 = 0;
+
+    for (unsigned int sample = 0; sample < EXPANDABLE_PAIRS; sample++) {
+        size_t prefix_length = FCH_TREE_LEAF_BYTES;
+        size_t extra_length = FCH_TREE_LEAF_BYTES *
+            (1u + sample % EXPANDABLE_MAX_EXTRA_LEAVES);
+        size_t short_length = prefix_length + sizeof(suffix);
+        size_t long_length = short_length + extra_length;
+        uint8_t short256[32];
+        uint8_t long256[32];
+        uint8_t short512[64];
+        uint8_t long512[64];
+        uint64_t short_root256[FCH_INTERNAL_STATE_WORDS];
+        uint64_t short_root512[FCH_INTERNAL_STATE_WORDS];
+        uint64_t long_root256[FCH_INTERNAL_STATE_WORDS];
+        uint64_t long_root512[FCH_INTERNAL_STATE_WORDS];
+
+        fill_bytes(short_message, prefix_length, &message_stream);
+        fch_store_le64(short_message, sample);
+        memcpy(
+            short_message + prefix_length,
+            suffix,
+            sizeof(suffix)
+        );
+        memcpy(long_message, short_message, prefix_length);
+        fill_bytes(
+            long_message + prefix_length,
+            extra_length,
+            &message_stream
+        );
+        memcpy(
+            long_message + prefix_length + extra_length,
+            suffix,
+            sizeof(suffix)
+        );
+
+        if (!hash_both_capture(
+                short_message,
+                short_length,
+                short256,
+                short512,
+                short_root256,
+                short_root512,
+                NULL
+            ) ||
+            !hash_both_capture(
+                long_message,
+                long_length,
+                long256,
+                long512,
+                long_root256,
+                long_root512,
+                NULL
+            ) ||
+            memcmp(
+                short_root256,
+                short_root512,
+                sizeof(short_root256)
+            ) != 0 ||
+            memcmp(
+                long_root256,
+                long_root512,
+                sizeof(long_root256)
+            ) != 0) {
+            free(short_message);
+            free(long_message);
+            return 0;
+        }
+
+        int root_distance = bit_diff(
+            (const uint8_t *)short_root256,
+            (const uint8_t *)long_root256,
+            sizeof(short_root256)
+        );
+        int distance256 = bit_diff(
+            short256,
+            long256,
+            sizeof(short256)
+        );
+        int distance512 = bit_diff(
+            short512,
+            long512,
+            sizeof(short512)
+        );
+        if (root_distance == 0)
+            root_matches++;
+        if (distance256 == 0)
+            matches256++;
+        if (distance512 == 0)
+            matches512++;
+        if (root_distance < minimum_root)
+            minimum_root = root_distance;
+        if (distance256 < minimum256)
+            minimum256 = distance256;
+        if (distance512 < minimum512)
+            minimum512 = distance512;
+    }
+
+    int ok =
+        root_matches == 0u &&
+        matches256 == 0u &&
+        matches512 == 0u &&
+        minimum_root >= 160 &&
+        minimum256 >= 64 &&
+        minimum512 >= 160;
+    printf(
+        "expandable_message,pairs=%u,shared_suffix=%u,"
+        "extra_leaves=1-%u,min_root=%d,root_matches=%u,"
+        "min256=%d,matches256=%u,min512=%d,matches512=%u,%s\n",
+        EXPANDABLE_PAIRS,
+        EXPANDABLE_SUFFIX_LENGTH,
+        EXPANDABLE_MAX_EXTRA_LEAVES,
+        minimum_root,
+        root_matches,
+        minimum256,
+        matches256,
+        minimum512,
+        matches512,
+        ok ? "PASS" : "FAIL"
+    );
+
+    free(short_message);
+    free(long_message);
+    return ok;
+}
+
+static int herding_screen(void) {
+    uint8_t message[HERDING_MESSAGE_LENGTH];
+    uint8_t suffix[HERDING_MESSAGE_LENGTH - FCH_TREE_LEAF_BYTES];
+    state_record_t roots[HERDING_PREFIXES];
+    uint8_t digests256[HERDING_PREFIXES][32];
+    uint8_t digests512[HERDING_PREFIXES][64];
+    uint64_t suffix_stream = UINT64_C(0x4E2D1A65EED00001);
+    fill_bytes(suffix, sizeof(suffix), &suffix_stream);
+
+    for (unsigned int prefix = 0; prefix < HERDING_PREFIXES; prefix++) {
+        uint64_t prefix_stream =
+            UINT64_C(0x4E2D1A65EED10000) ^ prefix;
+        uint64_t root512[FCH_INTERNAL_STATE_WORDS];
+        fill_bytes(message, FCH_TREE_LEAF_BYTES, &prefix_stream);
+        fch_store_le64(message, prefix);
+        memcpy(
+            message + FCH_TREE_LEAF_BYTES,
+            suffix,
+            sizeof(suffix)
+        );
+        if (!hash_both_capture(
+                message,
+                sizeof(message),
+                digests256[prefix],
+                digests512[prefix],
+                roots[prefix].words,
+                root512,
+                NULL
+            ) ||
+            memcmp(
+                roots[prefix].words,
+                root512,
+                sizeof(root512)
+            ) != 0)
+            return 0;
+        roots[prefix].tree = (fch_tree_position_t){0, 0, 0, 0, 0};
+    }
+
+    collision_stats_t root_stats;
+    if (!collision_stats(roots, HERDING_PREFIXES, &root_stats))
+        return 0;
+
+    int minimum256 = 256;
+    int minimum512 = 512;
+    unsigned int collisions256 = 0;
+    unsigned int collisions512 = 0;
+    for (size_t a = 0; a < HERDING_PREFIXES; a++) {
+        for (size_t b = a + 1u; b < HERDING_PREFIXES; b++) {
+            int distance256 = bit_diff(
+                digests256[a],
+                digests256[b],
+                sizeof(digests256[a])
+            );
+            int distance512 = bit_diff(
+                digests512[a],
+                digests512[b],
+                sizeof(digests512[a])
+            );
+            if (distance256 == 0)
+                collisions256++;
+            if (distance512 == 0)
+                collisions512++;
+            if (distance256 < minimum256)
+                minimum256 = distance256;
+            if (distance512 < minimum512)
+                minimum512 = distance512;
+        }
+    }
+
+    int ok =
+        root_stats.exact_collisions == 0u &&
+        root_stats.maximum_bucket <= 3u &&
+        collisions256 == 0u &&
+        collisions512 == 0u &&
+        minimum256 >= 64 &&
+        minimum512 >= 160;
+    printf(
+        "herding,prefix_bits=%u,prefixes=%u,fixed_suffix=%u,"
+        "root_prefix_pairs=%llu,root_max_bucket=%u,root_exact=%u,"
+        "min256=%d,collisions256=%u,min512=%d,collisions512=%u,%s\n",
+        HERDING_PREFIX_BITS,
+        HERDING_PREFIXES,
+        (unsigned int)sizeof(suffix),
+        (unsigned long long)root_stats.truncated_pairs,
+        (unsigned int)root_stats.maximum_bucket,
+        (unsigned int)root_stats.exact_collisions,
+        minimum256,
+        collisions256,
+        minimum512,
+        collisions512,
+        ok ? "PASS" : "FAIL"
+    );
+    return ok;
+}
+
+static int multi_target_screen(void) {
+    uint8_t *targets = (uint8_t *)malloc(
+        (size_t)MULTI_TARGET_TARGETS * MULTI_TARGET_LENGTH
+    );
+    uint8_t *candidate = (uint8_t *)malloc(MULTI_TARGET_LENGTH);
+    uint8_t target256[MULTI_TARGET_TARGETS][32];
+    uint8_t target512[MULTI_TARGET_TARGETS][64];
+    if (!targets || !candidate) {
+        free(targets);
+        free(candidate);
+        return 0;
+    }
+
+    for (unsigned int target = 0;
+         target < MULTI_TARGET_TARGETS;
+         target++) {
+        uint8_t *message =
+            targets + (size_t)target * MULTI_TARGET_LENGTH;
+        uint64_t stream =
+            UINT64_C(0xAD1717A26E5EED00) ^ target;
+        fill_bytes(message, MULTI_TARGET_LENGTH, &stream);
+        fch_store_le64(message, target);
+        if (!hash_both(
+                message,
+                MULTI_TARGET_LENGTH,
+                target256[target],
+                target512[target],
+                NULL
+            )) {
+            free(targets);
+            free(candidate);
+            return 0;
+        }
+    }
+
+    int minimum256 = 256;
+    int minimum512 = 512;
+    unsigned int matches256 = 0;
+    unsigned int matches512 = 0;
+    for (unsigned int sample = 0;
+         sample < MULTI_TARGET_CANDIDATES;
+         sample++) {
+        unsigned int base = sample % MULTI_TARGET_TARGETS;
+        const uint8_t *base_message =
+            targets + (size_t)base * MULTI_TARGET_LENGTH;
+        uint8_t digest256[32];
+        uint8_t digest512[64];
+        mutate_second_preimage(
+            candidate,
+            base_message,
+            MULTI_TARGET_LENGTH,
+            sample
+        );
+
+        for (unsigned int target = 0;
+             target < MULTI_TARGET_TARGETS;
+             target++) {
+            if (memcmp(
+                    candidate,
+                    targets + (size_t)target * MULTI_TARGET_LENGTH,
+                    MULTI_TARGET_LENGTH
+                ) == 0) {
+                free(targets);
+                free(candidate);
+                return 0;
+            }
+        }
+
+        if (!hash_both(
+                candidate,
+                MULTI_TARGET_LENGTH,
+                digest256,
+                digest512,
+                NULL
+            )) {
+            free(targets);
+            free(candidate);
+            return 0;
+        }
+
+        for (unsigned int target = 0;
+             target < MULTI_TARGET_TARGETS;
+             target++) {
+            int distance256 = bit_diff(
+                digest256,
+                target256[target],
+                sizeof(digest256)
+            );
+            int distance512 = bit_diff(
+                digest512,
+                target512[target],
+                sizeof(digest512)
+            );
+            if (distance256 == 0)
+                matches256++;
+            if (distance512 == 0)
+                matches512++;
+            if (distance256 < minimum256)
+                minimum256 = distance256;
+            if (distance512 < minimum512)
+                minimum512 = distance512;
+        }
+    }
+
+    unsigned int comparisons =
+        MULTI_TARGET_TARGETS * MULTI_TARGET_CANDIDATES;
+    int ok =
+        matches256 == 0u &&
+        matches512 == 0u &&
+        minimum256 >= 64 &&
+        minimum512 >= 150;
+    printf(
+        "multi_target,targets=%u,candidates=%u,comparisons=%u,"
+        "min256=%d,matches256=%u,min512=%d,matches512=%u,%s\n",
+        MULTI_TARGET_TARGETS,
+        MULTI_TARGET_CANDIDATES,
+        comparisons,
+        minimum256,
+        matches256,
+        minimum512,
+        matches512,
+        ok ? "PASS" : "FAIL"
+    );
+
+    free(targets);
+    free(candidate);
+    return ok;
+}
+
+static int variant_reuse_screen(void) {
+    uint8_t *message = (uint8_t *)malloc(VARIANT_REUSE_MAX_LENGTH);
+    if (!message)
+        return 0;
+
+    unsigned int shared_roots = 0;
+    unsigned int prefix_matches = 0;
+    unsigned int suffix_matches = 0;
+    int minimum_prefix = 256;
+    int minimum_suffix = 256;
+    uint64_t total_prefix = 0;
+    uint64_t total_suffix = 0;
+
+    for (unsigned int sample = 0;
+         sample < VARIANT_REUSE_SAMPLES;
+         sample++) {
+        size_t length =
+            ((size_t)sample * 4051u) %
+            (VARIANT_REUSE_MAX_LENGTH + 1u);
+        uint64_t stream =
+            UINT64_C(0xA261AA7A5EED0001) ^ sample;
+        uint8_t digest256[32];
+        uint8_t digest512[64];
+        uint64_t root256[FCH_INTERNAL_STATE_WORDS];
+        uint64_t root512[FCH_INTERNAL_STATE_WORDS];
+        fill_bytes(message, length, &stream);
+        if (length >= 8u)
+            fch_store_le64(message, sample);
+
+        if (!hash_both_capture(
+                message,
+                length,
+                digest256,
+                digest512,
+                root256,
+                root512,
+                NULL
+            )) {
+            free(message);
+            return 0;
+        }
+
+        if (memcmp(root256, root512, sizeof(root256)) == 0)
+            shared_roots++;
+        int prefix_distance = bit_diff(
+            digest256,
+            digest512,
+            sizeof(digest256)
+        );
+        int suffix_distance = bit_diff(
+            digest256,
+            digest512 + sizeof(digest256),
+            sizeof(digest256)
+        );
+        if (prefix_distance == 0)
+            prefix_matches++;
+        if (suffix_distance == 0)
+            suffix_matches++;
+        if (prefix_distance < minimum_prefix)
+            minimum_prefix = prefix_distance;
+        if (suffix_distance < minimum_suffix)
+            minimum_suffix = suffix_distance;
+        total_prefix += (uint64_t)prefix_distance;
+        total_suffix += (uint64_t)suffix_distance;
+    }
+
+    double average_prefix =
+        (double)total_prefix /
+        ((double)VARIANT_REUSE_SAMPLES * 256.0) * 100.0;
+    double average_suffix =
+        (double)total_suffix /
+        ((double)VARIANT_REUSE_SAMPLES * 256.0) * 100.0;
+    int ok =
+        shared_roots == VARIANT_REUSE_SAMPLES &&
+        prefix_matches == 0u &&
+        suffix_matches == 0u &&
+        minimum_prefix >= 64 &&
+        minimum_suffix >= 64 &&
+        average_prefix >= 47.0 && average_prefix <= 53.0 &&
+        average_suffix >= 47.0 && average_suffix <= 53.0;
+    printf(
+        "variant_reuse,samples=%u,shared_preoutput_roots=%u,"
+        "prefix_avg=%.2f,prefix_min=%d,prefix_matches=%u,"
+        "suffix_avg=%.2f,suffix_min=%d,suffix_matches=%u,%s\n",
+        VARIANT_REUSE_SAMPLES,
+        shared_roots,
+        average_prefix,
+        minimum_prefix,
+        prefix_matches,
+        average_suffix,
+        minimum_suffix,
+        suffix_matches,
+        ok ? "PASS" : "FAIL"
+    );
+
+    free(message);
+    return ok;
+}
+
 int main(void) {
     int ok = 1;
 
@@ -1647,6 +2162,14 @@ int main(void) {
     if (!second_preimage_screen())
         ok = 0;
     if (!long_message_screen())
+        ok = 0;
+    if (!expandable_message_screen())
+        ok = 0;
+    if (!herding_screen())
+        ok = 0;
+    if (!multi_target_screen())
+        ok = 0;
+    if (!variant_reuse_screen())
         ok = 0;
 
     if (!ok) {

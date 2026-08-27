@@ -190,12 +190,38 @@ meet-in-the-middle, splice, or output-only attacks.
 | Malformed tree rejection | Reordering, forged ranges, gaps, overlaps, depth changes, and invalid children | Six malformed shapes, eight invalid replacements, and three graft attempts rejected or detected |
 | Second-preimage screen | 512 candidates, eight mutation modes, 16 KiB target | No match; minimum distances were 103 bits for FCH-256 and 227 bits for FCH-512 |
 | Long-message screen | Fifteen variants of a 256 KiB message | No collision; minimum distances were 108 bits for FCH-256 and 229 bits for FCH-512 |
+| Expandable-message splice screen | 96 short/long pairs sharing a 2 KiB suffix, with one to four inserted leaves | No root or digest match; minimum distances were 216 root bits, 108 FCH-256 bits, and 225 FCH-512 bits |
+| Herding convergence screen | 256 distinct one-leaf prefixes followed by the same 3 KiB suffix | No exact root or digest collision; minimum digest distances were 95 and 207 bits |
+| Multi-target screen | 256 candidates compared with 64 targets, for 16,384 digest comparisons | No match; minimum distances were 91 and 204 bits |
+| FCH-256/FCH-512 reuse screen | 256 messages from 0 to 8 KiB | All pre-output roots were shared as designed, while no FCH-256 output matched either 256-bit half of FCH-512 |
 | Depth diffusion | 128 bit changes through an 8 KiB tree | Leaf, intermediate-node, and root averages remained close to 50% |
 
 The 20-bit bucket pairs in the multicollision screen are expected birthday
 events in a deliberately truncated view. The relevant result is that none of
 those pairs became an exact 512-bit state collision. This is only a bounded
 screen and is not a multicollision-resistance proof.
+
+The expandable-message screen keeps the prefix and final 2 KiB suffix fixed,
+then inserts between one and four full leaves before that suffix. None of the
+96 short/long pairs reused a raw root or either digest. The herding screen uses
+256 different first leaves followed by one fixed 3 KiB continuation. Its
+20-bit root projection had no repeated bucket in this run, and no complete
+root or digest converged.
+
+The multi-target screen hashes 64 independent 4 KiB targets and checks 256
+mutated candidates against every target. This gives 16,384 comparisons for
+each output size. No candidate matched any target. These are fixed,
+deterministic searches; they do not construct compression-function collisions,
+optimize bridge blocks, or measure the asymptotic cost of expandable-message,
+diamond, herding, or multi-target attacks.
+
+FCH-256 and FCH-512 intentionally start output finalization from the same tree
+root. The output record then separates them by output size and domain. Across
+256 messages, every pre-output root was identical between variants, but the
+FCH-256 digest never equaled either 256-bit half of the FCH-512 digest. The
+minimum distances were 107 and 106 bits, with averages of 49.52% and 49.69%.
+This confirms the implemented domain separation on the sampled messages; it is
+not a proof that attacks cannot reuse work across the two variants.
 
 ## Conditional tree-security argument
 
@@ -274,7 +300,7 @@ not establish preimage resistance.
 | Localization of a digest collision or second preimage | Conditional on the typed maps |
 | Independence created by domains and tags | Design assumption, not a proof |
 | The numerical targets in the specification | Not established by this argument |
-| Long-message and multi-target security loss | Not yet quantified |
+| Long-message and multi-target security loss | Bounded screens only; not quantified |
 
 The argument narrows the remaining question: an attack cannot rely only on an
 ambiguous tree representation, but it may still exploit the compression core,
@@ -312,8 +338,8 @@ The most important remaining work is:
    characteristic searches and quantitative bounds, then extend the bounded
    rebound and meet-in-the-middle screens to optimized inbound solving,
    independent neutral variables, and output-only targets;
-5. full-tree study of multicollisions, expandable messages, herding,
-   multi-target attacks, and state reuse between FCH-256 and FCH-512;
+5. turn the bounded full-tree screens into quantitative multicollision,
+   expandable-message, herding, multi-target, and cross-variant bounds;
 6. larger fuzzing campaigns, broader static analysis, timing review, and
    side-channel evaluation of optimized implementations; and
 7. a separate quantum attack model before making quantum security targets.
