@@ -89,6 +89,30 @@ every single output bit with an exact Walsh transform.
 | 7 | 231 | 229 | 26.56% | 28.91% |
 | 8 | 224 | 223 | 28.13% | 29.69% |
 
+The same outputs are checked with 896 structured multi-bit masks. Half are
+contiguous 2-, 4-, and 8-bit fields; the other half select the same bit from
+non-overlapping groups of 2, 4, or 8 output words. The linear screen compares
+the parity of every output mask with all 255 nonzero input-byte masks. The
+differential screen projects the 128 distinct XOR pairs in each family and
+records the largest bucket. The table reports the maximum over both families
+for each round.
+
+| Rounds | 2-bit maximum bucket | 4-bit maximum bucket | 8-bit maximum bucket | Maximum multi-bit correlation |
+| ------ | -------------------- | -------------------- | -------------------- | ----------------------------- |
+| 1 | 100.00% | 100.00% | 100.00% | 100.00% |
+| 2 | 69.53% | 32.81% | 6.25% | 33.59% |
+| 3 | 40.63% | 16.41% | 4.69% | 29.69% |
+| 4 | 38.28% | 15.63% | 4.69% | 30.47% |
+| 5 | 41.41% | 14.84% | 3.91% | 28.91% |
+| 6 | 39.06% | 17.97% | 4.69% | 30.47% |
+| 7 | 37.50% | 14.06% | 4.69% | 30.47% |
+| 8 | 38.28% | 14.06% | 3.91% | 27.34% |
+
+The second round retains a visible 2-bit concentration in one input family.
+From round 3 onward, none of the tested projections was constant. These values
+are maxima selected after testing hundreds of masks, so they are not directly
+comparable with the expected frequency of one preselected random bucket.
+
 No zero-output difference occurred in these sixteen exhaustive searches. All
 eight output words were active from round 2 onward. The 1-round result again
 exposes a weak trail instead of treating early diffusion as security evidence.
@@ -97,8 +121,9 @@ The concrete evaluator is checked against the 16-round Python reference before
 each run. A second implementation models the same ARX operations as 64-bit Z3
 bit vectors and replays every reported minimum-weight witness. CI rejects a
 disagreement between the two models. These are exact results only inside the
-declared 8-bit families; they do not bound wider differentials, multi-bit
-linear masks, or arbitrary characteristics of the 8- and 16-round cores.
+declared 8-bit families and structured output masks; they do not bound wider
+input differences, unstructured or higher-weight output masks, or arbitrary
+characteristics of the 8- and 16-round cores.
 
 ### Rotational and additive screens
 
@@ -364,9 +389,9 @@ The most important remaining work is:
 2. a quantitative reduction for collision and second-preimage preservation,
    including exact tree-size loss and long-message bounds beyond the
    conditional localization argument above;
-3. expand the automated trail search to wider input spaces and multi-bit output
-   masks, then use MILP, SAT, or SMT to search general 5- through 8-round
-   characteristics beyond the two fixed 8-bit families;
+3. expand the automated trail search to wider input spaces and unstructured or
+   higher-weight output masks, then use MILP, SAT, or SMT to search general
+   5- through 8-round characteristics beyond the two fixed 8-bit families;
 4. replace the projected empirical probabilities with full-state
    characteristic searches and quantitative bounds, then extend the bounded
    rebound and meet-in-the-middle screens to optimized inbound solving,

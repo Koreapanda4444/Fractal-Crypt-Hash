@@ -12,6 +12,7 @@ COUNTER = 0x0123456789ABCDEF
 DOMAIN = ref.DOMAIN_LEAF
 FLAGS = ref.FLAG_LEAF_DATA | ref.FLAG_FINAL
 DEFAULT_ROUNDS = tuple(range(1, 9))
+MASK_WIDTHS = (2, 4, 8)
 BASE_WORDS = tuple(
     (ref.IV[index & 7] ^ ((index + 1) * 0x9E3779B97F4A7C15)) & MASK64
     for index in range(16)
@@ -27,6 +28,22 @@ class Family:
 
 
 @dataclass(frozen=True)
+class OutputMask:
+    name: str
+    positions: tuple[int, ...]
+    value: int
+
+
+@dataclass(frozen=True)
+class ProjectionResult:
+    width: int
+    mask: OutputMask
+    output_value: int
+    maximum_count: int
+    pairs: int
+
+
+@dataclass(frozen=True)
 class Result:
     rounds: int
     family: Family
@@ -37,12 +54,45 @@ class Result:
     linear_coefficient: int
     linear_mask: int
     linear_output_bit: int
+    multibit_linear_coefficient: int
+    multibit_linear_mask: int
+    multibit_output_mask: OutputMask
+    differential_projections: tuple[ProjectionResult, ...]
 
 
 FAMILIES = (
     Family("word0-byte0-xor01", 0, 0, 0x01),
     Family("word15-byte7-xor80", 15, 7, 0x80),
 )
+
+
+def build_output_masks() -> tuple[OutputMask, ...]:
+    masks = []
+    total_bits = ref.STATE_WORDS * 64
+    for width in MASK_WIDTHS:
+        for start in range(0, total_bits, width):
+            positions = tuple(range(start, start + width))
+            value = sum(1 << position for position in positions)
+            masks.append(
+                OutputMask(f"bits-{start}-{start + width - 1}", positions, value)
+            )
+        for start_word in range(0, ref.STATE_WORDS, width):
+            for bit in range(64):
+                positions = tuple(
+                    (start_word + offset) * 64 + bit for offset in range(width)
+                )
+                value = sum(1 << position for position in positions)
+                masks.append(
+                    OutputMask(
+                        f"words-{start_word}-{start_word + width - 1}-bit-{bit}",
+                        positions,
+                        value,
+                    )
+                )
+    return tuple(masks)
+
+
+OUTPUT_MASKS = build_output_masks()
 
 
 def rotr64(value: int, count: int) -> int:
@@ -147,6 +197,89 @@ def linear_screen(outputs: list[int]) -> tuple[int, int, int]:
     return strongest, strongest_mask, strongest_bit
 
 
+def multibit_linear_screen(outputs: list[int]) -> tuple[int, int, OutputMask]:
+    strongest = 0
+    strongest_input_mask = 0
+    strongest_output_mask = OUTPUT_MASKS[0]
+    for output_mask in OUTPUT_MASKS:
+        spectrum = [
+            1 if ((output & output_mask.value).bit_count() & 1) == 0 else -1
+            for output in outputs
+        ]
+        walsh_hadamard(spectrum)
+        for input_mask in range(1, 256):
+            coefficient = abs(spectrum[input_mask])
+            if coefficient > strongest:
+                strongest = coefficient
+                strongest_input_mask = input_mask
+                strongest_output_mask = output_mask
+    return strongest, strongest_input_mask, strongest_output_mask
+
+
+def project_output(value: int, output_mask: OutputMask) -> int:
+    projected = 0
+    for index, position in enumerate(output_mask.positions):
+        projected |= ((value >> position) & 1) << index
+    return projected
+
+
+def differential_projection_screen(
+    outputs: list[int], family: Family
+) -> tuple[ProjectionResult, ...]:
+    differences = []
+    for value in range(256):
+        paired = value ^ family.delta
+        if value < paired:
+            differences.append(outputs[value] ^ outputs[paired])
+
+    results = []
+    for width in MASK_WIDTHS:
+        strongest_count = 0
+        strongest_value = 0
+        strongest_mask = OUTPUT_MASKS[0]
+        for output_mask in OUTPUT_MASKS:
+            if len(output_mask.positions) != width:
+                continue
+            counts = [0] * (1 << width)
+            for difference in differences:
+                counts[project_output(difference, output_mask)] += 1
+            output_value = max(
+                range(len(counts)),
+                key=lambda item: (counts[item], -item),
+            )
+            if counts[output_value] > strongest_count:
+                strongest_count = counts[output_value]
+                strongest_value = output_value
+                strongest_mask = output_mask
+        results.append(
+            ProjectionResult(
+                width,
+                strongest_mask,
+                strongest_value,
+                strongest_count,
+                len(differences),
+            )
+        )
+    return tuple(results)
+
+
+def verify_output_masks() -> None:
+    total_bits = ref.STATE_WORDS * 64
+    expected = 2 * sum(total_bits // width for width in MASK_WIDTHS)
+    if len(OUTPUT_MASKS) != expected:
+        raise RuntimeError("unexpected structured output-mask count")
+    if len({output_mask.value for output_mask in OUTPUT_MASKS}) != len(
+        OUTPUT_MASKS
+    ):
+        raise RuntimeError("duplicate structured output mask")
+    if any(
+        output_mask.value.bit_count() != len(output_mask.positions)
+        or len(output_mask.positions) not in MASK_WIDTHS
+        for output_mask in OUTPUT_MASKS
+    ):
+        raise RuntimeError("invalid structured output mask")
+
+
 def analyze_family(family: Family, rounds: int) -> Result:
     outputs = [output_for(value, family, rounds) for value in range(256)]
     output_integers = [output_integer(output) for output in outputs]
@@ -175,6 +308,13 @@ def analyze_family(family: Family, rounds: int) -> Result:
             witness = value
 
     coefficient, input_mask, output_bit = linear_screen(output_integers)
+    multibit_coefficient, multibit_input_mask, multibit_output_mask = (
+        multibit_linear_screen(output_integers)
+    )
+    differential_projections = differential_projection_screen(
+        output_integers,
+        family,
+    )
     return Result(
         rounds,
         family,
@@ -185,6 +325,10 @@ def analyze_family(family: Family, rounds: int) -> Result:
         coefficient,
         input_mask,
         output_bit,
+        multibit_coefficient,
+        multibit_input_mask,
+        multibit_output_mask,
+        differential_projections,
     )
 
 
@@ -302,6 +446,7 @@ def main() -> int:
 
     try:
         verify_reference()
+        verify_output_masks()
         results = [
             analyze_family(family, rounds)
             for rounds in args.rounds
@@ -309,7 +454,9 @@ def main() -> int:
         ]
         print(
             "rounds,family,pairs,min_weight,min_active_words,witness,"
-            "zero_pairs,max_linear_correlation,input_mask,output_bit,smt_witness"
+            "zero_pairs,max_linear_correlation,input_mask,output_bit,"
+            "max_multibit_correlation,multibit_input_mask,multibit_output_mask,"
+            "multibit_weight,smt_witness"
         )
         failed = False
         for result in results:
@@ -322,9 +469,34 @@ def main() -> int:
                 f"{result.minimum_weight},{result.minimum_active_words},"
                 f"0x{result.witness:02x},{result.zero_pairs},"
                 f"{correlation:.6f},0x{result.linear_mask:02x},"
-                f"{result.linear_output_bit},{smt_status}"
+                f"{result.linear_output_bit},"
+                f"{result.multibit_linear_coefficient / 256.0:.6f},"
+                f"0x{result.multibit_linear_mask:02x},"
+                f"{result.multibit_output_mask.name},"
+                f"{len(result.multibit_output_mask.positions)},{smt_status}"
             )
             failed = failed or result.zero_pairs != 0
+            if result.rounds >= 2:
+                failed = failed or result.linear_coefficient == 256
+                failed = failed or result.multibit_linear_coefficient == 256
+                failed = failed or any(
+                    projection.maximum_count == projection.pairs
+                    for projection in result.differential_projections
+                )
+        print(
+            "multibit_differential,rounds,family,width,pairs,max_count,"
+            "max_probability,output_mask,output_value"
+        )
+        for result in results:
+            for projection in result.differential_projections:
+                print(
+                    f"multibit_differential,{result.rounds},{result.family.name},"
+                    f"{projection.width},{projection.pairs},"
+                    f"{projection.maximum_count},"
+                    f"{projection.maximum_count / projection.pairs:.6f},"
+                    f"{projection.mask.name},"
+                    f"0x{projection.output_value:0{(projection.width + 3) // 4}x}"
+                )
         if failed:
             print("TRAIL_SEARCH: FAIL")
             return 1
