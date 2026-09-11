@@ -84,8 +84,12 @@ every single output bit with an exact Walsh transform.
 | 2 | 232 | 222 | 28.13% | 37.50% |
 | 3 | 226 | 217 | 29.69% | 31.25% |
 | 4 | 231 | 223 | 30.47% | 29.69% |
+| 5 | 227 | 227 | 27.34% | 29.69% |
+| 6 | 233 | 234 | 26.56% | 28.13% |
+| 7 | 231 | 229 | 26.56% | 28.91% |
+| 8 | 224 | 223 | 28.13% | 29.69% |
 
-No zero-output difference occurred in these eight exhaustive searches. All
+No zero-output difference occurred in these sixteen exhaustive searches. All
 eight output words were active from round 2 onward. The 1-round result again
 exposes a weak trail instead of treating early diffusion as security evidence.
 
@@ -94,7 +98,7 @@ each run. A second implementation models the same ARX operations as 64-bit Z3
 bit vectors and replays every reported minimum-weight witness. CI rejects a
 disagreement between the two models. These are exact results only inside the
 declared 8-bit families; they do not bound wider differentials, multi-bit
-linear masks, or the 8- and 16-round cores.
+linear masks, or arbitrary characteristics of the 8- and 16-round cores.
 
 ### Rotational and additive screens
 
@@ -360,8 +364,9 @@ The most important remaining work is:
 2. a quantitative reduction for collision and second-preimage preservation,
    including exact tree-size loss and long-message bounds beyond the
    conditional localization argument above;
-3. expand the automated trail search to wider input spaces, multi-bit output
-   masks, and rounds 5 through 8 with MILP, SAT, or SMT;
+3. expand the automated trail search to wider input spaces and multi-bit output
+   masks, then use MILP, SAT, or SMT to search general 5- through 8-round
+   characteristics beyond the two fixed 8-bit families;
 4. replace the projected empirical probabilities with full-state
    characteristic searches and quantitative bounds, then extend the bounded
    rebound and meet-in-the-middle screens to optimized inbound solving,

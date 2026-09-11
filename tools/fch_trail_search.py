@@ -11,6 +11,7 @@ MASK64 = (1 << 64) - 1
 COUNTER = 0x0123456789ABCDEF
 DOMAIN = ref.DOMAIN_LEAF
 FLAGS = ref.FLAG_LEAF_DATA | ref.FLAG_FINAL
+DEFAULT_ROUNDS = tuple(range(1, 9))
 BASE_WORDS = tuple(
     (ref.IV[index & 7] ^ ((index + 1) * 0x9E3779B97F4A7C15)) & MASK64
     for index in range(16)
@@ -292,7 +293,7 @@ def parse_rounds(text: str) -> tuple[int, ...]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rounds", type=parse_rounds, default=(1, 2, 3, 4))
+    parser.add_argument("--rounds", type=parse_rounds, default=DEFAULT_ROUNDS)
     parser.add_argument("--timeout-ms", type=int, default=60000)
     parser.add_argument("--enumerate-only", action="store_true")
     args = parser.parse_args()
