@@ -378,11 +378,111 @@ forces a collision at the first divergent leaf or node. The canonical schedule
 prevents an attacker from presenting a different parse of the target tree as
 the same encoded computation.
 
-This is not yet a quantitative second-preimage bound. A complete reduction
-must account for the number of leaves and internal nodes, adaptive queries,
-multicollision construction, expandable-message and herding strategies, and
-possible reuse between the two output variants. The current argument also does
-not establish preimage resistance.
+The localization argument does not assign a cost by itself. The following
+section adds a conservative union bound under an explicit ideal-map model. It
+does not prove that the real compression construction satisfies that model.
+
+### Quantitative conditional bounds
+
+For a message of `L` bytes, define:
+
+```text
+P = max(64, L + 9)
+N = ceil(P / 1024)
+b = P - 1024(N - 1)
+D = ceil(log2(N))
+T = 2N - 1
+```
+
+`N` is the number of leaves, `b` is the final leaf length, `D` is the root
+level, and `T` counts all leaf and internal-node map evaluations in the target
+tree. Because every internal node has two children, a tree with `N` leaves has
+exactly `N - 1` internal nodes.
+
+The exact number of compression calls for one complete hash is:
+
+```text
+C(L) = 13N - 11 + ceil(b / 120)
+```
+
+Each full leaf costs one header and nine data records, the final leaf costs one
+header and `ceil(b / 120)` data records, every internal node costs three
+records, and output finalization costs one record.
+
+The conditional model treats `Leaf` and `Node` as independent random maps to
+512 bits on distinct, well-formed typed inputs. It also treats each `d`-bit
+`Output` variant as an independent random map, where `d` is 256 or 512. The
+model assumes there is no shortcut inside the compression construction.
+Domains and tags motivate this separation but do not prove it.
+
+Let `H` be the number of distinct finalized-output inputs evaluated by an
+attacker and `Q` the total number of distinct `Leaf` and `Node` inputs it
+evaluates. For a fixed target, its already known tree states are not included
+in `Q`. A direct union bound gives the following advantages, with every
+right-hand side capped at 1:
+
+```text
+Adv_collision(H, Q) <= H(H - 1) / 2^(d + 1)
+                       + Q(Q - 1) / 2^513
+
+Adv_second-preimage(H, Q; T) <= H / 2^d + TQ / 2^512
+
+Adv_preimage(H) <= H / 2^d
+```
+
+For `r` distinct targets whose trees contain `T_total` leaf and node states in
+total, the corresponding multi-target bound is:
+
+```text
+Adv_multi-target(H, Q; r, T_total)
+    <= rH / 2^d + T_total Q / 2^512
+```
+
+These expressions give the following work scales in numbers of typed-map
+evaluations. They are necessary scales under the model, not constructive
+attacks:
+
+- digest collisions reach the birthday scale near `H = 2^(d/2)`;
+- internal-state collisions reach it near `Q = 2^256`;
+- a fixed-target second preimage requires about `H = 2^d` through finalization
+  or `Q = 2^512 / T` through a target-tree state; and
+- `r` targets change those scales to about `2^d / r` and
+  `2^512 / T_total`.
+
+Tree size affects query count and primitive work differently. If `q`
+independent messages each cause at most `T_max` new tree-map evaluations, then
+`Q <= qT_max`. A birthday event can therefore occur after roughly
+`2^256 / T_max` whole-message queries, but without reusable subtrees those
+queries still perform roughly `2^256` tree-map evaluations in total. The tree
+does not create a generic primitive-work saving in this calculation.
+
+The fixed-target term is different because the target supplies `T` states to
+hit. The table shows the deliberately conservative `2^512 / T` scale. Position
+and range descriptors can make many of those states incompatible with a given
+candidate, so the table may understate the real cost.
+
+| Original length `L` | Leaves `N` | Tree states `T` | Compression calls `C(L)` | `log2(2^512 / T)` |
+| ------------------- | ---------- | --------------- | ------------------------ | ------------------ |
+| 0 bytes | 1 | 1 | 3 | 512.00 |
+| 1 KiB | 2 | 3 | 16 | 510.42 |
+| 1 MiB | 1,025 | 2,049 | 13,315 | 501.00 |
+| 1 GiB | 1,048,577 | 2,097,153 | 13,631,491 | 491.00 |
+| `2^61 - 1` bytes | `2^51 + 1` | `2^52 + 1` | 29,273,397,577,908,227 | about 460.00 |
+
+For FCH-256, the `2^256` finalized-output term remains smaller than the
+internal target-state term at every format-valid message length. For FCH-512,
+this conservative reduction can certify only a message-length-dependent
+second-preimage scale, reaching about `2^460` typed-map evaluations at the
+format maximum. It does not provide a `2^460` attack, but it also does not
+establish the unqualified `2^512` target for all message lengths.
+
+Long-message second-preimage shortcuts are known for iterated Merkle-Damgard
+hashes; see Kelsey and Schneier, [Second Preimages on n-bit Hash Functions for
+Much Less than 2^n Work](https://www.schneier.com/wp-content/uploads/2016/02/paper-preimages.pdf).
+That construction depends on an iterative chain and is not claimed to apply
+directly to FCH's canonical, position-bound tree. It is relevant here as a
+reason to state the dependence on `T` instead of quoting one length-independent
+number.
 
 ### Boundary of the argument
 
@@ -392,8 +492,8 @@ not establish preimage resistance.
 | Rejection of alternate shapes and positions | Established by the format and implementation checks |
 | Localization of a digest collision or second preimage | Conditional on the typed maps |
 | Independence created by domains and tags | Design assumption, not a proof |
-| The numerical targets in the specification | Not established by this argument |
-| Long-message and multi-target security loss | Bounded screens only; not quantified |
+| The numerical targets in the specification | Matched only inside the ideal-map model, except a uniform FCH-512 second-preimage target |
+| Long-message and multi-target security loss | Parameterized union bounds given above; tightness is open |
 
 The argument narrows the remaining question: an attack cannot rely only on an
 ambiguous tree representation, but it may still exploit the compression core,
@@ -450,9 +550,9 @@ or power leakage, or a future optimized implementation.
 The most important remaining work is:
 
 1. independent review of the specification, constants, and domain layout;
-2. a quantitative reduction for collision and second-preimage preservation,
-   including exact tree-size loss and long-message bounds beyond the
-   conditional localization argument above;
+2. a formal reduction from the real compression construction to the ideal
+   typed-map model, including adaptive-query tightness, descriptor-compatible
+   target counting, and whether the `T` factor can be reached by an attack;
 3. expand the automated trail search to wider input spaces and unstructured or
    higher-weight output masks, then use MILP, SAT, or SMT to search general
    5- through 8-round characteristics beyond the two fixed 8-bit families;
@@ -461,8 +561,9 @@ The most important remaining work is:
    bounds, extend rebound and meet-in-the-middle analysis to optimized inbound
    solving and independent neutral variables, and move the output-only screen
    beyond its fixed 16-bit family;
-5. turn the bounded full-tree screens into quantitative multicollision,
-   expandable-message, herding, multi-target, and cross-variant bounds;
+5. construct attacks or tighter bounds for multicollision, expandable-message,
+   herding, multi-target, and cross-variant settings, and determine whether the
+   union bounds above are tight;
 6. long-running external fuzzing, hardware-counter timing studies, and
    side-channel evaluation of future optimized implementations; and
 7. a separate quantum attack model before making quantum security targets.
