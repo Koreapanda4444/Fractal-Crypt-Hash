@@ -29,6 +29,8 @@ enum {
     REBOUND_CASES = 3,
     MITM_CANDIDATES = 4096,
     MITM_PREFIX_BITS = 24,
+    OUTPUT_ATTACK_CANDIDATES = 65536,
+    OUTPUT_ATTACK_PREFIX_BITS = 24,
     NEAR_COLLISION_SAMPLES = 2048,
     NEAR_COLLISION_MESSAGE_SIZE = 64
 };
@@ -50,6 +52,12 @@ typedef struct {
     unsigned int candidate;
     uint64_t state[16];
 } mitm_entry_t;
+
+typedef struct {
+    uint32_t prefix;
+    unsigned int candidate;
+    uint64_t output[8];
+} output_attack_entry_t;
 
 static uint64_t splitmix64_next(uint64_t *state) {
     uint64_t value;
@@ -1487,6 +1495,226 @@ static int mitm_screen(void) {
     return ok;
 }
 
+static void output_candidate_block(
+    uint8_t output[FCH_MIX_BLOCK_SIZE],
+    const uint8_t base[FCH_MIX_BLOCK_SIZE],
+    unsigned int candidate
+) {
+    memcpy(output, base, FCH_MIX_BLOCK_SIZE);
+    output[11] = (uint8_t)candidate;
+    output[116] = (uint8_t)(candidate >> 8u);
+}
+
+static uint32_t output_attack_prefix(const uint64_t output[8]) {
+    return (uint32_t)(
+        output[0] &
+        ((UINT32_C(1) << OUTPUT_ATTACK_PREFIX_BITS) - UINT32_C(1))
+    );
+}
+
+static int output_attack_entry_compare(const void *left, const void *right) {
+    const output_attack_entry_t *a = left;
+    const output_attack_entry_t *b = right;
+
+    if (a->prefix < b->prefix)
+        return -1;
+    if (a->prefix > b->prefix)
+        return 1;
+    if (a->candidate < b->candidate)
+        return -1;
+    if (a->candidate > b->candidate)
+        return 1;
+    return 0;
+}
+
+static int output_only_attack_search(void) {
+    static output_attack_entry_t entries[OUTPUT_ATTACK_CANDIDATES];
+    static const unsigned int round_counts[] = {
+        4u, FCH_MIX_REDUCED_ROUND_REFERENCE, FCH_MIX_ROUNDS
+    };
+    uint8_t base[FCH_MIX_BLOCK_SIZE];
+    uint8_t planted_block[FCH_MIX_BLOCK_SIZE];
+    uint8_t unplanted_block[FCH_MIX_BLOCK_SIZE];
+    uint64_t stream = UINT64_C(0x4F55545055544F4E);
+    const uint64_t counter = UINT64_C(0x4F55545055540001);
+    const uint64_t domain = UINT64_C(0x4F55545055540002);
+    const uint64_t flags = FCH_MIX_FLAG_LEAF_DATA;
+    const unsigned int target_candidate = 0xA53Cu;
+    int all_ok = 1;
+
+    fill_bytes(base, sizeof(base), &stream);
+    output_candidate_block(planted_block, base, target_candidate);
+    memcpy(unplanted_block, planted_block, sizeof(unplanted_block));
+    unplanted_block[73] ^= UINT8_C(0x80);
+
+    printf(
+        "output_only,rounds,candidates,prefix_bits,planted_prefix_matches,"
+        "planted_exact_matches,recovered,unplanted_prefix_matches,"
+        "unplanted_exact_matches,prefix_collision_pairs,max_prefix_bucket,"
+        "exact_collisions,min_planted_distance,min_unplanted_distance,"
+        "status\n"
+    );
+    for (size_t ri = 0;
+         ri < sizeof(round_counts) / sizeof(round_counts[0]);
+         ri++) {
+        unsigned int rounds = round_counts[ri];
+        uint64_t planted_target[8];
+        uint64_t unplanted_target[8];
+        unsigned int planted_prefix_matches = 0u;
+        unsigned int planted_exact_matches = 0u;
+        unsigned int recovered = 0u;
+        unsigned int unplanted_prefix_matches = 0u;
+        unsigned int unplanted_exact_matches = 0u;
+        uint64_t prefix_collision_pairs = 0u;
+        uint64_t exact_collisions = 0u;
+        size_t max_prefix_bucket = 0u;
+        int min_planted_distance = 512;
+        int min_unplanted_distance = 512;
+
+        if (!core_output(
+                planted_block,
+                counter,
+                domain,
+                flags,
+                rounds,
+                planted_target
+            ) ||
+            !core_output(
+                unplanted_block,
+                counter,
+                domain,
+                flags,
+                rounds,
+                unplanted_target
+            ))
+            return 0;
+
+        uint32_t planted_prefix = output_attack_prefix(planted_target);
+        uint32_t unplanted_prefix = output_attack_prefix(unplanted_target);
+        for (unsigned int candidate = 0u;
+             candidate < OUTPUT_ATTACK_CANDIDATES;
+             candidate++) {
+            uint8_t block[FCH_MIX_BLOCK_SIZE];
+
+            output_candidate_block(block, base, candidate);
+            if (!core_output(
+                    block,
+                    counter,
+                    domain,
+                    flags,
+                    rounds,
+                    entries[candidate].output
+                ))
+                return 0;
+            entries[candidate].prefix =
+                output_attack_prefix(entries[candidate].output);
+            entries[candidate].candidate = candidate;
+
+            if (entries[candidate].prefix == planted_prefix)
+                planted_prefix_matches++;
+            if (entries[candidate].prefix == unplanted_prefix)
+                unplanted_prefix_matches++;
+            if (memcmp(
+                    entries[candidate].output,
+                    planted_target,
+                    sizeof(planted_target)
+                ) == 0) {
+                planted_exact_matches++;
+                if (candidate == target_candidate)
+                    recovered = 1u;
+            }
+            if (memcmp(
+                    entries[candidate].output,
+                    unplanted_target,
+                    sizeof(unplanted_target)
+                ) == 0)
+                unplanted_exact_matches++;
+
+            if (candidate != target_candidate) {
+                int distance = bit_diff(
+                    (const uint8_t *)entries[candidate].output,
+                    (const uint8_t *)planted_target,
+                    sizeof(planted_target)
+                );
+                if (distance < min_planted_distance)
+                    min_planted_distance = distance;
+            }
+            int distance = bit_diff(
+                (const uint8_t *)entries[candidate].output,
+                (const uint8_t *)unplanted_target,
+                sizeof(unplanted_target)
+            );
+            if (distance < min_unplanted_distance)
+                min_unplanted_distance = distance;
+        }
+
+        qsort(
+            entries,
+            OUTPUT_ATTACK_CANDIDATES,
+            sizeof(entries[0]),
+            output_attack_entry_compare
+        );
+        size_t begin = 0u;
+        while (begin < OUTPUT_ATTACK_CANDIDATES) {
+            size_t end = begin + 1u;
+            while (end < OUTPUT_ATTACK_CANDIDATES &&
+                   entries[end].prefix == entries[begin].prefix)
+                end++;
+            size_t bucket_size = end - begin;
+            if (bucket_size > max_prefix_bucket)
+                max_prefix_bucket = bucket_size;
+            prefix_collision_pairs +=
+                (uint64_t)bucket_size * (uint64_t)(bucket_size - 1u) / 2u;
+            for (size_t left = begin; left < end; left++) {
+                for (size_t right = left + 1u; right < end; right++) {
+                    if (memcmp(
+                            entries[left].output,
+                            entries[right].output,
+                            sizeof(entries[left].output)
+                        ) == 0)
+                        exact_collisions++;
+                }
+            }
+            begin = end;
+        }
+
+        int ok =
+            planted_prefix_matches >= 1u &&
+            planted_prefix_matches <= 16u &&
+            planted_exact_matches == 1u &&
+            recovered == 1u &&
+            unplanted_prefix_matches <= 16u &&
+            unplanted_exact_matches == 0u &&
+            prefix_collision_pairs >= 1u &&
+            prefix_collision_pairs <= 2048u &&
+            max_prefix_bucket <= 8u &&
+            exact_collisions == 0u &&
+            min_planted_distance >= 160 &&
+            min_unplanted_distance >= 160;
+        printf(
+            "output_only,%u,%u,%u,%u,%u,%s,%u,%u,%llu,%zu,%llu,%d,%d,%s\n",
+            rounds,
+            OUTPUT_ATTACK_CANDIDATES,
+            OUTPUT_ATTACK_PREFIX_BITS,
+            planted_prefix_matches,
+            planted_exact_matches,
+            recovered ? "yes" : "no",
+            unplanted_prefix_matches,
+            unplanted_exact_matches,
+            (unsigned long long)prefix_collision_pairs,
+            max_prefix_bucket,
+            (unsigned long long)exact_collisions,
+            min_planted_distance,
+            min_unplanted_distance,
+            ok ? "PASS" : "FAIL"
+        );
+        if (!ok)
+            all_ok = 0;
+    }
+
+    return all_ok;
+}
+
 static int print_best_trail(
     uint8_t bases[TRAIL_BASES][FCH_MIX_BLOCK_SIZE],
     const trail_stats_t *best,
@@ -1956,6 +2184,8 @@ int main(void) {
     if (!rebound_screen())
         ok = 0;
     if (!mitm_screen())
+        ok = 0;
+    if (!output_only_attack_search())
         ok = 0;
     if (!fixed_point_search())
         ok = 0;

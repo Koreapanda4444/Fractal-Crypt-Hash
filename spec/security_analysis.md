@@ -61,6 +61,7 @@ The current deterministic run produced the following results:
 | Related contexts | 4,096 pairs per round over eight counter, domain, and flag relations | One round was weak; from round 2 all output words were active and the maximum bit bias was 2.95% |
 | Rebound-style inbound screen | 4,095 nonzero 12-bit message differences at 4, 8, and 16 rounds, split after 2, 4, and 8 rounds | Minimum middle-state weights were 373, 455, and 460 of 1,024 bits; no candidate was at or below 256 bits |
 | Meet-in-the-middle screen | 4,096 candidates over an 8-round core split 4+4 with a 24-bit middle-state projection | One projected pair and one exact pair occurred; the known 12-bit target was the only exact match |
+| Output-only attack screen | 65,536 candidates at 4, 8, and 16 rounds with planted and unplanted 512-bit targets | Only the planted candidate matched exactly; no unplanted preimage or full collision occurred, and every nonmatch was at least 201 bits away |
 | Fixed points and two-cycles | 4,096 samples for 4, 8, and 16-round cores, plus both complete hashes | No tested fixed point or two-cycle was found |
 | Near collisions | All pairs among 2,048 64-byte messages | No exact collision; minimum distances were 90 bits for FCH-256 and 199 bits for FCH-512 |
 
@@ -245,8 +246,33 @@ same candidate must be evaluated on both sides because every round injects all
 16 message words, so this construction costs 4,096 forward and 4,096 backward
 evaluations without an independent early/late variable split. The rebound
 screen likewise enumerates a fixed difference family rather than solving an
-optimized inbound phase. Neither result bounds stronger rebound,
-meet-in-the-middle, splice, or output-only attacks.
+optimized inbound phase.
+
+### Output-only attack search
+
+The output-only screen removes the known-internal-state assumption. It varies
+two fixed message bytes to enumerate a complete 16-bit space and observes only
+the 512-bit compression output. The same 65,536 candidates are tested against
+a planted target from inside the space and an unplanted target that differs in
+a third byte. The planted case confirms that the search can recover an exact
+match; the unplanted case checks for an unexpected preimage in the declared
+space.
+
+The search also groups every candidate by the first 24 output bits and checks
+each group for complete 512-bit collisions. Hamming distance is measured from
+both targets without reading or reconstructing the 1,024-bit work state.
+
+| Rounds | Planted exact matches | Unplanted exact matches | 24-bit collision pairs | Largest bucket | Full collisions | Minimum target distance |
+| ------ | --------------------- | ----------------------- | ---------------------- | -------------- | --------------- | ----------------------- |
+| 4 | 1 | 0 | 129 | 2 | 0 | 207 |
+| 8 | 1 | 0 | 143 | 2 | 0 | 201 |
+| 16 | 1 | 0 | 104 | 2 | 0 | 207 |
+
+In each planted case, the only exact match was the original candidate. The
+24-bit pairs are expected truncation collisions and none extended to the full
+output. This is exhaustive only for the fixed 16-bit family. It does not show
+a shortcut over enumeration, estimate full-domain preimage or collision cost,
+or bound stronger rebound, meet-in-the-middle, splice, and output-only attacks.
 
 ## Tree-mode results
 
@@ -432,8 +458,9 @@ The most important remaining work is:
    5- through 8-round characteristics beyond the two fixed 8-bit families;
 4. extend the bounded full-state single-bit characteristic screen to chosen
    higher-weight differences, solver-assisted searches, and quantitative
-   bounds, then extend the rebound and meet-in-the-middle screens to optimized
-   inbound solving, independent neutral variables, and output-only targets;
+   bounds, extend rebound and meet-in-the-middle analysis to optimized inbound
+   solving and independent neutral variables, and move the output-only screen
+   beyond its fixed 16-bit family;
 5. turn the bounded full-tree screens into quantitative multicollision,
    expandable-message, herding, multi-target, and cross-variant bounds;
 6. long-running external fuzzing, hardware-counter timing studies, and
