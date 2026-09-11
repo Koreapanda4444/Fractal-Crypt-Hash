@@ -51,6 +51,11 @@ jobs:
         working-directory: build
         run: make check-trails
 
+      - name: Search full-state characteristics
+        if: matrix.reference
+        working-directory: build
+        run: make check-characteristics
+
   sanitizers:
     runs-on: ubuntu-latest
     env:

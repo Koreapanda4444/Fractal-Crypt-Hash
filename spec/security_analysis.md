@@ -53,6 +53,7 @@ The current deterministic run produced the following results:
 | Differential bias | 2,048 samples at four input-bit positions for 8 and 16 rounds | 49.97% and 49.99% average; maximum per-bit bias 3.42% and 3.27% |
 | Linear correlation | 8,192 inputs and 32 masks for 8 and 16 rounds | Maximum absolute correlation 3.32% and 2.27% |
 | Low-weight trails | 24,576 candidates at every round from 1 through 16 | One round was weak; at 8 and 16 rounds the minimum output weights were 212 and 210 of 512 bits |
+| Full-state characteristics | All 1,024 single-bit message differences over 32 bases through rounds 1 to 8 | One round was weak; from round 2 every state and output word was active, and no exact full-state trajectory repeated across bases |
 | Rotation-related patterns | Six 4,096-candidate pattern sets | One round was weak; tested sets had all eight state words active from round 2 onward |
 | Rotational pairs | 3,072 pairs at 1, 2, 4, 8, and 16 rounds over six word rotations | No exact relation; round averages stayed between 49.95% and 50.02% |
 | Additive differentials | 2,048 pairs at 1, 2, 4, 8, and 16 rounds over four modular input differences | One round was weak; from round 2 all output words were active and the maximum bit bias was 4.44% |
@@ -124,6 +125,43 @@ disagreement between the two models. These are exact results only inside the
 declared 8-bit families and structured output masks; they do not bound wider
 input differences, unstructured or higher-weight output masks, or arbitrary
 characteristics of the 8- and 16-round cores.
+
+### Full-state characteristic search
+
+`tools/fch_characteristic_search.py` extends the concrete search from two
+8-bit families to every single-bit difference in the complete 1,024-bit
+message block. It applies each of the 1,024 differences to 32 deterministic
+base messages and records the full 1,024-bit working-state difference after
+every round from 1 through 8. This gives 32,768 message pairs per round.
+
+An exact characteristic here is the entire sequence of working-state
+differences from the first round through the reported round. The final column
+counts how many of the 32 bases produced the most common exact sequence for one
+input difference.
+
+| Rounds | Minimum state weight | Active state words | Minimum output weight | Active output words | Largest exact count |
+| ------ | -------------------- | ------------------ | --------------------- | ------------------- | ------------------- |
+| 1 | 4 | 4 | 4 | 4 | 20/32 |
+| 2 | 357 | 16 | 223 | 8 | 1/32 |
+| 3 | 449 | 16 | 245 | 8 | 1/32 |
+| 4 | 445 | 16 | 233 | 8 | 1/32 |
+| 5 | 443 | 16 | 225 | 8 | 1/32 |
+| 6 | 445 | 16 | 245 | 8 | 1/32 |
+| 7 | 445 | 16 | 249 | 8 | 1/32 |
+| 8 | 446 | 16 | 252 | 8 | 1/32 |
+
+The one-round result confirms a sparse deterministic path for some message
+bits. From round 2 onward, every tested pair activated all 16 working-state
+words and all eight compression-output words. No two bases produced the same
+complete characteristic prefix for a fixed input difference at those rounds.
+
+The evaluator is checked against the 16-round Python reference before the
+search starts. These results are an empirical screen of single-bit input
+differences and 32 fixed bases. They are not probabilities or upper bounds for
+arbitrary, chosen, or higher-weight characteristics, and they do not replace a
+solver-assisted search. The CI thresholds of 256 state bits, 128 output bits,
+full word activation, and no repeated trajectory from round 2 are conservative
+regression alarms rather than claimed security bounds.
 
 ### Rotational and additive screens
 
@@ -392,10 +430,10 @@ The most important remaining work is:
 3. expand the automated trail search to wider input spaces and unstructured or
    higher-weight output masks, then use MILP, SAT, or SMT to search general
    5- through 8-round characteristics beyond the two fixed 8-bit families;
-4. replace the projected empirical probabilities with full-state
-   characteristic searches and quantitative bounds, then extend the bounded
-   rebound and meet-in-the-middle screens to optimized inbound solving,
-   independent neutral variables, and output-only targets;
+4. extend the bounded full-state single-bit characteristic screen to chosen
+   higher-weight differences, solver-assisted searches, and quantitative
+   bounds, then extend the rebound and meet-in-the-middle screens to optimized
+   inbound solving, independent neutral variables, and output-only targets;
 5. turn the bounded full-tree screens into quantitative multicollision,
    expandable-message, herding, multi-target, and cross-variant bounds;
 6. long-running external fuzzing, hardware-counter timing studies, and
@@ -415,6 +453,7 @@ make check
 make check-extended
 make check-reference
 make check-trails
+make check-characteristics
 make bench-check
 make timing-check
 make fuzz-smoke
