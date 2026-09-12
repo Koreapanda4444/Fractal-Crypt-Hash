@@ -636,11 +636,107 @@ public. The check does not cover keyed constructions, compiler-generated
 instruction differences, cache and branch hardware counters, electromagnetic
 or power leakage, or a future optimized implementation.
 
+## Independent review checklist
+
+An external review must name one exact commit. Record the commit SHA, platform,
+compiler, and tool versions before starting. If the target changes, the review
+continues to apply only to the recorded commit until the affected work is
+checked again.
+
+FCH has not completed an independent cryptographic review merely because this
+checklist exists or the bundled tests pass. Completion requires a reviewer who
+was not involved in the design to examine a fixed target and report the scope,
+methods, findings, and limits of that review.
+
+### Review map
+
+Read the documents in this order: `fch_spec.md`, `implementation_notes.md`, and
+this report. Then trace each claim into the implementation and its tests.
+
+| Area | Primary files |
+| ---- | ------------- |
+| Parameters, rounds, constants, and compression | `include/params.h`, `src/mix.c`, `src/bitops.c` |
+| Typed records, leaves, nodes, and canonical splitting | `src/leaf.c`, `src/combine.c`, `src/fractal_split.c`, `src/fractal_process.c` |
+| Public API, finalization, and streaming | `src/fch.c`, `src/fch_stream.c`, `include/fch.h`, `include/fch_stream.h` |
+| Reference model and automated searches | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tests/` |
+
+The Python reference is useful for comparison, but it was developed in the
+same repository and is not an independent specification. Agreement between C
+and Python can still preserve a shared design error.
+
+### Questions the review must challenge
+
+1. **Compression core:** look for differential, linear, rotational, additive,
+   rebound, meet-in-the-middle, fixed-point, invariant-subspace, and symmetry
+   properties. State whether a result covers the full 16 rounds or only a
+   reduced-round variant, and assess whether the eight-round margin is credible.
+2. **Encoding:** verify injectivity of padding and every typed record. Check that
+   roles, child order, levels, byte and leaf ranges, original length, output
+   size, and finalization cannot be confused or omitted.
+3. **Tree mode:** challenge the collision and second-preimage localization
+   argument, descriptor-compatible target counting, and the `T` and
+   `T_compatible` factors. Consider multicollisions, expandable messages,
+   herding, grafting, long messages, multi-target attacks, and cross-variant
+   reuse.
+4. **Output:** inspect feed-forward, truncation, FCH-256/FCH-512 separation, and
+   any path that exposes or reuses a pre-output state more cheaply than the
+   stated model assumes.
+5. **Implementation:** compare every serialized field with the specification.
+   Check integer limits, allocation failures, ownership, aliasing, undefined
+   behavior, endianness, one-shot and streaming equivalence, and large-input
+   behavior on more than one compiler and architecture.
+6. **Quantum scope:** test the reversible-oracle assumptions, the cost hidden by
+   one query, coherent target membership, memory requirements, and whether a
+   structural quantum attack invalidates the generic black-box baselines.
+
+Passing an existing test is not a reason to close a question. A reviewer should
+change the input families, seeds, projections, round splits, compiler, and
+platform where that can expose assumptions built into the current harness.
+
+### Evidence and reporting
+
+A cryptanalytic finding should identify the exact function and attack model,
+give time, data, memory, and query costs, and separate full-round results from
+reduced-round evidence. An implementation finding should include the smallest
+reproducer available, the command and environment used, and the expected and
+observed behavior. A failed proof argument should name the unsupported step
+even when no practical attack is known.
+
+Use the following fields so findings can be compared and retested:
+
+```text
+ID:
+Title:
+Target commit:
+Severity:
+Affected claim:
+Files or functions:
+Model and assumptions:
+Reproduction or derivation:
+Impact:
+Suggested fix:
+Status:
+```
+
+| Severity | Meaning in this project |
+| -------- | ----------------------- |
+| Critical | A reproducible full-round break far below a stated target, or an exploitable implementation flaw that defeats the hash result |
+| High | A credible full-round shortcut, encoding ambiguity, or structural flaw with direct security impact |
+| Medium | A substantial reduced-round weakness, proof gap, or implementation divergence that changes the claimed margin |
+| Low | A hardening, portability, documentation, or reproducibility defect without a demonstrated cryptographic break |
+| Informational | A useful observation, negative result, or recommendation with no current security impact |
+
+Review completion requires a pinned target, an explicit list of files and
+claims examined, reproduction of the relevant test suite, disposition of every
+finding as open, fixed, accepted, or rejected with a reason, and retesting of
+all fixes. The final report must also state what was not reviewed.
+
 ## Open analysis
 
 The most important remaining work is:
 
-1. independent review of the specification, constants, and domain layout;
+1. complete the independent review checklist against a pinned commit and
+   publish the resulting scope, findings, dispositions, and unresolved limits;
 2. a formal reduction from the real compression construction to the ideal
    typed-map model, including adaptive-query tightness, descriptor-compatible
    target counting, and whether the `T` factor can be reached by an attack;
