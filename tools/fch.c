@@ -22,13 +22,31 @@ static int prepare_stdin(void) {
 	return 1;
 }
 
-static void print_hex(const uint8_t *buf, size_t len) {
+static int print_hex(const uint8_t *buf, size_t len) {
 	static const char hexdigits[] = "0123456789abcdef";
 	for (size_t i = 0; i < len; i++) {
 		uint8_t b = buf[i];
-		putchar(hexdigits[b >> 4]);
-		putchar(hexdigits[b & 0x0F]);
+		if (putchar(hexdigits[b >> 4]) == EOF ||
+			putchar(hexdigits[b & 0x0F]) == EOF)
+			return 0;
 	}
+
+	return 1;
+}
+
+static int write_digest(const uint8_t *buf, size_t len, const char *label) {
+	if (!print_hex(buf, len))
+		goto fail;
+	if (label && printf("  %s", label) < 0)
+		goto fail;
+	if (putchar('\n') == EOF || fflush(stdout) == EOF)
+		goto fail;
+
+	return 1;
+
+fail:
+	fprintf(stderr, "fch: failed to write output\n");
+	return 0;
 }
 
 static int hash_stream(FILE *fp, int variant, const char *label) {
@@ -78,7 +96,8 @@ static int hash_stream(FILE *fp, int variant, const char *label) {
 			return 2;
 		}
 		fch256_free(&ctx256);
-		print_hex(out, sizeof(out));
+		if (!write_digest(out, sizeof(out), label))
+			return 2;
 	} else {
 		uint8_t out[64];
 		if (!fch512_final_checked(&ctx512, out)) {
@@ -87,13 +106,9 @@ static int hash_stream(FILE *fp, int variant, const char *label) {
 			return 2;
 		}
 		fch512_free(&ctx512);
-		print_hex(out, sizeof(out));
+		if (!write_digest(out, sizeof(out), label))
+			return 2;
 	}
-
-	if (label) {
-		printf("  %s", label);
-	}
-	putchar('\n');
 
 	return 0;
 }
