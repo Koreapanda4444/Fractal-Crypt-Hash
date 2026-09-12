@@ -3,8 +3,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 #include "fch.h"
 #include "fch_stream.h"
+
+static int prepare_stdin(void) {
+#ifdef _WIN32
+	if (_setmode(_fileno(stdin), _O_BINARY) == -1) {
+		fprintf(stderr, "fch: cannot set stdin to binary mode\n");
+		return 0;
+	}
+#endif
+
+	return 1;
+}
 
 static void print_hex(const uint8_t *buf, size_t len) {
 	static const char hexdigits[] = "0123456789abcdef";
@@ -105,6 +121,8 @@ int main(int argc, char **argv) {
 	}
 
 	if (argi >= argc) {
+		if (!prepare_stdin())
+			return 2;
 		return hash_stream(stdin, variant, "-");
 	}
 
