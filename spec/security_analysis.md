@@ -5,16 +5,17 @@ This report records the analysis currently available for tree encoding version
 limits, and open work visible in one place. The Korean version is available in
 [security_analysis.ko.md](security_analysis.ko.md).
 
-The target strengths remain those defined by the specification:
+The classical target strengths remain those defined by the specification:
 
 | Variant | Collision | Preimage | Second preimage |
 | ------- | --------- | -------- | --------------- |
 | FCH-256 | 2^128 | 2^256 | 2^256 |
 | FCH-512 | 2^256 | 2^512 | 2^512 |
 
-These are design targets. The results below are deterministic, bounded tests;
-they are useful for finding regressions and weak reduced-round behavior, but do
-not prove the target costs or replace independent cryptanalysis.
+These are classical design targets. The results below are deterministic,
+bounded tests; they are useful for finding regressions and weak reduced-round
+behavior, but do not prove the target costs or replace independent
+cryptanalysis. Quantum query scales are stated separately below.
 
 ## Scope
 
@@ -499,6 +500,96 @@ The argument narrows the remaining question: an attack cannot rely only on an
 ambiguous tree representation, but it may still exploit the compression core,
 the way records are absorbed, truncation, or generic tree-hash strategies.
 
+## Quantum security scope
+
+This section defines an attack model and generic baselines. It does not claim
+that FCH has been proved secure against quantum attacks.
+
+### Model and cost unit
+
+FCH is still treated as a public, unkeyed hash. The attacker is given coherent
+superposition access to a reversible implementation of the complete hash or,
+where stated, one of the typed `Leaf`, `Node`, and `Output` maps. The figures
+below count quantum oracle queries only. They do not count logical or physical
+gates, circuit depth, qubits, quantum memory, error correction, or the cost of
+constructing a reversible FCH implementation.
+
+One query to a complete hash must reversibly perform its compression calls and
+uncompute temporary state. Its real cost therefore depends on the message
+length and on the reversible circuit, even when it counts as one query in this
+model. No such circuit or resource estimate is available yet.
+
+The baselines treat the typed maps as independent random functions. The domain
+tags are intended to separate them, but do not prove that model. There is also
+no reduction for FCH in the quantum random-oracle model and no quantum
+structural analysis of the ARX core or tree mode.
+
+### Generic query scales
+
+[Grover's search algorithm](https://arxiv.org/abs/quant-ph/9605043) gives a
+square-root speedup for an unstructured target search. A generic preimage, or a
+second preimage for one fixed finalized output, therefore takes about
+`2^(d/2)` quantum queries for a `d`-bit ideal output.
+
+The [Brassard-Høyer-Tapp collision
+algorithm](https://arxiv.org/abs/quant-ph/9705002) gives the generic
+`2^(d/3)` query scale for collisions in a `d`-bit ideal output. Its query count
+does not describe the full implementation cost: the original algorithm uses
+substantial storage and gives a time-space tradeoff.
+
+| Variant | Generic collision queries | Generic preimage queries | Fixed second-preimage queries |
+| ------- | ------------------------- | ------------------------ | ----------------------------- |
+| FCH-256 | about `2^85.33` | about `2^128` | about `2^128` |
+| FCH-512 | about `2^170.67` | about `2^256` | `min(2^256, 2^256 / sqrt(T_compatible))` |
+
+These are ideal-map query scales, not measured attack costs or security proofs.
+The 512-bit internal maps also have a generic collision scale of about
+`2^(512/3) = 2^170.67` queries. Thus FCH-256 does not have a 128-bit generic
+quantum collision exponent: its 256-bit output gives about 85.33 bits. FCH-512
+has a generic collision exponent of about 170.67 bits in this model.
+
+### Tree targets and long messages
+
+For a fixed target message, let `T_compatible` be the number of its `T = 2N -
+1` leaf and node states that are compatible with the role, position, range, and
+other descriptor fields of a candidate input. Necessarily
+`T_compatible <= T`. Searching for an input to a 512-bit typed map that reaches
+any of those states has the generic scale
+
+```text
+Q_tree_quantum(T_compatible) = 2^256 / sqrt(T_compatible)
+```
+
+Combining that route with a direct search on the finalized output gives the
+conditional scale
+
+```text
+Q_second-preimage(d, T_compatible)
+    = min(2^(d/2), 2^256 / sqrt(T_compatible))
+```
+
+Using `T_compatible = T` gives a deliberately conservative lower scale. At the
+format maximum, `T = 2^52 + 1`, so the internal term is about `2^230` typed-map
+queries. FCH-256 remains limited by the approximately `2^128` output search.
+For FCH-512, this accounting reaches approximately `2^230` rather than
+`2^256`.
+
+The `2^230` figure is not a concrete attack. It assumes that all target states
+can be searched coherently and ignores descriptor incompatibility and circuit
+cost. It only marks the lowest generic scale justified by this conservative
+ideal-map accounting. A structural quantum attack could be cheaper, while a
+real reversible implementation could be far more expensive.
+
+For `r` distinct target digests, generic output search becomes
+`2^(d/2) / sqrt(r)`. If all target trees contain `T_total` distinct compatible
+internal states, the corresponding typed-map scale is
+`2^256 / sqrt(T_total)`. These expressions assume an efficient coherent
+membership test and must be capped when the target set is no longer sparse.
+
+No NIST post-quantum category is assigned from these exponents. Such a label
+would require concrete gate, depth, memory, and failure-cost estimates as well
+as analysis of FCH itself, not just black-box query complexity.
+
 ## Implementation evidence
 
 The security tests are backed by implementation checks that keep the analyzed
@@ -566,7 +657,9 @@ The most important remaining work is:
    union bounds above are tight;
 6. long-running external fuzzing, hardware-counter timing studies, and
    side-channel evaluation of future optimized implementations; and
-7. a separate quantum attack model before making quantum security targets.
+7. reversible-circuit gate, depth, qubit, and ancilla estimates; memory-aware
+   collision tradeoffs; quantum structural attacks on the compression and tree
+   modes; and a proof or reduction in the quantum random-oracle model.
 
 Negative results from the bundled searches should be treated as starting
 points for these tasks, not as evidence that stronger attacks do not exist.
