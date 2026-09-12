@@ -119,6 +119,74 @@ jobs:
           make clean
           make all check check-extended bench-check CC=gcc
 
+      - name: Verify native Windows binary stdin
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $cli = (Resolve-Path ".\build\fch.exe").Path
+          $inputPath = Join-Path $env:RUNNER_TEMP "fch binary input.bin"
+          [byte[]] $inputBytes = @(
+            0x0d, 0x0a, 0x1a, 0x00, 0xff, 0x46, 0x43, 0x48,
+            0x80, 0x62, 0x69, 0x6e, 0x61, 0x72, 0x79, 0x0a
+          )
+          [IO.File]::WriteAllBytes($inputPath, $inputBytes)
+
+          foreach ($bits in 256, 512) {
+            $fileOutput = & $cli "-$bits" $inputPath
+            if ($LASTEXITCODE -ne 0) {
+              throw "FCH-$bits file input failed with exit code $LASTEXITCODE"
+            }
+            if ($fileOutput -match '^([0-9a-f]+)  ') {
+              $fileDigest = $Matches[1]
+            } else {
+              throw "FCH-$bits file output is malformed"
+            }
+
+            $startInfo = [Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $cli
+            $startInfo.ArgumentList.Add("-$bits")
+            $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardInput = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $startInfo.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+
+            $process = [Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
+            try {
+              if (-not $process.Start()) {
+                throw "FCH-$bits stdin process did not start"
+              }
+
+              $inputStream = $process.StandardInput.BaseStream
+              $inputStream.Write($inputBytes, 0, $inputBytes.Length)
+              $inputStream.Close()
+              $stdinOutput = $process.StandardOutput.ReadToEnd()
+              $stderrOutput = $process.StandardError.ReadToEnd()
+              $process.WaitForExit()
+              $exitCode = $process.ExitCode
+            } finally {
+              $process.Dispose()
+            }
+
+            if ($exitCode -ne 0) {
+              throw "FCH-$bits stdin failed with exit code ${exitCode}: $stderrOutput"
+            }
+            if ($stdinOutput.Trim() -match '^([0-9a-f]+)  -$') {
+              $stdinDigest = $Matches[1]
+            } else {
+              throw "FCH-$bits stdin output is malformed"
+            }
+
+            if ($fileDigest -cne $stdinDigest) {
+              throw "FCH-$bits file and stdin digests differ"
+            }
+            if ($fileDigest.Length -ne ($bits / 4)) {
+              throw "FCH-$bits digest length is invalid"
+            }
+          }
+
   x86-32:
     runs-on: ubuntu-latest
     steps:
