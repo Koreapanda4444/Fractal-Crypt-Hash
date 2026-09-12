@@ -1,0 +1,95 @@
+name: extended-cryptanalysis
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/cryptanalysis.yml"
+      - "build/Makefile"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "tools/**"
+  pull_request:
+    paths:
+      - ".github/workflows/cryptanalysis.yml"
+      - "build/Makefile"
+      - "include/**"
+      - "src/**"
+      - "tests/**"
+      - "tools/**"
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extended-cryptanalysis-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-screens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build cryptanalysis tests
+        working-directory: build
+        run: |
+          make clean
+          make test_cryptanalysis test_tree_attacks \
+            CC=gcc \
+            CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+
+      - name: Run compression-core screens
+        working-directory: build
+        run: ./test_cryptanalysis
+
+      - name: Run tree-mode screens
+        working-directory: build
+        run: ./test_tree_attacks
+
+  reduced-round-trails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Z3
+        run: python -m pip install --disable-pip-version-check z3-solver==4.13.1.0
+
+      - name: Search all rounds
+        run: >-
+          python tools/fch_trail_search.py
+          --rounds 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
+          --timeout-ms 120000
+
+  full-state-characteristics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Search all rounds with expanded samples
+        run: >-
+          python tools/fch_characteristic_search.py
+          --rounds 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
+          --samples 64
+          --candidate-limit 1024
