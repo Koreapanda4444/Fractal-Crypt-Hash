@@ -125,7 +125,10 @@ test_failures: ../tests/test_failures.c $(SRC)
 		-Dmalloc=fch_test_malloc -Dcalloc=fch_test_calloc \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-check: test
+check-cli: fch ../tests/test_cli.sh
+	sh ../tests/test_cli.sh ./fch
+
+check: test check-cli
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done
 
 check-reference: fch
@@ -204,4 +207,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: all test check check-reference check-trails check-characteristics test-extended check-extended bench bench-check timing-check fuzz-smoke analyze clean
+.PHONY: all test check-cli check check-reference check-trails check-characteristics test-extended check-extended bench bench-check timing-check fuzz-smoke analyze clean
