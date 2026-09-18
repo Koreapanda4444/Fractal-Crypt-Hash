@@ -126,8 +126,8 @@ python3 tools/fch_reference.py -256 path/to/file
 python3 tools/fch_reference.py -512 path/to/file
 ```
 
-Build the C CLI and compare both implementations across deterministic boundary
-and recursive-tree cases:
+Build the C CLI and compare both implementations across deterministic boundary,
+recursive-tree, and fixed-seed differential cases:
 
 ```sh
 cd build

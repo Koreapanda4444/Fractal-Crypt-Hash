@@ -20,6 +20,51 @@ PADDING_MIN_BYTES = 64
 TREE_LEAF_BYTES = 1024
 TREE_ARITY = 2
 
+DIFFERENTIAL_SEEDS = (
+    0x243F6A8885A308D3,
+    0x13198A2E03707344,
+    0xA4093822299F31D0,
+)
+DIFFERENTIAL_LENGTHS = (
+    0,
+    1,
+    54,
+    55,
+    56,
+    63,
+    64,
+    65,
+    1014,
+    1015,
+    1016,
+    1023,
+    1024,
+    1025,
+    2038,
+    2039,
+    2040,
+    2047,
+    2048,
+    2049,
+    4086,
+    4087,
+    4088,
+    4095,
+    4096,
+    4097,
+    8182,
+    8183,
+    8184,
+    8191,
+    8192,
+    8193,
+    16383,
+    16384,
+    16385,
+)
+DIFFERENTIAL_RANDOM_CASES = 13
+DIFFERENTIAL_MAX_LENGTH = 32769
+
 IV = (
     0x6A09E667F3BCC908,
     0xBB67AE8584CAA73B,
@@ -422,6 +467,47 @@ def _comparison_messages() -> list[bytes]:
     return messages
 
 
+def _splitmix64_next(state: int) -> tuple[int, int]:
+    state = (state + 0x9E3779B97F4A7C15) & MASK64
+    value = state
+    value = ((value ^ (value >> 30)) * 0xBF58476D1CE4E5B9) & MASK64
+    value = ((value ^ (value >> 27)) * 0x94D049BB133111EB) & MASK64
+    return state, value ^ (value >> 31)
+
+
+def _seeded_bytes(seed: int, length: int) -> bytes:
+    output = bytearray()
+    state = seed
+    while len(output) < length:
+        state, value = _splitmix64_next(state)
+        output.extend(value.to_bytes(8, "little"))
+    return bytes(output[:length])
+
+
+def _differential_messages() -> list[tuple[str, bytes]]:
+    messages: list[tuple[str, bytes]] = []
+    for seed in DIFFERENTIAL_SEEDS:
+        state = seed
+        for case_index, length in enumerate(DIFFERENTIAL_LENGTHS):
+            state, case_seed = _splitmix64_next(state)
+            name = (
+                f"seed-{seed:016x}-boundary-{case_index:02d}-"
+                f"data-{case_seed:016x}"
+            )
+            messages.append((name, _seeded_bytes(case_seed, length)))
+
+        for case_index in range(DIFFERENTIAL_RANDOM_CASES):
+            state, length_value = _splitmix64_next(state)
+            state, case_seed = _splitmix64_next(state)
+            length = length_value % (DIFFERENTIAL_MAX_LENGTH + 1)
+            name = (
+                f"seed-{seed:016x}-random-{case_index:02d}-"
+                f"data-{case_seed:016x}"
+            )
+            messages.append((name, _seeded_bytes(case_seed, length)))
+    return messages
+
+
 def _c_digest(executable: Path, message: bytes, output_bits: int) -> str:
     completed = subprocess.run(
         [str(executable), f"-{output_bits}"],
@@ -445,24 +531,31 @@ def check_c_implementation(executable: Path) -> int:
         print(f"reference check: C executable not found: {executable}", file=sys.stderr)
         return 2
 
-    messages = _comparison_messages()
+    cases = [
+        (f"baseline-{case_index:02d}", message)
+        for case_index, message in enumerate(_comparison_messages())
+    ]
+    cases.extend(_differential_messages())
     comparisons = 0
-    for case_index, message in enumerate(messages):
+    for case_index, (case_name, message) in enumerate(cases):
         for output_bits in (256, 512):
             expected = digest(message, output_bits).hex()
             actual = _c_digest(executable, message, output_bits)
             comparisons += 1
             if actual != expected:
                 print(
-                    f"reference mismatch: case={case_index} length={len(message)} "
-                    f"variant=FCH-{output_bits}",
+                    f"reference mismatch: case={case_index} name={case_name} "
+                    f"length={len(message)} variant=FCH-{output_bits}",
                     file=sys.stderr,
                 )
                 print(f"  python: {expected}", file=sys.stderr)
                 print(f"  c     : {actual}", file=sys.stderr)
                 return 1
 
-    print(f"PASS: Python reference matches C ({comparisons} comparisons)")
+    print(
+        f"PASS: Python reference matches C ({comparisons} comparisons, "
+        f"fixed_seeds={len(DIFFERENTIAL_SEEDS)})"
+    )
     return 0
 
 
