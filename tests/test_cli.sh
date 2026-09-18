@@ -18,16 +18,26 @@ digest_from() {
 	sed 's/[[:space:]].*$//' "$1"
 }
 
+path_for_cli() {
+	if [ -n "${MSYSTEM:-}" ] && command -v cygpath >/dev/null 2>&1; then
+		cygpath -m "$1"
+	else
+		printf '%s\n' "$1"
+	fi
+}
+
 input="$tmpdir/input file.bin"
 second="$tmpdir/second.bin"
 printf '\015\012\032\000\377FCH\200binary\012' > "$input"
 printf 'second input\012' > "$second"
+input_arg=$(path_for_cli "$input")
+second_arg=$(path_for_cli "$second")
 
 for bits in 256 512; do
 	file_output="$tmpdir/file-$bits.out"
 	stdin_output="$tmpdir/stdin-$bits.out"
 
-	"$cli" "-$bits" "$input" > "$file_output"
+	"$cli" "-$bits" "$input_arg" > "$file_output"
 	"$cli" "-$bits" < "$input" > "$stdin_output"
 
 	file_digest=$(digest_from "$file_output")
@@ -45,14 +55,14 @@ for bits in 256 512; do
 		*[!0-9a-f]*) fail "FCH-$bits digest is not lowercase hexadecimal" ;;
 	esac
 
-	[ "$(cat "$file_output")" = "$file_digest  $input" ] ||
+	[ "$(cat "$file_output")" = "$file_digest  $input_arg" ] ||
 		fail "FCH-$bits file label is invalid"
 	[ "$(cat "$stdin_output")" = "$stdin_digest  -" ] ||
 		fail "FCH-$bits stdin label is invalid"
 done
 
-"$cli" -256 "$second" > "$tmpdir/second.out"
-"$cli" -256 "$input" "$second" > "$tmpdir/multiple.out"
+"$cli" -256 "$second_arg" > "$tmpdir/second.out"
+"$cli" -256 "$input_arg" "$second_arg" > "$tmpdir/multiple.out"
 {
 	cat "$tmpdir/file-256.out"
 	cat "$tmpdir/second.out"
