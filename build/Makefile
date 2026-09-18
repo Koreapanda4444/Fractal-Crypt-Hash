@@ -24,6 +24,7 @@ ANALYZE_SOURCES = $(SRC) \
         ../bench/bench_hash.c \
         ../tests/test_consistency.c \
         ../tests/test_boundaries.c \
+        ../tests/test_tree_boundaries.c \
         ../tests/test_invariants.c \
         ../tests/test_tree_encoding.c \
         ../tests/test_portability.c \
@@ -41,6 +42,7 @@ ANALYZE_REDUCED_SOURCES = ../tests/test_avalanche.c \
 
 TESTS = test_consistency \
         test_boundaries \
+        test_tree_boundaries \
         test_invariants \
         test_tree_encoding \
         test_portability \
@@ -86,6 +88,12 @@ test_consistency: ../tests/test_consistency.c $(SRC)
 test_boundaries: ../tests/test_boundaries.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+
+test_tree_boundaries: ../tests/test_tree_boundaries.c $(SRC)
+	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
+	$(CC) $(CPPFLAGS) $(CFLAGS) \
+		-DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL \
+		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 test_invariants: ../tests/test_invariants.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))

@@ -1,5 +1,3 @@
-#!/bin/sh
-
 set -eu
 
 LC_ALL=C
@@ -63,12 +61,20 @@ done
 
 "$cli" -256 "$second_arg" > "$tmpdir/second.out"
 "$cli" -256 "$input_arg" "$second_arg" > "$tmpdir/multiple.out"
-{
-	cat "$tmpdir/file-256.out"
-	cat "$tmpdir/second.out"
-} > "$tmpdir/multiple.expected"
-cmp "$tmpdir/multiple.expected" "$tmpdir/multiple.out" >/dev/null ||
-	fail "multiple-file output is invalid"
+second_digest=$(digest_from "$tmpdir/second.out")
+[ "$(cat "$tmpdir/second.out")" = "$second_digest  $second_arg" ] ||
+	fail "second file label is invalid"
+
+expected_first=$(digest_from "$tmpdir/file-256.out")
+expected_second=$second_digest
+actual_first=$(sed -n '1{s/[[:space:]].*$//;p;}' "$tmpdir/multiple.out")
+actual_second=$(sed -n '2{s/[[:space:]].*$//;p;}' "$tmpdir/multiple.out")
+line_count=$(wc -l < "$tmpdir/multiple.out")
+[ "$line_count" -eq 2 ] || fail "multiple-file output has $line_count lines"
+[ "$actual_first" = "$expected_first" ] ||
+	fail "multiple-file first digest is invalid"
+[ "$actual_second" = "$expected_second" ] ||
+	fail "multiple-file second digest is invalid"
 
 "$cli" --help > "$tmpdir/help.out" 2> "$tmpdir/help.err" ||
 	fail "--help returned failure"
