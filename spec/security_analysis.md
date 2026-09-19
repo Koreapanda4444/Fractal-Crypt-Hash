@@ -617,9 +617,10 @@ zeros, ones, an index-derived sequence, and an alternating pattern. CI also
 runs separate sanitizer-backed libFuzzer targets for core hashing, streaming
 partitions, padding boundaries, canonical tree combination, and CLI input
 handling. Each target receives 1,024 runs under its own fixed seed, for 5,120
-requested runs in total. The padding target maps compact control inputs onto
-message lengths through 16,385 bytes so the marker and length-field transitions
-around minimum-padding and tree-leaf boundaries are exercised directly.
+requested runs in total, with a 10-second timeout on each individual input.
+The padding target maps compact control inputs onto message lengths through
+16,385 bytes so the marker and length-field transitions around minimum-padding
+and tree-leaf boundaries are exercised directly.
 
 The GCC path-sensitive analyzer previously covered the eight library sources
 and the command-line tool. It now also checks the benchmark and 21 test

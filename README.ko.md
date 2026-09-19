@@ -154,6 +154,12 @@ make check
 make check-extended
 ```
 
+Linux CI와 같은 AddressSanitizer·UndefinedBehaviorSanitizer 통합 검사 실행:
+
+```sh
+make sanitizer-check
+```
+
 전체 스케일링 벤치마크 빌드 및 실행:
 
 ```sh
@@ -172,10 +178,14 @@ Clang 기반의 제한된 전용 libFuzzer 실행:
 make fuzz-smoke
 ```
 
+스모크 검사는 대상마다 입력 1,024개를 실행하고 입력 하나의 제한시간을 10초로
+둡니다. 로컬 실행에서는 `FUZZ_RUNS`와 `FUZZ_TIMEOUT`으로 이 범위를 바꿀 수
+있습니다.
+
 CI는 Linux에서 GCC와 Clang, macOS에서 Clang, Windows에서 UCRT64 GCC로
 빌드와 테스트를 수행합니다. 32비트 x86 빌드도 실행하며, big-endian PowerPC는
-QEMU에서 고정 벡터, 스트리밍, 구조 불변식과 실패 경로를 검사합니다. Linux
-작업에는 AddressSanitizer와 UndefinedBehaviorSanitizer도 포함됩니다.
+QEMU에서 고정 벡터, 스트리밍, 구조 불변식과 실패 경로를 검사합니다. 별도 Linux
+작업에서 통합 sanitizer 검사와 제한된 libFuzzer 대상 5개를 모두 실행합니다.
 
 ## 문서
 

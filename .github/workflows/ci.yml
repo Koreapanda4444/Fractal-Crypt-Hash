@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ${{ matrix.os }}
@@ -58,20 +65,14 @@ jobs:
 
   sanitizers:
     runs-on: ubuntu-latest
-    env:
-      ASAN_OPTIONS: detect_leaks=0
-      UBSAN_OPTIONS: halt_on_error=1
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Run sanitizers
+      - name: Run ASan and UBSan suites
         working-directory: build
-        run: |
-          make clean
-          make check check-extended \
-            CC=clang \
-            CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+        run: make sanitizer-check
 
   static-analysis:
     runs-on: ubuntu-latest
@@ -89,13 +90,19 @@ jobs:
 
   fuzz-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FUZZ_RUNS: "1024"
+      FUZZ_TIMEOUT: "10"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Run libFuzzer smoke test
+      - name: Run five ASan and UBSan libFuzzer smoke targets
         working-directory: build
-        run: make fuzz-smoke
+        run: |
+          make clean
+          make fuzz-smoke
 
   windows:
     runs-on: windows-latest

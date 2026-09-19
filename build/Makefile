@@ -3,6 +3,12 @@ ANALYZER ?= gcc
 PYTHON ?= python3
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 ANALYZEFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O1
+SANITIZER_CC ?= clang
+SANITIZER_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
+                    -fsanitize=address,undefined \
+                    -fno-omit-frame-pointer
+SANITIZER_ASAN_OPTIONS ?= detect_leaks=0:abort_on_error=1
+SANITIZER_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 CPPFLAGS = -I../include
 DEPFLAGS ?= -MMD -MP
 LDFLAGS =
@@ -73,6 +79,10 @@ FUZZ_TARGETS = fuzz_hash \
 FUZZ_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
                -fsanitize=fuzzer,address,undefined \
                -fno-omit-frame-pointer
+FUZZ_RUNS ?= 1024
+FUZZ_TIMEOUT ?= 10
+FUZZ_ASAN_OPTIONS ?= detect_leaks=0:abort_on_error=1
+FUZZ_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 
 DEPS = $(OBJ:.o=.d) \
        fch.d \
@@ -159,6 +169,13 @@ check-cli: fch ../tests/test_cli.sh
 check: test check-cli
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done
 
+sanitizer-check:
+	$(MAKE) clean
+	ASAN_OPTIONS="$(SANITIZER_ASAN_OPTIONS)" \
+	UBSAN_OPTIONS="$(SANITIZER_UBSAN_OPTIONS)" \
+		$(MAKE) check check-extended \
+		CC="$(SANITIZER_CC)" CFLAGS="$(SANITIZER_CFLAGS)"
+
 check-reference: fch
 	$(PYTHON) ../tools/fch_reference.py --check-c ./fch
 
@@ -233,16 +250,16 @@ fuzz_cli: ../tests/fuzz_cli.c ../tools/fch.c ../tools/fch_cli.h $(SRC)
 		$(LDFLAGS) $(LDLIBS)
 
 fuzz-smoke: $(FUZZ_TARGETS)
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_hash -runs=1024 -max_len=65536 -seed=164981
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_stream -runs=1024 -max_len=65536 -seed=271828
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_padding -runs=1024 -max_len=4096 -seed=314159
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_tree_combine -runs=1024 -max_len=4096 -seed=141421
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_cli -runs=1024 -max_len=65536 -seed=173205
+	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
+		./fuzz_hash -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=164981
+	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
+		./fuzz_stream -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=271828
+	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
+		./fuzz_padding -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=4096 -seed=314159
+	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
+		./fuzz_tree_combine -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=4096 -seed=141421
+	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
+		./fuzz_cli -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=173205
 
 analyze:
 	@set -e; for source in $(ANALYZE_SOURCES); do \
@@ -259,4 +276,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: all test check-cli check check-reference check-trails check-characteristics test-extended check-extended bench bench-check timing-check fuzz-smoke analyze clean
+.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics test-extended check-extended bench bench-check timing-check fuzz-smoke analyze clean

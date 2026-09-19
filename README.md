@@ -157,6 +157,13 @@ make check
 make check-extended
 ```
 
+Run the same combined AddressSanitizer and UndefinedBehaviorSanitizer suite as
+the Linux CI job:
+
+```sh
+make sanitizer-check
+```
+
 Build and run the full scaling benchmark:
 
 ```sh
@@ -176,10 +183,14 @@ Run the bounded focused libFuzzer targets with Clang:
 make fuzz-smoke
 ```
 
+The smoke run uses 1,024 inputs per target and a 10-second per-input timeout.
+`FUZZ_RUNS` and `FUZZ_TIMEOUT` can override those bounds for local runs.
+
 CI builds and tests the code with GCC and Clang on Linux, Clang on macOS, and
 UCRT64 GCC on Windows. It also runs a 32-bit x86 build and executes the fixed
 vectors, streaming checks, invariants, and failure paths on big-endian PowerPC
-through QEMU. Linux jobs include AddressSanitizer and UndefinedBehaviorSanitizer.
+through QEMU. Dedicated Linux jobs run the combined sanitizer suite and all
+five bounded libFuzzer targets.
 
 ## Documentation
 
