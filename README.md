@@ -145,7 +145,8 @@ The repository includes tests for:
 - bounded differential, linear, fixed-point, cycle, and near-collision searches
 - multicollision, second-preimage, grafting, and long-message tree patterns
 - one-shot and streaming equivalence, API lifecycle, and forced allocation failures
-- sanitizer and libFuzzer smoke runs
+- sanitizer-backed libFuzzer targets for core hashing, stream chunking,
+  padding boundaries, tree combination, and CLI input handling
 - bounded-memory processing of an 8 MiB input
 
 Run the regular and extended suites:
@@ -169,7 +170,7 @@ heap use, and allocations per hash. The benchmark covers both digest sizes in
 one-shot and streaming modes and checks that streaming memory stays bounded as
 the input grows.
 
-Run the bounded libFuzzer target with Clang:
+Run the bounded focused libFuzzer targets with Clang:
 
 ```sh
 make fuzz-smoke

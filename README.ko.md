@@ -142,7 +142,8 @@ make check-reference
 - 제한된 차분·선형·고정점·주기·근접 충돌 탐색
 - 멀티콜리전·제2원상·상태 이식·장문 트리 패턴
 - 원샷/스트리밍 동일성, API 수명주기와 강제 할당 실패
-- sanitizer와 libFuzzer 스모크 검사
+- 핵심 해시, 스트림 분할, 패딩 경계, 트리 결합, CLI 입력 처리를 나눈
+  sanitizer 기반 libFuzzer 검사
 - 8 MiB 입력의 제한 메모리 처리
 
 일반 및 확장 테스트 실행:
@@ -165,7 +166,7 @@ CI와 같은 짧은 검사는 `make bench-check`로 실행합니다. CSV 출력�
 해시당 할당 횟수가 담깁니다. 두 출력 크기의 원샷·스트리밍 경로를 모두
 측정하며 입력이 커져도 스트리밍 메모리가 일정하게 유지되는지 검사합니다.
 
-Clang 기반의 제한된 libFuzzer 실행:
+Clang 기반의 제한된 전용 libFuzzer 실행:
 
 ```sh
 make fuzz-smoke

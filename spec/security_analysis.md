@@ -600,8 +600,9 @@ algorithm and the shipped code aligned:
 - one-shot and streaming equivalence across boundary and chunk patterns;
 - explicit little-endian serialization checks, including big-endian CI;
 - rejection of allocation, reader, overflow, and API-lifecycle failures;
-- AddressSanitizer, UndefinedBehaviorSanitizer, and three-seed libFuzzer smoke runs;
-- GCC path-sensitive static analysis over 25 source and test translation units with warnings treated as errors;
+- AddressSanitizer, UndefinedBehaviorSanitizer, and five focused libFuzzer smoke targets;
+- GCC path-sensitive static analysis over 31 source and test translation units
+  with warnings treated as errors;
 - an 8 MiB bounded-memory streaming test; and
 - scaling plus same-length content timing, allocation-count, and peak-heap checks in CI.
 
@@ -613,15 +614,20 @@ does not turn implementation coverage into a cryptographic proof.
 The standalone hardening test now runs 1,024 pseudorandom cases up to 64 KiB
 and 140 structured cases at 35 boundary lengths. The structured inputs cover
 zeros, ones, an index-derived sequence, and an alternating pattern. CI also
-runs the sanitizer-backed libFuzzer target for 2,048 cases under each of three
-fixed seeds with a 64 KiB maximum input, for 6,144 requested runs in total.
+runs separate sanitizer-backed libFuzzer targets for core hashing, streaming
+partitions, padding boundaries, canonical tree combination, and CLI input
+handling. Each target receives 1,024 runs under its own fixed seed, for 5,120
+requested runs in total. The padding target maps compact control inputs onto
+message lengths through 16,385 bytes so the marker and length-field transitions
+around minimum-padding and tree-leaf boundaries are exercised directly.
 
 The GCC path-sensitive analyzer previously covered the eight library sources
-and the command-line tool. It now also checks the benchmark and 15 test
-translation units, including the two reduced-round tests under their required
-build flag. Expanding the scope found an allocation-failure leak in the split
-sensitivity test; that path now frees either successful allocation before
-returning. The library code was unchanged by this fix.
+and the command-line tool. It now also checks the benchmark and 21 test
+translation units, including four focused fuzz targets and two reduced-round
+tests under their required build flag. Expanding the scope found an
+allocation-failure leak in the split sensitivity test; that path now frees
+either successful allocation before returning. The library code was unchanged
+by this fix.
 
 The timing check hashes four different 64 KiB content patterns through both
 one-shot and 1 KiB streaming paths for FCH-256 and FCH-512. Each pattern is

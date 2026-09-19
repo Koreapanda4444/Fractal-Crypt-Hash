@@ -22,6 +22,10 @@ OBJ = $(SRC:.c=.o)
 ANALYZE_SOURCES = $(SRC) \
         ../tools/fch.c \
         ../bench/bench_hash.c \
+        ../tests/fuzz_stream.c \
+        ../tests/fuzz_padding.c \
+        ../tests/fuzz_tree_combine.c \
+        ../tests/fuzz_cli.c \
         ../tests/test_consistency.c \
         ../tests/test_boundaries.c \
         ../tests/test_tree_boundaries.c \
@@ -60,12 +64,22 @@ EXTENDED_TESTS = test_length_variation \
                  test_stress \
                  test_split_sensitivity
 
+FUZZ_TARGETS = fuzz_hash \
+               fuzz_stream \
+               fuzz_padding \
+               fuzz_tree_combine \
+               fuzz_cli
+
+FUZZ_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
+               -fsanitize=fuzzer,address,undefined \
+               -fno-omit-frame-pointer
+
 DEPS = $(OBJ:.o=.d) \
        fch.d \
        $(addsuffix .d,$(TESTS)) \
        $(addsuffix .d,$(EXTENDED_TESTS)) \
        bench_hash.d \
-       fuzz_hash.d
+       $(addsuffix .d,$(FUZZ_TARGETS))
 
 define generate-dependencies
 	@$(1) $(CPPFLAGS) $(2) -MM -MP -MT $@ $(filter %.c,$^) > $@.d.tmp
@@ -193,18 +207,42 @@ timing-check: bench_hash
 	./bench_hash --timing-check
 
 fuzz_hash: ../tests/test_hardening.c $(SRC)
-	$(call generate-dependencies,clang,-std=c11 -Wall -Wextra -Wpedantic -O1 -g -DFCH_FUZZ_STANDALONE)
-	clang $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
-		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
+	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-fuzz-smoke: fuzz_hash
+fuzz_stream: ../tests/fuzz_stream.c $(SRC)
+	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
+	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+
+fuzz_padding: ../tests/fuzz_padding.c $(SRC)
+	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
+	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+
+fuzz_tree_combine: ../tests/fuzz_tree_combine.c $(SRC)
+	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
+	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+
+fuzz_cli: ../tests/fuzz_cli.c ../tools/fch.c ../tools/fch_cli.h $(SRC)
+	$(call generate-dependencies,clang,$(FUZZ_CFLAGS) -DFCH_CLI_NO_MAIN)
+	clang $(CPPFLAGS) $(FUZZ_CFLAGS) -DFCH_CLI_NO_MAIN \
+		-o $@ ../tests/fuzz_cli.c ../tools/fch.c $(SRC) \
+		$(LDFLAGS) $(LDLIBS)
+
+fuzz-smoke: $(FUZZ_TARGETS)
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_hash -runs=2048 -max_len=65536 -seed=164981
+		./fuzz_hash -runs=1024 -max_len=65536 -seed=164981
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_hash -runs=2048 -max_len=65536 -seed=271828
+		./fuzz_stream -runs=1024 -max_len=65536 -seed=271828
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-		./fuzz_hash -runs=2048 -max_len=65536 -seed=314159
+		./fuzz_padding -runs=1024 -max_len=4096 -seed=314159
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+		./fuzz_tree_combine -runs=1024 -max_len=4096 -seed=141421
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+		./fuzz_cli -runs=1024 -max_len=65536 -seed=173205
 
 analyze:
 	@set -e; for source in $(ANALYZE_SOURCES); do \
@@ -217,7 +255,7 @@ analyze:
 	done
 
 clean:
-	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) fch $(TESTS) $(EXTENDED_TESTS) bench_hash fuzz_hash test_vectors_ubsan test_vectors_san
+	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) fch $(TESTS) $(EXTENDED_TESTS) bench_hash $(FUZZ_TARGETS) test_vectors_ubsan test_vectors_san
 
 -include $(DEPS)
 
