@@ -89,14 +89,12 @@ missing_status=0
 grep -q '^fch: cannot open ' "$tmpdir/missing.err" ||
 	fail "missing file omitted its error"
 
-if [ -e /dev/full ]; then
-	output_status=0
-	"$cli" "$input" > /dev/full 2> "$tmpdir/output.err" ||
-		output_status=$?
-	[ "$output_status" -eq 2 ] ||
-		fail "output failure returned $output_status"
-	grep -q '^fch: failed to write output$' "$tmpdir/output.err" ||
-		fail "output failure omitted its error"
-fi
+output_status=0
+"$cli" "$input_arg" >&- 2> "$tmpdir/output.err" ||
+	output_status=$?
+[ "$output_status" -eq 2 ] ||
+	fail "output failure returned $output_status"
+grep -q '^fch: failed to write output$' "$tmpdir/output.err" ||
+	fail "output failure omitted its error"
 
 printf 'PASS: CLI input and error handling\n'
