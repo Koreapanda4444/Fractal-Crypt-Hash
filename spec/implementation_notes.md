@@ -2,6 +2,8 @@
 
 This file records choices made by the C reference implementation. The
 normative algorithm is defined in [fch_spec.md](fch_spec.md).
+Current pass, CI-only, and unverified coverage is tracked in
+[validation_status.md](validation_status.md).
 
 ## Current format
 

@@ -2,6 +2,8 @@
 
 이 문서는 C 레퍼런스 구현에서 선택한 방식과 제약을 정리합니다. 규범 알고리즘은
 [fch_spec.ko.md](fch_spec.ko.md)에 정의되어 있습니다.
+현재 통과 항목, CI 전용 범위와 미검증 항목은
+[validation_status.ko.md](validation_status.ko.md)에 정리합니다.
 
 ## 현재 형식
 

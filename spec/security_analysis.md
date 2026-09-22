@@ -4,6 +4,8 @@ This report records the analysis currently available for tree encoding version
 2 and the 16-round FCH compression core. It is meant to make the evidence,
 limits, and open work visible in one place. The Korean version is available in
 [security_analysis.ko.md](security_analysis.ko.md).
+The concise current execution and claim classification is maintained in
+[validation_status.md](validation_status.md).
 
 The classical target strengths remain those defined by the specification:
 
@@ -680,7 +682,7 @@ as analysis of FCH itself, not just black-box query complexity.
 The security tests are backed by implementation checks that keep the analyzed
 algorithm and the shipped code aligned:
 
-- fixed vectors and 96 C/Python reference comparisons;
+- fixed vectors and 384 C/Python reference comparisons over three fixed seeds;
 - exhaustive 8-bit reduced-round searches with Z3 witness replay;
 - one-shot and streaming equivalence across boundary and chunk patterns;
 - explicit little-endian serialization checks, including big-endian CI;
@@ -719,8 +721,9 @@ The timing check hashes four different 64 KiB content patterns through both
 one-shot and 1 KiB streaming paths for FCH-256 and FCH-512. Each pattern is
 measured in seven interleaved trials of 16 hashes. It requires identical
 allocation counts and peak heap use for every same-length pattern and rejects
-a maximum-to-minimum median time ratio above 1.50. The current run passed all
-four paths; its largest ratio was 1.316.
+a maximum-to-minimum median time ratio above 1.50. The recorded local pass and
+its environment are listed in [validation_status.md](validation_status.md);
+the measured ratio itself is machine-specific.
 
 This is a regression screen for obvious content-dependent behavior, not a
 constant-time certification. FCH is an unkeyed hash and its message is assumed
@@ -742,8 +745,9 @@ methods, findings, and limits of that review.
 
 ### Review map
 
-Read the documents in this order: `fch_spec.md`, `implementation_notes.md`, and
-this report. Then trace each claim into the implementation and its tests.
+Read the documents in this order: `fch_spec.md`, `validation_status.md`,
+`implementation_notes.md`, and this report. Then trace each claim into the
+implementation and its tests.
 
 | Area | Primary files |
 | ---- | ------------- |

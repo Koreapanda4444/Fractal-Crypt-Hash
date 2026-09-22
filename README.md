@@ -22,6 +22,9 @@ generic classical attack costs expected for each output size.
 
 These figures are design targets. The specification describes what still has
 to be analyzed before those targets can be treated as established properties.
+The [validation and security status](spec/validation_status.md) separates
+locally reproduced passes, CI-only coverage, conditional analysis, and work
+that has not been established.
 
 ## Design
 
@@ -235,5 +238,6 @@ five bounded libFuzzer targets.
 ## Documentation
 
 - [Algorithm specification](spec/fch_spec.md)
+- [Validation and security status](spec/validation_status.md)
 - [Security analysis](spec/security_analysis.md)
 - [Implementation notes](spec/implementation_notes.md)
