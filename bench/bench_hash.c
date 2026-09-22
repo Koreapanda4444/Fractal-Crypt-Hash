@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -114,12 +115,18 @@ typedef struct {
 } bench_result_t;
 
 enum {
+    BASELINE_LENGTH_COUNT = 6,
+    BASELINE_TARGET_COUNT = 8,
+    BASELINE_CASE_COUNT = BASELINE_LENGTH_COUNT * BASELINE_TARGET_COUNT,
+    BASELINE_WARMUPS = 1,
+    BASELINE_TRIALS = 5,
     TIMING_PATTERN_COUNT = 4,
     TIMING_TRIALS = 7,
     TIMING_ITERATIONS = 16,
     TIMING_LENGTH = 65536
 };
 
+static const uint32_t BENCH_INPUT_SEED = UINT32_C(0xC001D00D);
 static const double TIMING_RATIO_LIMIT = 1.50;
 
 static uint32_t xorshift32(uint32_t *state) {
@@ -132,7 +139,7 @@ static uint32_t xorshift32(uint32_t *state) {
 }
 
 static void fill_random(uint8_t *buffer, size_t length) {
-    uint32_t state = UINT32_C(0xC001D00D);
+    uint32_t state = BENCH_INPUT_SEED;
     for (size_t i = 0u; i < length; i++)
         buffer[i] = (uint8_t)xorshift32(&state);
 }
@@ -225,6 +232,20 @@ static unsigned int iterations_for_length(size_t length, int quick) {
     if (length >= 1024u)
         return 64u;
     return 256u;
+}
+
+static unsigned int baseline_iterations_for_length(size_t length) {
+    if (length >= 8u * 1024u * 1024u)
+        return 2u;
+    if (length >= 1024u * 1024u)
+        return 8u;
+    if (length >= 256u * 1024u)
+        return 32u;
+    if (length >= 16u * 1024u)
+        return 512u;
+    if (length >= 1024u)
+        return 8192u;
+    return 65536u;
 }
 
 static int measure(
@@ -490,8 +511,188 @@ static void print_result(
     );
 }
 
+static void print_baseline_result(
+    const bench_target_t *target,
+    size_t length,
+    unsigned int iterations,
+    const bench_result_t *result
+) {
+    printf(
+        "baseline-v1,%08" PRIx32 ",process_cpu,%u,%u,"
+        "%s,%zu,%zu,%u,%.6f,%.3f,%zu,%zu\n",
+        BENCH_INPUT_SEED,
+        BASELINE_WARMUPS,
+        BASELINE_TRIALS,
+        target->name,
+        length,
+        target->chunk_size,
+        iterations,
+        result->seconds,
+        result->throughput,
+        result->peak_heap,
+        result->allocations_per_hash
+    );
+}
+
+static int run_baseline_profile(
+    const bench_target_t targets[BASELINE_TARGET_COUNT],
+    const size_t lengths[BASELINE_LENGTH_COUNT],
+    const uint8_t *buffer,
+    volatile uint32_t *sink,
+    size_t *stream_peak
+) {
+    double samples
+        [BASELINE_TARGET_COUNT]
+        [BASELINE_LENGTH_COUNT]
+        [BASELINE_TRIALS];
+    size_t expected_peak
+        [BASELINE_TARGET_COUNT]
+        [BASELINE_LENGTH_COUNT];
+    size_t expected_allocations
+        [BASELINE_TARGET_COUNT]
+        [BASELINE_LENGTH_COUNT];
+
+    for (unsigned int warmup = 0u;
+         warmup < BASELINE_WARMUPS;
+         warmup++) {
+        for (size_t case_index = 0u;
+             case_index < BASELINE_CASE_COUNT;
+             case_index++) {
+            size_t target_index = case_index / BASELINE_LENGTH_COUNT;
+            size_t length_index = case_index % BASELINE_LENGTH_COUNT;
+            bench_result_t current;
+            unsigned int iterations =
+                baseline_iterations_for_length(lengths[length_index]);
+            if (!measure(
+                    &targets[target_index],
+                    buffer,
+                    lengths[length_index],
+                    iterations,
+                    sink,
+                    &current
+                )) {
+                fprintf(
+                    stderr,
+                    "baseline warmup failed: %s bytes=%zu chunk=%zu\n",
+                    targets[target_index].name,
+                    lengths[length_index],
+                    targets[target_index].chunk_size
+                );
+                return 0;
+            }
+            if (warmup == 0u) {
+                expected_peak[target_index][length_index] =
+                    current.peak_heap;
+                expected_allocations[target_index][length_index] =
+                    current.allocations_per_hash;
+            } else if (
+                current.peak_heap !=
+                    expected_peak[target_index][length_index] ||
+                current.allocations_per_hash !=
+                    expected_allocations[target_index][length_index]
+            ) {
+                return 0;
+            }
+        }
+    }
+
+    for (unsigned int trial = 0u; trial < BASELINE_TRIALS; trial++) {
+        for (size_t position = 0u;
+             position < BASELINE_CASE_COUNT;
+             position++) {
+            size_t case_index =
+                (position + (size_t)trial * 13u) % BASELINE_CASE_COUNT;
+            size_t target_index = case_index / BASELINE_LENGTH_COUNT;
+            size_t length_index = case_index % BASELINE_LENGTH_COUNT;
+            bench_result_t current;
+            unsigned int iterations =
+                baseline_iterations_for_length(lengths[length_index]);
+            if (!measure(
+                    &targets[target_index],
+                    buffer,
+                    lengths[length_index],
+                    iterations,
+                    sink,
+                    &current
+                ) ||
+                current.peak_heap !=
+                    expected_peak[target_index][length_index] ||
+                current.allocations_per_hash !=
+                    expected_allocations[target_index][length_index]) {
+                fprintf(
+                    stderr,
+                    "baseline trial failed: %s bytes=%zu chunk=%zu\n",
+                    targets[target_index].name,
+                    lengths[length_index],
+                    targets[target_index].chunk_size
+                );
+                return 0;
+            }
+            samples[target_index][length_index][trial] = current.seconds;
+        }
+    }
+
+    for (size_t target_index = 0u;
+         target_index < BASELINE_TARGET_COUNT;
+         target_index++) {
+        for (size_t length_index = 0u;
+             length_index < BASELINE_LENGTH_COUNT;
+             length_index++) {
+            qsort(
+                samples[target_index][length_index],
+                BASELINE_TRIALS,
+                sizeof(samples[target_index][length_index][0]),
+                compare_double
+            );
+            unsigned int iterations =
+                baseline_iterations_for_length(lengths[length_index]);
+            bench_result_t result;
+            result.seconds =
+                samples[target_index][length_index]
+                    [BASELINE_TRIALS / 2u];
+            double megabytes =
+                ((double)lengths[length_index] * (double)iterations) /
+                1000000.0;
+            result.throughput = result.seconds > 0.0
+                ? megabytes / result.seconds
+                : 0.0;
+            result.peak_heap =
+                expected_peak[target_index][length_index];
+            result.allocations_per_hash =
+                expected_allocations[target_index][length_index];
+            if (result.seconds <= 0.0 ||
+                !validate_scaling(
+                    &targets[target_index],
+                    lengths[length_index],
+                    &result,
+                    stream_peak
+                )) {
+                fprintf(
+                    stderr,
+                    "baseline validation failed: %s bytes=%zu chunk=%zu\n",
+                    targets[target_index].name,
+                    lengths[length_index],
+                    targets[target_index].chunk_size
+                );
+                return 0;
+            }
+            print_baseline_result(
+                &targets[target_index],
+                lengths[length_index],
+                iterations,
+                &result
+            );
+        }
+    }
+    return 1;
+}
+
 static void usage(const char *program) {
-    fprintf(stderr, "Usage: %s [--quick|--timing-check]\n", program);
+    fprintf(
+        stderr,
+        "Usage: %s [--quick|--baseline|--timing-check]\n",
+        program
+    );
 }
 
 int main(int argc, char **argv) {
@@ -521,8 +722,11 @@ int main(int argc, char **argv) {
     };
 
     int quick = 0;
+    int baseline = 0;
     if (argc == 2 && strcmp(argv[1], "--quick") == 0) {
         quick = 1;
+    } else if (argc == 2 && strcmp(argv[1], "--baseline") == 0) {
+        baseline = 1;
     } else if (argc == 2 &&
                strcmp(argv[1], "--timing-check") == 0) {
         return run_timing_check() ? 0 : 1;
@@ -546,10 +750,36 @@ int main(int argc, char **argv) {
 
     volatile uint32_t sink = 0u;
     size_t stream_peak = 0u;
-    puts(
-        "algorithm,bytes,chunk_bytes,iterations,seconds,"
-        "mb_per_second,peak_heap_bytes,allocations_per_hash"
-    );
+    if (baseline) {
+        puts(
+            "profile,input_seed,timer,warmups,trials,algorithm,bytes,"
+            "chunk_bytes,iterations,median_seconds,mb_per_second,"
+            "peak_heap_bytes,allocations_per_hash"
+        );
+    } else {
+        puts(
+            "algorithm,bytes,chunk_bytes,iterations,seconds,"
+            "mb_per_second,peak_heap_bytes,allocations_per_hash"
+        );
+    }
+
+    if (baseline) {
+        int ok = run_baseline_profile(
+            targets,
+            full_lengths,
+            buffer,
+            &sink,
+            &stream_peak
+        );
+        fprintf(
+            stderr,
+            "benchmark sink=%u stream_peak_heap_bytes=%zu\n",
+            (unsigned int)sink,
+            stream_peak
+        );
+        free(buffer);
+        return ok ? 0 : 1;
+    }
 
     for (size_t target_index = 0u;
          target_index < sizeof(targets) / sizeof(targets[0]);

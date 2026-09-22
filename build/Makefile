@@ -1,6 +1,10 @@
 CC = gcc
 ANALYZER ?= gcc
 PYTHON ?= python3
+BENCHMARK_TOOL ?= ../tools/fch_benchmark.py
+BASELINE ?= benchmark-baseline.json
+CURRENT ?= benchmark-current.json
+MAX_REGRESSION ?= 20
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 ANALYZEFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O1
 SANITIZER_CC ?= clang
@@ -220,6 +224,26 @@ bench_hash: ../bench/bench_hash.c $(SRC)
 bench-check: bench_hash
 	./bench_hash --quick
 
+bench-baseline: bench_hash
+	$(PYTHON) $(BENCHMARK_TOOL) capture \
+		--binary ./bench_hash \
+		--compiler "$(CC)" \
+		--cflags "$(CFLAGS)" \
+		--output "$(BASELINE)"
+
+bench-compare: bench_hash
+	$(PYTHON) $(BENCHMARK_TOOL) compare \
+		--binary ./bench_hash \
+		--compiler "$(CC)" \
+		--cflags "$(CFLAGS)" \
+		--baseline "$(BASELINE)" \
+		--output-current "$(CURRENT)" \
+		--max-regression "$(MAX_REGRESSION)"
+
+bench-baseline-check:
+	$(PYTHON) -m unittest discover \
+		-s ../tests -p 'test_benchmark_baseline.py'
+
 timing-check: bench_hash
 	./bench_hash --timing-check
 
@@ -276,4 +300,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics test-extended check-extended bench bench-check timing-check fuzz-smoke analyze clean
+.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean

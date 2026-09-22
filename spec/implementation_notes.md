@@ -127,6 +127,15 @@ streaming hash performs more than its context allocation, if streaming peak
 memory changes with input or chunk size, or if any allocation remains live.
 `--quick` uses a smaller matrix for CI while preserving the scaling checks.
 
+`--baseline` defines the versioned `baseline-v1` measurement profile. It uses
+the complete matrix and fixed input seed, gives every case enough iterations
+for a sustained sample, then interleaves one warmup and five measured passes.
+It emits the median processor time with the deterministic resource counts.
+`tools/fch_benchmark.py` stores those rows with source and environment metadata
+and compares later runs only when their CPU, platform, compiler, and flags
+match. Throughput limits are configurable; heap and allocation changes always
+require explicit review.
+
 ## Compatibility policy
 
 Digest compatibility takes priority over optimization. Allocation strategy,

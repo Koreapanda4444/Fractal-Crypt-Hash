@@ -172,6 +172,20 @@ CI와 같은 짧은 검사는 `make bench-check`로 실행합니다. CSV 출력�
 해시당 할당 횟수가 담깁니다. 두 출력 크기의 원샷·스트리밍 경로를 모두
 측정하며 입력이 커져도 스트리밍 메모리가 일정하게 유지되는지 검사합니다.
 
+같은 시스템에서 다시 비교할 수 있는 기준선을 저장하고 이후 빌드와 비교하려면:
+
+```sh
+make bench-baseline BASELINE=../bench/baselines/local.json
+make bench-compare BASELINE=../bench/baselines/local.json
+```
+
+`baseline-v1` 프로필은 고정 입력 시드와 전체 측정 조합을 사용하고, 한 번의
+워밍업 뒤 다섯 번 측정한 프로세서 시간의 중앙값을 저장합니다. JSON에는 소스
+리비전, 운영체제, CPU, 컴파일러와 플래그, 처리량, 최대 힙과 할당 횟수도 함께
+기록됩니다. 비교는 기록된 실행 환경이 같을 때만 진행하며 메모리·할당 프로필
+변화를 거부하고, 기본적으로 각 조합에서 20%를 넘는 처리량 하락을 실패로
+판정합니다. 다른 한계는 `MAX_REGRESSION`으로 지정할 수 있습니다.
+
 Clang 기반의 제한된 전용 libFuzzer 실행:
 
 ```sh

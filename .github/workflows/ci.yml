@@ -44,6 +44,14 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Verify reproducible benchmark baselines
+        if: matrix.reference
+        working-directory: build
+        run: |
+          make bench-baseline-check PYTHON=python
+          make bench-baseline BASELINE=benchmark-ci.json PYTHON=python
+          python ../tools/fch_benchmark.py validate --file benchmark-ci.json
+
       - name: Install Z3
         if: matrix.reference
         run: python -m pip install --disable-pip-version-check z3-solver==4.13.1.0

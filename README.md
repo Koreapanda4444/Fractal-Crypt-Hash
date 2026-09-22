@@ -177,6 +177,21 @@ heap use, and allocations per hash. The benchmark covers both digest sizes in
 one-shot and streaming modes and checks that streaming memory stays bounded as
 the input grows.
 
+Capture a machine-specific reproducible baseline and compare a later build:
+
+```sh
+make bench-baseline BASELINE=../bench/baselines/local.json
+make bench-compare BASELINE=../bench/baselines/local.json
+```
+
+The `baseline-v1` profile uses the fixed input seed and complete case matrix,
+performs one warmup and five measured trials, and stores the median processor
+time. Its JSON record also includes the source revision, operating system, CPU,
+compiler, flags, throughput, peak heap, and allocation count. Comparisons
+require the same recorded environment, reject resource-profile changes, and
+use a 20 percent per-case throughput regression limit by default. Set
+`MAX_REGRESSION` to choose another limit.
+
 Run the bounded focused libFuzzer targets with Clang:
 
 ```sh

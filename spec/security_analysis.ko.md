@@ -721,6 +721,7 @@ make check-reference
 make check-trails
 make check-characteristics
 make bench-check
+make bench-baseline-check
 make timing-check
 make fuzz-smoke
 make analyze
