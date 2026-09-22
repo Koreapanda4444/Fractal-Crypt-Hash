@@ -154,6 +154,17 @@ make check
 make check-extended
 ```
 
+1~16라운드의 확산, XOR 차분, 회전 대칭과 구조 입력 편향 프로필 재현:
+
+```sh
+make check-reduced-rounds
+```
+
+이 명령은 단위 테스트를 확인하고 고정된 `reduced-round-v1` 프로필을 다시 실행해
+`analysis/reduced-round-v1.json`과 비교합니다. 저장된 JSON에는 라운드별 결과와
+한계값 160개가 모두 들어 있습니다. 프로필을 의도적으로 바꿀 때는
+`make reduced-round-report`로 다시 만들고 코드 변경과 함께 검토해야 합니다.
+
 Linux CI와 같은 AddressSanitizer·UndefinedBehaviorSanitizer 통합 검사 실행:
 
 ```sh

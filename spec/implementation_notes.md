@@ -110,9 +110,16 @@ context cleanup after every failure.
 The regular and extended suites check fixed vectors, C/Python agreement,
 record bytes, canonical boundaries, content independence, prefix stability,
 tree-layout rejection, streaming boundary equivalence, forced allocation
-failures, reduced-round
-diffusion, bounded cryptanalytic searches, long messages, lifecycle failures,
+failures, reduced-round diffusion, bounded cryptanalytic searches, long messages, lifecycle failures,
 fuzz paths, and sanitizer builds.
+
+`tools/fch_reduced_round_analysis.py` evaluates the same compression context
+after every round from 1 through 16. Its fixed profile combines internal-state
+and output diffusion, chosen XOR differences, word rotations, and seven
+structured input families. The deterministic 160-row JSON report is checked
+into `analysis/`; CI validates its schema, reruns the profile, and requires an
+exact result match. Thresholds are regression alarms from round 2 onward, not
+cryptographic bounds.
 
 `bench/bench_hash.c` measures processor time and throughput across inputs from 64
 bytes through 8 MiB. It covers FCH-256 and FCH-512 one-shot hashing, FCH-256

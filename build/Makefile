@@ -5,6 +5,8 @@ BENCHMARK_TOOL ?= ../tools/fch_benchmark.py
 BASELINE ?= benchmark-baseline.json
 CURRENT ?= benchmark-current.json
 MAX_REGRESSION ?= 20
+REDUCED_ROUND_TOOL ?= ../tools/fch_reduced_round_analysis.py
+REDUCED_ROUND_BASELINE ?= ../analysis/reduced-round-v1.json
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 ANALYZEFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O1
 SANITIZER_CC ?= clang
@@ -189,6 +191,16 @@ check-trails:
 check-characteristics:
 	$(PYTHON) ../tools/fch_characteristic_search.py
 
+reduced-round-report:
+	$(PYTHON) $(REDUCED_ROUND_TOOL) capture \
+		--output "$(REDUCED_ROUND_BASELINE)"
+
+check-reduced-rounds:
+	$(PYTHON) -m unittest discover \
+		-s ../tests -p 'test_reduced_round_analysis.py'
+	$(PYTHON) $(REDUCED_ROUND_TOOL) check \
+		--baseline "$(REDUCED_ROUND_BASELINE)"
+
 test-extended: $(EXTENDED_TESTS)
 
 test_length_variation: ../tests/test_length_variation.c $(SRC)
@@ -300,4 +312,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean
+.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean

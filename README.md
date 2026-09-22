@@ -157,6 +157,19 @@ make check
 make check-extended
 ```
 
+Reproduce the 1-through-16-round diffusion, XOR-differential, rotational
+symmetry, and structured-input bias profile:
+
+```sh
+make check-reduced-rounds
+```
+
+The command validates unit tests and reruns the fixed `reduced-round-v1`
+profile against `analysis/reduced-round-v1.json`. The checked-in JSON contains
+all 160 per-round results and thresholds; an intentional profile update can be
+captured with `make reduced-round-report` and must be reviewed with the code
+change.
+
 Run the same combined AddressSanitizer and UndefinedBehaviorSanitizer suite as
 the Linux CI job:
 

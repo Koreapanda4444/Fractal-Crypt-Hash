@@ -71,6 +71,11 @@ jobs:
         working-directory: build
         run: make check-characteristics
 
+      - name: Verify reduced-round experiment baseline
+        if: matrix.reference
+        working-directory: build
+        run: make check-reduced-rounds PYTHON=python
+
   sanitizers:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -55,6 +55,7 @@ The current deterministic run produced the following results:
 | Linear correlation | 8,192 inputs and 32 masks for 8 and 16 rounds | Maximum absolute correlation 3.32% and 2.27% |
 | Low-weight trails | 24,576 candidates at every round from 1 through 16 | One round was weak; at 8 and 16 rounds the minimum output weights were 212 and 210 of 512 bits |
 | Full-state characteristics | All 1,024 single-bit message differences over 32 bases through rounds 1 to 8 | One round was weak; from round 2 every state and output word was active, and no exact full-state trajectory repeated across bases |
+| Integrated round profile | 256 diffusion pairs, 1,024 XOR-differential pairs, 896 rotational pairs, and 896 structured outputs at every round from 1 through 16 | One round was weak; all 150 checked round/family results passed from round 2 onward |
 | Rotation-related patterns | Six 4,096-candidate pattern sets | One round was weak; tested sets had all eight state words active from round 2 onward |
 | Rotational pairs | 3,072 pairs at 1, 2, 4, 8, and 16 rounds over six word rotations | No exact relation; round averages stayed between 49.95% and 50.02% |
 | Additive differentials | 2,048 pairs at 1, 2, 4, 8, and 16 rounds over four modular input differences | One round was weak; from round 2 all output words were active and the maximum bit bias was 4.44% |
@@ -164,6 +165,54 @@ arbitrary, chosen, or higher-weight characteristics, and they do not replace a
 solver-assisted search. The CI thresholds of 256 state bits, 128 output bits,
 full word activation, and no repeated trajectory from round 2 are conservative
 regression alarms rather than claimed security bounds.
+
+### Integrated round-by-round experiments
+
+`tools/fch_reduced_round_analysis.py` puts four experiment classes on the same
+fixed 1-through-16-round axis. The diffusion screen applies 64 stratified bit
+positions to four bases, covering low, 31st, 32nd, and high bits in every
+message word. The differential screen applies eight single-, multi-bit,
+cross-word, full-word, and alternating-word XOR differences to 128 bases. It
+records exact output differences and four fixed 12-bit projections. The
+rotational screen compares seven rotations over 128 bases, including the odd
+7-bit distance not used by the earlier screen. The structural screen evaluates
+128 distinct messages in each of seven families: random, sparse zero, sparse
+one, repeated word, repeated byte, counter, and alternating patterns.
+
+Every pair experiment records the complete 1,024-bit working-state relation and
+the 512-bit feed-forward output relation. The structural experiment records
+per-bit and per-word balance, projected buckets, and complete-output
+uniqueness. The selected summary below shows the largest projection or bias
+after searching the declared sets.
+
+| Rounds | Diffusion output average | Differential 12-bit maximum | Rotational average deviation | Structural maximum bit bias |
+| ------ | ------------------------ | --------------------------- | ---------------------------- | --------------------------- |
+| 1 | 17.832947% | 100.000000% | 0.320435% | 24.218750% |
+| 2 | 49.947357% | 2.343750% | 0.225830% | 14.062500% |
+| 4 | 49.906158% | 1.562500% | 0.234985% | 14.843750% |
+| 8 | 50.074005% | 1.562500% | 0.244141% | 16.406250% |
+| 12 | 49.820709% | 1.562500% | 0.329590% | 17.187500% |
+| 16 | 50.007629% | 2.343750% | 0.350952% | 15.625000% |
+
+The one-round diffusion set contained a four-bit output difference, and one
+chosen differential fixed an entire tested 12-bit projection, so round one is
+explicitly marked `WEAK`. Across rounds 2 through 16, the diffusion output
+average stayed between 49.794769% and 50.247192%; every pair activated all 16
+working-state words and all eight output words. The lowest observed state and
+output weights were 395 of 1,024 and 233 of 512 bits. No exact differential
+repeated within a 128-base chosen-difference set, no exact rotational relation
+occurred, and every structural family produced 128 distinct outputs. The
+largest later 12-bit bucket contained 3/128 samples; the largest structural
+bit and word-mean biases were 19.531250% and 1.843262%.
+
+The profile, thresholds, and all 160 result rows are stored in
+`analysis/reduced-round-v1.json`. `make check-reduced-rounds` runs focused unit
+tests, validates the stored schema, regenerates the results, and requires an
+exact match. These thresholds detect an implementation or experiment drift;
+they are not probability estimates, security bounds, or evidence that
+untested differential, rotational, or structural families are absent. The
+maxima also reflect selection over many bits, projections, and families and
+must not be read as single preselected statistical tests.
 
 ### Rotational and additive screens
 
@@ -665,7 +714,7 @@ this report. Then trace each claim into the implementation and its tests.
 | Parameters, rounds, constants, and compression | `include/params.h`, `src/mix.c`, `src/bitops.c` |
 | Typed records, leaves, nodes, and canonical splitting | `src/leaf.c`, `src/combine.c`, `src/fractal_split.c`, `src/fractal_process.c` |
 | Public API, finalization, and streaming | `src/fch.c`, `src/fch_stream.c`, `include/fch.h`, `include/fch_stream.h` |
-| Reference model and automated searches | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tests/` |
+| Reference model and automated searches | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tools/fch_reduced_round_analysis.py`, `analysis/`, `tests/` |
 
 The Python reference is useful for comparison, but it was developed in the
 same repository and is not an independent specification. Agreement between C
@@ -750,11 +799,10 @@ The most important remaining work is:
 3. expand the automated trail search to wider input spaces and unstructured or
    higher-weight output masks, then use MILP, SAT, or SMT to search general
    5- through 8-round characteristics beyond the two fixed 8-bit families;
-4. extend the bounded full-state single-bit characteristic screen to chosen
-   higher-weight differences, solver-assisted searches, and quantitative
-   bounds, extend rebound and meet-in-the-middle analysis to optimized inbound
-   solving and independent neutral variables, and move the output-only screen
-   beyond its fixed 16-bit family;
+4. extend the new fixed chosen-difference experiments to solver-assisted
+   searches and quantitative bounds, extend rebound and meet-in-the-middle
+   analysis to optimized inbound solving and independent neutral variables,
+   and move the output-only screen beyond its fixed 16-bit family;
 5. construct attacks or tighter bounds for multicollision, expandable-message,
    herding, multi-target, and cross-variant settings, and determine whether the
    union bounds above are tight;
@@ -778,6 +826,7 @@ make check-extended
 make check-reference
 make check-trails
 make check-characteristics
+make check-reduced-rounds
 make bench-check
 make bench-baseline-check
 make timing-check
