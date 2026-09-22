@@ -170,6 +170,18 @@ all 160 per-round results and thresholds; an intentional profile update can be
 captured with `make reduced-round-report` and must be reviewed with the code
 change.
 
+Reproduce the conditional FCH-512 second-preimage accounting:
+
+```sh
+make check-second-preimage-bounds
+```
+
+This checks padding and tree boundaries, canonical descriptor uniqueness, and
+the separation between complete-message queries and typed-map work against
+`analysis/fch512-second-preimage-v1.json`. The reported exponents are
+ideal-map union-bound scales, not attacks or security proofs. An intentional
+profile update is captured with `make second-preimage-report`.
+
 Run the same combined AddressSanitizer and UndefinedBehaviorSanitizer suite as
 the Linux CI job:
 

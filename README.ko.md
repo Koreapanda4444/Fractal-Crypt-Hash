@@ -165,6 +165,18 @@ make check-reduced-rounds
 한계값 160개가 모두 들어 있습니다. 프로필을 의도적으로 바꿀 때는
 `make reduced-round-report`로 다시 만들고 코드 변경과 함께 검토해야 합니다.
 
+FCH-512의 조건부 제2원상 비용 계산 재현:
+
+```sh
+make check-second-preimage-bounds
+```
+
+이 명령은 패딩·트리 경계, 정규 구조 정보의 유일성, 완전 메시지 질의 수와 역할별
+함수 연산량의 구분을 확인하고 `analysis/fch512-second-preimage-v1.json`과
+비교합니다. 기록된 지수는 이상적 함수 합집합 상한의 규모이며 실제 공격이나
+보안 증명이 아닙니다. 의도적인 프로필 변경은 `make second-preimage-report`로
+저장합니다.
+
 Linux CI와 같은 AddressSanitizer·UndefinedBehaviorSanitizer 통합 검사 실행:
 
 ```sh

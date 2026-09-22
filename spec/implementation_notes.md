@@ -121,6 +121,14 @@ into `analysis/`; CI validates its schema, reruns the profile, and requires an
 exact result match. Thresholds are regression alarms from round 2 onward, not
 cryptographic bounds.
 
+`tools/fch_second_preimage_bounds.py` reproduces the FCH-512 conditional
+second-preimage accounting at padding, leaf, large-message, and maximum-length
+boundaries. It checks the canonical descriptor multiplicity, reports complete
+message, typed-map, and serial compression-proxy units separately, and stores
+the deterministic profile in `analysis/fch512-second-preimage-v1.json`. CI
+requires an exact match. These are ideal-map union bounds and format checks,
+not results about the real compression function.
+
 `bench/bench_hash.c` measures processor time and throughput across inputs from 64
 bytes through 8 MiB. It covers FCH-256 and FCH-512 one-shot hashing, FCH-256
 streaming with 1-byte through 64 KiB updates, and FCH-512 streaming with 1 KiB

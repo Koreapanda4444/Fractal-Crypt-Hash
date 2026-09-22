@@ -76,6 +76,11 @@ jobs:
         working-directory: build
         run: make check-reduced-rounds PYTHON=python
 
+      - name: Verify FCH-512 second-preimage bounds
+        if: matrix.reference
+        working-directory: build
+        run: make check-second-preimage-bounds PYTHON=python
+
   sanitizers:
     runs-on: ubuntu-latest
     timeout-minutes: 15

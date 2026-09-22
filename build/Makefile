@@ -7,6 +7,8 @@ CURRENT ?= benchmark-current.json
 MAX_REGRESSION ?= 20
 REDUCED_ROUND_TOOL ?= ../tools/fch_reduced_round_analysis.py
 REDUCED_ROUND_BASELINE ?= ../analysis/reduced-round-v1.json
+SECOND_PREIMAGE_TOOL ?= ../tools/fch_second_preimage_bounds.py
+SECOND_PREIMAGE_BASELINE ?= ../analysis/fch512-second-preimage-v1.json
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 ANALYZEFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O1
 SANITIZER_CC ?= clang
@@ -201,6 +203,16 @@ check-reduced-rounds:
 	$(PYTHON) $(REDUCED_ROUND_TOOL) check \
 		--baseline "$(REDUCED_ROUND_BASELINE)"
 
+second-preimage-report:
+	$(PYTHON) $(SECOND_PREIMAGE_TOOL) capture \
+		--output "$(SECOND_PREIMAGE_BASELINE)"
+
+check-second-preimage-bounds:
+	$(PYTHON) -m unittest discover \
+		-s ../tests -p 'test_second_preimage_bounds.py'
+	$(PYTHON) $(SECOND_PREIMAGE_TOOL) check \
+		--baseline "$(SECOND_PREIMAGE_BASELINE)"
+
 test-extended: $(EXTENDED_TESTS)
 
 test_length_variation: ../tests/test_length_variation.c $(SRC)
@@ -312,4 +324,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean
+.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean

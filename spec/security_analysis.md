@@ -459,80 +459,105 @@ Each full leaf costs one header and nine data records, the final leaf costs one
 header and `ceil(b / 120)` data records, every internal node costs three
 records, and output finalization costs one record.
 
-The conditional model treats `Leaf` and `Node` as independent random maps to
-512 bits on distinct, well-formed typed inputs. It also treats each `d`-bit
-`Output` variant as an independent random map, where `d` is 256 or 512. The
-model assumes there is no shortcut inside the compression construction.
-Domains and tags motivate this separation but do not prove it.
+The formulas for `N`, `T`, and `C(L)` are format facts. The security accounting
+below is conditional: it treats `Leaf` and `Node` as independent random maps to
+512 bits on distinct, well-formed typed inputs, and each `d`-bit `Output`
+variant as an independent random map, where `d` is 256 or 512. It also assumes
+there is no shortcut inside the compression construction. Domains and tags
+motivate this model but do not prove it.
 
 Let `H` be the number of distinct finalized-output inputs evaluated by an
 attacker and `Q` the total number of distinct `Leaf` and `Node` inputs it
 evaluates. For a fixed target, its already known tree states are not included
-in `Q`. A direct union bound gives the following advantages, with every
-right-hand side capped at 1:
+in `Q`. Define `kappa` as the greatest number of target states compatible with
+the role and complete descriptor of any one attacker query. A direct union
+bound gives the following advantages, with every right-hand side capped at 1:
 
 ```text
 Adv_collision(H, Q) <= H(H - 1) / 2^(d + 1)
                        + Q(Q - 1) / 2^513
 
-Adv_second-preimage(H, Q; T) <= H / 2^d + TQ / 2^512
+Adv_second-preimage(H, Q; kappa)
+    <= H / 2^d + kappa Q / 2^512
 
 Adv_preimage(H) <= H / 2^d
 ```
 
-For `r` distinct targets whose trees contain `T_total` leaf and node states in
-total, the corresponding multi-target bound is:
+For `r` distinct targets, let `kappa_r` be the maximum number of their states
+that share the role and descriptor of one query. The corresponding
+multi-target bound is:
 
 ```text
-Adv_multi-target(H, Q; r, T_total)
-    <= rH / 2^d + T_total Q / 2^512
+Adv_multi-target(H, Q; r, kappa_r)
+    <= rH / 2^d + kappa_r Q / 2^512
 ```
 
-These expressions give the following work scales in numbers of typed-map
-evaluations. They are necessary scales under the model, not constructive
-attacks:
+Every subtree in one canonical target has a unique tuple of role, level, leaf
+range, and byte range. At the first divergent node in two equal-root
+computations, the candidate and target descriptors must also be equal.
+Consequently `kappa = 1` for descriptor-compatible substitution into one
+canonical target, and `kappa_r <= r` for `r` targets. Replacing `kappa` with
+the raw state count `T` discards the encoded position constraints and is only
+a descriptor-relaxed bound; it is not the bound for the format implemented
+here.
+
+These expressions give the following conditional scales. They are not
+constructive attacks:
 
 - digest collisions reach the birthday scale near `H = 2^(d/2)`;
 - internal-state collisions reach it near `Q = 2^256`;
 - a fixed-target second preimage requires about `H = 2^d` through finalization
-  or `Q = 2^512 / T` through a target-tree state; and
+  or about `Q = 2^512` through descriptor-compatible tree maps; and
 - `r` targets change those scales to about `2^d / r` and
-  `2^512 / T_total`.
+  `2^512 / kappa_r`.
 
-Tree size affects query count and primitive work differently. If `q`
-independent messages each cause at most `T_max` new tree-map evaluations, then
-`Q <= qT_max`. A birthday event can therefore occur after roughly
-`2^256 / T_max` whole-message queries, but without reusable subtrees those
-queries still perform roughly `2^256` tree-map evaluations in total. The tree
-does not create a generic primitive-work saving in this calculation.
+Tree size still affects complete-message query count. If `q` distinct
+candidates have the target's canonical geometry, then `H <= q` and `Q <= qT`.
+For FCH-512 this gives
 
-The fixed-target term is different because the target supplies `T` states to
-hit. The table shows the deliberately conservative `2^512 / T` scale. Position
-and range descriptors can make many of those states incompatible with a given
-candidate, so the table may understate the real cost.
+```text
+Adv_second-preimage(q) <= q(T + 1) / 2^512.
+```
 
-| Original length `L` | Leaves `N` | Tree states `T` | Compression calls `C(L)` | `log2(2^512 / T)` |
-| ------------------- | ---------- | --------------- | ------------------------ | ------------------ |
-| 0 bytes | 1 | 1 | 3 | 512.00 |
-| 1 KiB | 2 | 3 | 16 | 510.42 |
-| 1 MiB | 1,025 | 2,049 | 13,315 | 501.00 |
-| 1 GiB | 1,048,577 | 2,097,153 | 13,631,491 | 491.00 |
-| `2^61 - 1` bytes | `2^51 + 1` | `2^52 + 1` | 29,273,397,577,908,227 | about 460.00 |
+The unit-advantage union-bound scale is therefore about
+`q = 2^512 / (T + 1)` **complete-message candidates**. Those candidates
+perform up to `q(T + 1)` typed-map evaluations, so the corresponding primitive
+map scale remains about `2^512`. With straightforward full hashing, the serial
+compression-call proxy is `qC(L)`. The reduction in candidate count is not a
+reduction to `2^512 / T` primitive evaluations.
 
-For FCH-256, the `2^256` finalized-output term remains smaller than the
-internal target-state term at every format-valid message length. For FCH-512,
-this conservative reduction can certify only a message-length-dependent
-second-preimage scale, reaching about `2^460` typed-map evaluations at the
-format maximum. It does not provide a `2^460` attack, but it also does not
-establish the unqualified `2^512` target for all message lengths.
+| Original length `L` | Leaves `N` | Tree maps `T` | Calls `C(L)` | `log2(q)` complete candidates | `log2(H + Q)` typed maps | `log2(qC(L))` serial proxy |
+| ------------------- | ---------- | ------------- | ------------ | ----------------------------- | ------------------------- | ---------------------------- |
+| 0 bytes | 1 | 1 | 3 | 511.00 | 512.00 | 512.58 |
+| 1 KiB | 2 | 3 | 16 | 510.00 | 512.00 | 514.00 |
+| 1 MiB | 1,025 | 2,049 | 13,315 | 501.00 | 512.00 | 514.70 |
+| 1 GiB | 1,048,577 | 2,097,153 | 13,631,491 | 491.00 | 512.00 | 514.70 |
+| `2^61 - 1` bytes | `2^51 + 1` | `2^52 + 1` | 29,273,397,577,908,227 | about 460.00 | 512.00 | about 514.70 |
+
+The `q` column is an algebraic union-bound scale and is meaningful only when
+the candidate domain contains that many distinct messages; it is not an
+attack. For FCH-256, the `q / 2^256` output term remains larger than the
+`qT / 2^512` internal term at every format-valid length. For FCH-512, the
+conditional descriptor-compatible typed-map scale is length independent at
+`2^512`, while the number and cost of complete-message queries remain
+length dependent.
 
 Long-message second-preimage shortcuts are known for iterated Merkle-Damgard
 hashes; see Kelsey and Schneier, [Second Preimages on n-bit Hash Functions for
 Much Less than 2^n Work](https://www.schneier.com/wp-content/uploads/2016/02/paper-preimages.pdf).
 That construction depends on an iterative chain and is not claimed to apply
-directly to FCH's canonical, position-bound tree. It is relevant here as a
-reason to state the dependence on `T` instead of quoting one length-independent
-number.
+directly to FCH's canonical, position-bound tree. Position binding blocks the
+specific free interchange of chain states, but no reduction rules out a
+different long-message attack on FCH.
+
+`tools/fch_second_preimage_bounds.py` reproduces the table, checks padding and
+tree boundaries through the format maximum, and enumerates representative
+canonical trees to confirm descriptor uniqueness. The fixed report is stored
+in `analysis/fch512-second-preimage-v1.json`; run
+`make check-second-preimage-bounds` from `build/` to validate it. This is an
+accounting regression check, not cryptanalytic evidence. Likewise, the
+512-candidate second-preimage screen above is an observed bounded result and
+does not establish any exponent in this section.
 
 ### Boundary of the argument
 
@@ -540,10 +565,13 @@ number.
 | --------- | ------ |
 | Padding and canonical-tree uniqueness | Established by the format |
 | Rejection of alternate shapes and positions | Established by the format and implementation checks |
-| Localization of a digest collision or second preimage | Conditional on the typed maps |
+| Unique descriptors and `kappa = 1` for one canonical target | Established by the format; representative trees are regression-tested |
+| Localization of a digest collision or second preimage | Established as a logical implication of the encoding |
+| Resistance of the localized typed maps | Not established for the real compression function |
 | Independence created by domains and tags | Design assumption, not a proof |
-| The numerical targets in the specification | Matched only inside the ideal-map model, except a uniform FCH-512 second-preimage target |
-| Long-message and multi-target security loss | Parameterized union bounds given above; tightness is open |
+| The numerical targets in the specification | Recovered only as conditional ideal-map cost scales |
+| 512-candidate and long-message screens | Observed bounded results, not asymptotic bounds |
+| Long-message and multi-target tightness | Open; the parameterized conditional bounds are given above |
 
 The argument narrows the remaining question: an attack cannot rely only on an
 ambiguous tree representation, but it may still exploit the compression core,
@@ -588,52 +616,60 @@ substantial storage and gives a time-space tradeoff.
 
 | Variant | Generic collision queries | Generic preimage queries | Fixed second-preimage queries |
 | ------- | ------------------------- | ------------------------ | ----------------------------- |
-| FCH-256 | about `2^85.33` | about `2^128` | about `2^128` |
-| FCH-512 | about `2^170.67` | about `2^256` | `min(2^256, 2^256 / sqrt(T_compatible))` |
+| FCH-256 | about `2^85.33` | about `2^128` | about `2^128` complete-hash queries |
+| FCH-512 | about `2^170.67` | about `2^256` | about `2^256` by direct complete-hash search; an optimistic opportunity scale of `2^256 / sqrt(T + 1)`; or `2^256` descriptor-compatible typed-map queries |
 
 These are ideal-map query scales, not measured attack costs or security proofs.
 The 512-bit internal maps also have a generic collision scale of about
 `2^(512/3) = 2^170.67` queries. Thus FCH-256 does not have a 128-bit generic
 quantum collision exponent: its 256-bit output gives about 85.33 bits. FCH-512
 has a generic collision exponent of about 170.67 bits in this model.
+The complete-message opportunity scale in the final column is explained
+below. Unlike direct Grover search on the final digest, it is not an attack
+guaranteed by generic search alone.
 
 ### Tree targets and long messages
 
-For a fixed target message, let `T_compatible` be the number of its `T = 2N -
-1` leaf and node states that are compatible with the role, position, range, and
-other descriptor fields of a candidate input. Necessarily
-`T_compatible <= T`. Searching for an input to a 512-bit typed map that reaches
-any of those states has the generic scale
+For one typed-map query, the role and complete descriptor select at most one
+state in a canonical target. Allowing the descriptor itself to vary creates
+one matching target per descriptor, but expands the searched domain by the
+same factor. The marked fraction therefore remains `2^-512`. Grover search on
+this descriptor-compatible typed-map domain has the conditional scale
 
 ```text
-Q_tree_quantum(T_compatible) = 2^256 / sqrt(T_compatible)
+Q_descriptor-map = 2^256.
 ```
 
-Combining that route with a direct search on the finalized output gives the
-conditional scale
+A complete-message query is a different unit. One candidate computes `T`
+tree maps and one output map, so the classical union bound is at most
+`(T + 1) / 2^512` for FCH-512. If a sufficiently large search family actually
+realizes that many independently searchable marked opportunities, amplitude
+amplification would have the optimistic scale
 
 ```text
-Q_second-preimage(d, T_compatible)
-    = min(2^(d/2), 2^256 / sqrt(T_compatible))
+Q_complete-hash = 2^256 / sqrt(T + 1).
 ```
 
-Using `T_compatible = T` gives a deliberately conservative lower scale. At the
-format maximum, `T = 2^52 + 1`, so the internal term is about `2^230` typed-map
-queries. FCH-256 remains limited by the approximately `2^128` output search.
-For FCH-512, this accounting reaches approximately `2^230` rather than
-`2^256`.
-
-The `2^230` figure is not a concrete attack. It assumes that all target states
-can be searched coherently and ignores descriptor incompatibility and circuit
-cost. It only marks the lowest generic scale justified by this conservative
-ideal-map accounting. A structural quantum attack could be cheaper, while a
-real reversible implementation could be far more expensive.
+The union bound alone does not establish that marked density or construct such
+a family; direct Grover search on the finalized FCH-512 digest remains the
+generic `2^256` complete-hash route. At the format maximum, `T = 2^52 + 1`, so
+the optimistic expression is about `2^230` **complete-hash oracle queries**,
+not typed-map queries. If realized, each query would contain `C(L)` compression
+calls and would have to be implemented reversibly. Multiplying only as a
+serial-call proxy gives an exponent near `284.70`, before accounting for
+uncomputation, circuit depth, qubits, or memory. It is neither a gate estimate
+nor a concrete attack. FCH-256 remains governed by its
+approximately `2^128` output search because the internal 512-bit term is
+larger at every valid length.
 
 For `r` distinct target digests, generic output search becomes
-`2^(d/2) / sqrt(r)`. If all target trees contain `T_total` distinct compatible
-internal states, the corresponding typed-map scale is
-`2^256 / sqrt(T_total)`. These expressions assume an efficient coherent
-membership test and must be capped when the target set is no longer sparse.
+`2^(d/2) / sqrt(r)`. For typed maps, replace `r` by `kappa_r`, the number of
+target states sharing one query's role and descriptor; the scale is
+`2^256 / sqrt(kappa_r)`, with `kappa_r <= r`, when the corresponding target
+set is coherently searchable. A complete-message opportunity calculation may
+again count many events per query, but realizing that bound requires a search
+family and every query must evaluate its whole tree. These expressions must be
+capped when the target set is no longer sparse.
 
 No NIST post-quantum category is assigned from these exponents. Such a label
 would require concrete gate, depth, memory, and failure-cost estimates as well
@@ -714,7 +750,7 @@ this report. Then trace each claim into the implementation and its tests.
 | Parameters, rounds, constants, and compression | `include/params.h`, `src/mix.c`, `src/bitops.c` |
 | Typed records, leaves, nodes, and canonical splitting | `src/leaf.c`, `src/combine.c`, `src/fractal_split.c`, `src/fractal_process.c` |
 | Public API, finalization, and streaming | `src/fch.c`, `src/fch_stream.c`, `include/fch.h`, `include/fch_stream.h` |
-| Reference model and automated searches | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tools/fch_reduced_round_analysis.py`, `analysis/`, `tests/` |
+| Reference model and automated searches | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tools/fch_reduced_round_analysis.py`, `tools/fch_second_preimage_bounds.py`, `analysis/`, `tests/` |
 
 The Python reference is useful for comparison, but it was developed in the
 same repository and is not an independent specification. Agreement between C
@@ -730,8 +766,8 @@ and Python can still preserve a shared design error.
    roles, child order, levels, byte and leaf ranges, original length, output
    size, and finalization cannot be confused or omitted.
 3. **Tree mode:** challenge the collision and second-preimage localization
-   argument, descriptor-compatible target counting, and the `T` and
-   `T_compatible` factors. Consider multicollisions, expandable messages,
+   argument, descriptor-compatible target counting, the `kappa = 1` result,
+   and the separation between complete-message and typed-map costs. Consider multicollisions, expandable messages,
    herding, grafting, long messages, multi-target attacks, and cross-variant
    reuse.
 4. **Output:** inspect feed-forward, truncation, FCH-256/FCH-512 separation, and
@@ -795,7 +831,8 @@ The most important remaining work is:
    publish the resulting scope, findings, dispositions, and unresolved limits;
 2. a formal reduction from the real compression construction to the ideal
    typed-map model, including adaptive-query tightness, descriptor-compatible
-   target counting, and whether the `T` factor can be reached by an attack;
+   target counting, and whether complete-message query savings can become a
+   primitive-work shortcut;
 3. expand the automated trail search to wider input spaces and unstructured or
    higher-weight output masks, then use MILP, SAT, or SMT to search general
    5- through 8-round characteristics beyond the two fixed 8-bit families;
@@ -827,6 +864,7 @@ make check-reference
 make check-trails
 make check-characteristics
 make check-reduced-rounds
+make check-second-preimage-bounds
 make bench-check
 make bench-baseline-check
 make timing-check

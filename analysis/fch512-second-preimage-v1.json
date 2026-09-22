@@ -1,0 +1,300 @@
+{
+  "schema": "fch-second-preimage-bounds-v1",
+  "profile": {
+    "name": "fch512-second-preimage-v1",
+    "state_bits": 512,
+    "output_bits": 512,
+    "leaf_bytes": 1024,
+    "minimum_padded_bytes": 64,
+    "padding_overhead_bytes": 9,
+    "maximum_message_bytes": 2305843009213693951,
+    "lengths": [
+      {
+        "label": "empty",
+        "original_bytes": 0
+      },
+      {
+        "label": "last-minimum-padding",
+        "original_bytes": 55
+      },
+      {
+        "label": "first-above-minimum-padding",
+        "original_bytes": 56
+      },
+      {
+        "label": "last-single-leaf",
+        "original_bytes": 1015
+      },
+      {
+        "label": "first-two-leaf",
+        "original_bytes": 1016
+      },
+      {
+        "label": "one-kibibyte",
+        "original_bytes": 1024
+      },
+      {
+        "label": "one-mebibyte",
+        "original_bytes": 1048576
+      },
+      {
+        "label": "one-gibibyte",
+        "original_bytes": 1073741824
+      },
+      {
+        "label": "format-maximum",
+        "original_bytes": 2305843009213693951
+      }
+    ],
+    "cost_units": {
+      "complete_message_query": "one evaluation of a complete candidate message",
+      "typed_map_evaluation": "one distinct Leaf, Node, or Output input evaluation",
+      "serial_compression_proxy": "complete-message queries multiplied by compression calls per hash"
+    },
+    "conditional_model": [
+      "Leaf and Node are independent random maps to 512 bits on distinct typed inputs.",
+      "Output is an independent random map to 512 bits.",
+      "There is no shortcut inside the compression construction.",
+      "A candidate substitution must match the target role and complete tree descriptor."
+    ]
+  },
+  "established_format_facts": {
+    "geometry": "P=max(64,L+9); N=ceil(P/1024); T=2*N-1",
+    "compression_calls": "C(L)=13*N-11+ceil(b/120)",
+    "canonical_tree": "padded length fixes every split and subtree descriptor",
+    "single_target_descriptor_multiplicity": 1
+  },
+  "conditional_bounds": {
+    "fixed_target": "Adv_2nd(H,Q;kappa) <= H/2^512 + kappa*Q/2^512",
+    "canonical_single_target_kappa": 1,
+    "complete_candidates": "Adv_2nd(q) <= q*(T+1)/2^512 when H<=q and Q<=q*T",
+    "multi_target": "Adv_multi(H,Q;r,kappa_r) <= r*H/2^512 + kappa_r*Q/2^512",
+    "canonical_multi_target_kappa_upper_bound": "kappa_r <= r"
+  },
+  "results": [
+    {
+      "label": "empty",
+      "original_bytes": 0,
+      "padded_bytes": 64,
+      "leaves": 1,
+      "final_leaf_bytes": 64,
+      "root_level": 0,
+      "tree_map_evaluations": 1,
+      "compression_calls_per_hash": 3,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 2,
+      "classical_complete_message_union_scale_log2": 511.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 512.584963,
+      "quantum_complete_hash_opportunity_scale_log2": 255.5,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 257.084963
+    },
+    {
+      "label": "last-minimum-padding",
+      "original_bytes": 55,
+      "padded_bytes": 64,
+      "leaves": 1,
+      "final_leaf_bytes": 64,
+      "root_level": 0,
+      "tree_map_evaluations": 1,
+      "compression_calls_per_hash": 3,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 2,
+      "classical_complete_message_union_scale_log2": 511.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 512.584963,
+      "quantum_complete_hash_opportunity_scale_log2": 255.5,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 257.084963
+    },
+    {
+      "label": "first-above-minimum-padding",
+      "original_bytes": 56,
+      "padded_bytes": 65,
+      "leaves": 1,
+      "final_leaf_bytes": 65,
+      "root_level": 0,
+      "tree_map_evaluations": 1,
+      "compression_calls_per_hash": 3,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 2,
+      "classical_complete_message_union_scale_log2": 511.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 512.584963,
+      "quantum_complete_hash_opportunity_scale_log2": 255.5,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 257.084963
+    },
+    {
+      "label": "last-single-leaf",
+      "original_bytes": 1015,
+      "padded_bytes": 1024,
+      "leaves": 1,
+      "final_leaf_bytes": 1024,
+      "root_level": 0,
+      "tree_map_evaluations": 1,
+      "compression_calls_per_hash": 11,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 2,
+      "classical_complete_message_union_scale_log2": 511.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 514.459432,
+      "quantum_complete_hash_opportunity_scale_log2": 255.5,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 258.959432
+    },
+    {
+      "label": "first-two-leaf",
+      "original_bytes": 1016,
+      "padded_bytes": 1025,
+      "leaves": 2,
+      "final_leaf_bytes": 1,
+      "root_level": 1,
+      "tree_map_evaluations": 3,
+      "compression_calls_per_hash": 16,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 4,
+      "classical_complete_message_union_scale_log2": 510.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 514.0,
+      "quantum_complete_hash_opportunity_scale_log2": 255.0,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 259.0
+    },
+    {
+      "label": "one-kibibyte",
+      "original_bytes": 1024,
+      "padded_bytes": 1033,
+      "leaves": 2,
+      "final_leaf_bytes": 9,
+      "root_level": 1,
+      "tree_map_evaluations": 3,
+      "compression_calls_per_hash": 16,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 4,
+      "classical_complete_message_union_scale_log2": 510.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 514.0,
+      "quantum_complete_hash_opportunity_scale_log2": 255.0,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 259.0
+    },
+    {
+      "label": "one-mebibyte",
+      "original_bytes": 1048576,
+      "padded_bytes": 1048585,
+      "leaves": 1025,
+      "final_leaf_bytes": 9,
+      "root_level": 11,
+      "tree_map_evaluations": 2049,
+      "compression_calls_per_hash": 13315,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 2050,
+      "classical_complete_message_union_scale_log2": 500.998592,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 514.699357,
+      "quantum_complete_hash_opportunity_scale_log2": 250.499296,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 264.200061
+    },
+    {
+      "label": "one-gibibyte",
+      "original_bytes": 1073741824,
+      "padded_bytes": 1073741833,
+      "leaves": 1048577,
+      "final_leaf_bytes": 9,
+      "root_level": 21,
+      "tree_map_evaluations": 2097153,
+      "compression_calls_per_hash": 13631491,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 2097154,
+      "classical_complete_message_union_scale_log2": 490.999999,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 514.700439,
+      "quantum_complete_hash_opportunity_scale_log2": 245.499999,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 269.200439
+    },
+    {
+      "label": "format-maximum",
+      "original_bytes": 2305843009213693951,
+      "padded_bytes": 2305843009213693960,
+      "leaves": 2251799813685249,
+      "final_leaf_bytes": 8,
+      "root_level": 52,
+      "tree_map_evaluations": 4503599627370497,
+      "compression_calls_per_hash": 29273397577908227,
+      "canonical_compatibility_kappa": 1,
+      "complete_candidate_opportunities": 4503599627370498,
+      "classical_complete_message_union_scale_log2": 460.0,
+      "classical_descriptor_map_evaluations_log2": 512.0,
+      "classical_serial_compression_union_proxy_log2": 514.70044,
+      "quantum_complete_hash_opportunity_scale_log2": 230.0,
+      "quantum_descriptor_map_queries_log2": 256.0,
+      "quantum_serial_compression_opportunity_proxy_log2": 284.70044
+    }
+  ],
+  "descriptor_checks": [
+    {
+      "original_bytes": 0,
+      "descriptors": 1,
+      "unique_descriptors": 1,
+      "maximum_compatible_target_states_per_descriptor": 1
+    },
+    {
+      "original_bytes": 55,
+      "descriptors": 1,
+      "unique_descriptors": 1,
+      "maximum_compatible_target_states_per_descriptor": 1
+    },
+    {
+      "original_bytes": 56,
+      "descriptors": 1,
+      "unique_descriptors": 1,
+      "maximum_compatible_target_states_per_descriptor": 1
+    },
+    {
+      "original_bytes": 1015,
+      "descriptors": 1,
+      "unique_descriptors": 1,
+      "maximum_compatible_target_states_per_descriptor": 1
+    },
+    {
+      "original_bytes": 1016,
+      "descriptors": 3,
+      "unique_descriptors": 3,
+      "maximum_compatible_target_states_per_descriptor": 1
+    },
+    {
+      "original_bytes": 1024,
+      "descriptors": 3,
+      "unique_descriptors": 3,
+      "maximum_compatible_target_states_per_descriptor": 1
+    },
+    {
+      "original_bytes": 1048576,
+      "descriptors": 2049,
+      "unique_descriptors": 2049,
+      "maximum_compatible_target_states_per_descriptor": 1
+    }
+  ],
+  "summary": {
+    "status": "PASS",
+    "result_rows": 9,
+    "enumerated_trees": 7,
+    "enumerated_descriptors": 2059,
+    "canonical_single_target_kappa": 1,
+    "classical_descriptor_map_evaluations_log2": 512.0,
+    "quantum_descriptor_map_queries_log2": 256.0
+  },
+  "limitations": [
+    "The bounds are conditional ideal-map union bounds, not proofs for the FCH compression function.",
+    "A unit-advantage union-bound scale is not a constructive attack or a success threshold.",
+    "The square-rooted complete-message value is an optimistic opportunity scale; the union bound does not establish marked density for amplitude amplification.",
+    "Complete-message queries and typed-map evaluations are different cost units.",
+    "The serial compression proxy omits memory, parallelism, circuit depth, uncomputation, and other attack costs.",
+    "The descriptor check establishes canonical compatibility, not resistance to structural or compression shortcuts.",
+    "The existing bounded second-preimage screen is empirical evidence only and does not establish these exponents."
+  ]
+}
