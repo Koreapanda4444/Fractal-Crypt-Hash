@@ -125,50 +125,111 @@ static int reject_read(
     return 0;
 }
 
-static int check_content_independence(void) {
-    enum { LENGTH = 8193 };
-    uint8_t zeros[LENGTH] = {0};
-    uint8_t pattern[LENGTH];
-    for (size_t i = 0; i < sizeof(pattern); i++)
-        pattern[i] = (uint8_t)(i * 73u + (i >> 3u));
-
+static int check_split_case(
+    const uint8_t *zeros,
+    const uint8_t *pattern,
+    size_t length
+) {
     fch_block_t a[FCH_TREE_ARITY];
     fch_block_t b[FCH_TREE_ARITY];
     fch_block_t c[FCH_TREE_ARITY];
     size_t count_a = fch_fractal_split(
-        zeros, sizeof(zeros), 0, a, FCH_TREE_ARITY
+        zeros, length, 0, a, FCH_TREE_ARITY
     );
     size_t count_b = fch_fractal_split(
-        pattern, sizeof(pattern), 0, b, FCH_TREE_ARITY
+        pattern, length, 0, b, FCH_TREE_ARITY
     );
     size_t count_c = fch_fractal_split(
-        pattern, sizeof(pattern), 11, c, FCH_TREE_ARITY
+        pattern, length, 63, c, FCH_TREE_ARITY
     );
+    size_t leaves = 1u + (length - 1u) / FCH_TREE_LEAF_BYTES;
+    size_t expected_count = leaves == 1u ? 1u : FCH_TREE_ARITY;
 
-    REQUIRE(count_a == FCH_TREE_ARITY, "binary split count mismatch");
+    REQUIRE(count_a == expected_count, "split count mismatch");
     REQUIRE(count_b == count_a && count_c == count_a, "split count changed");
     REQUIRE(same_blocks(a, b, count_a), "message changed tree shape");
     REQUIRE(same_blocks(a, c, count_a), "depth changed tree shape");
+    REQUIRE(a[0].offset == 0u, "first child offset mismatch");
+    if (leaves == 1u) {
+        REQUIRE(a[0].length == length, "single leaf span mismatch");
+    } else {
+        size_t left_leaves = 1u;
+        while (left_leaves <= (leaves - 1u) / 2u)
+            left_leaves *= 2u;
+        size_t left_length = left_leaves * FCH_TREE_LEAF_BYTES;
+        REQUIRE(a[0].length == left_length &&
+                a[1].offset == left_length &&
+                a[1].length == length - left_length,
+                "canonical left subtree boundary mismatch");
+    }
+
+    fch_tree_position_t root;
+    REQUIRE(fch_tree_position_for_range(0u, length, &root),
+            "split root position failed");
+    REQUIRE(check_position_recursive(&root), "split descendants are invalid");
 
     rejecting_reader_t context = {0};
     fch_reader_t reader = { reject_read, &context };
     fch_block_t reader_blocks[FCH_TREE_ARITY];
     REQUIRE(
         fch_fractal_split_reader(
-            &reader,
-            0,
-            sizeof(pattern),
-            0,
-            reader_blocks,
-            FCH_TREE_ARITY
-        ) == FCH_TREE_ARITY,
+            &reader, 0u, length, 0, reader_blocks, FCH_TREE_ARITY
+        ) == expected_count,
         "reader split failed"
     );
     REQUIRE(context.calls == 0u, "tree schedule read message bytes");
-    REQUIRE(
-        same_blocks(a, reader_blocks, count_a),
-        "reader split differs from memory split"
-    );
+    REQUIRE(same_blocks(a, reader_blocks, count_a),
+            "reader split differs from memory split");
+    return 1;
+}
+
+static int check_content_independence(void) {
+    static const size_t lengths[] = {
+        1u, 63u, 64u, 1023u, 1025u, 2047u, 2049u,
+        3073u, 4097u, 5127u, 8193u, 9233u, 16385u
+    };
+    enum { LENGTH = FCH_TREE_LEAF_BYTES * 17u };
+    uint8_t zeros[LENGTH] = {0};
+    uint8_t pattern[LENGTH];
+    for (size_t i = 0; i < sizeof(pattern); i++)
+        pattern[i] = (uint8_t)(i * 73u + (i >> 3u));
+
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        if (!check_split_case(zeros, pattern, lengths[i]))
+            return 0;
+    }
+    for (size_t leaves = 1u; leaves <= 17u; leaves++) {
+        if (!check_split_case(zeros, pattern, leaves * FCH_TREE_LEAF_BYTES))
+            return 0;
+    }
+    return 1;
+}
+
+static int prefix_subtrees_remain_stable(void) {
+    static const size_t completed_prefixes[] = {1u, 2u, 4u, 8u};
+
+    for (size_t i = 0;
+         i < sizeof(completed_prefixes) / sizeof(completed_prefixes[0]);
+         i++) {
+        size_t prefix_leaves = completed_prefixes[i];
+        size_t extended_leaves = prefix_leaves + 1u;
+        fch_tree_position_t root;
+        fch_tree_position_t children[FCH_TREE_ARITY];
+
+        REQUIRE(fch_tree_position_for_range(
+                    0u,
+                    extended_leaves * FCH_TREE_LEAF_BYTES,
+                    &root),
+                "extended prefix position failed");
+        REQUIRE(fch_tree_split_position(&root, children),
+                "extended prefix split failed");
+        REQUIRE(children[0].first_leaf == 0u &&
+                children[0].leaf_count == prefix_leaves &&
+                children[0].byte_offset == 0u &&
+                children[0].byte_length ==
+                    prefix_leaves * FCH_TREE_LEAF_BYTES,
+                "completed prefix subtree moved after extension");
+    }
     return 1;
 }
 
@@ -382,6 +443,7 @@ static int check_encoding_constants(void) {
 int main(void) {
     if (!check_canonical_schedule() ||
         !check_content_independence() ||
+        !prefix_subtrees_remain_stable() ||
         !check_leaf_position_binding() ||
         !check_combine_validation() ||
         !check_encoding_constants())

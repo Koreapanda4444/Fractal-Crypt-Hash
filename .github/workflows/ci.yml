@@ -248,7 +248,7 @@ jobs:
         run: |
           make clean
           make fch test_boundaries test_invariants \
-            test_tree_boundaries test_stream_equivalence test_portability \
+            test_stream_equivalence test_portability \
             test_vectors test_failures \
             CC=powerpc64-linux-gnu-gcc \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
@@ -258,7 +258,6 @@ jobs:
         run: |
           for test_bin in \
             test_boundaries \
-            test_tree_boundaries \
             test_stream_equivalence \
             test_invariants \
             test_portability \

@@ -41,7 +41,6 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/fuzz_tree_combine.c \
         ../tests/fuzz_cli.c \
         ../tests/test_boundaries.c \
-        ../tests/test_tree_boundaries.c \
         ../tests/test_stream_equivalence.c \
         ../tests/test_invariants.c \
         ../tests/test_tree_encoding.c \
@@ -52,14 +51,12 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/test_failures.c \
         ../tests/test_length_variation.c \
         ../tests/test_depth_diffusion.c \
-        ../tests/test_stress.c \
-        ../tests/test_split_sensitivity.c
+        ../tests/test_stress.c
 
 ANALYZE_REDUCED_SOURCES = ../tests/test_avalanche.c \
         ../tests/test_cryptanalysis.c
 
 TESTS = test_boundaries \
-        test_tree_boundaries \
         test_stream_equivalence \
         test_invariants \
         test_tree_encoding \
@@ -73,8 +70,7 @@ TESTS = test_boundaries \
 
 EXTENDED_TESTS = test_length_variation \
                  test_depth_diffusion \
-                 test_stress \
-                 test_split_sensitivity
+                 test_stress
 
 FUZZ_TARGETS = fuzz_hash \
                fuzz_stream \
@@ -114,14 +110,8 @@ fch: $(OBJ) ../tools/fch.c
 test: $(TESTS)
 
 test_boundaries: ../tests/test_boundaries.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS))
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
-
-test_tree_boundaries: ../tests/test_tree_boundaries.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
-	$(CC) $(CPPFLAGS) $(CFLAGS) \
-		-DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL \
-		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 test_stream_equivalence: ../tests/test_stream_equivalence.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
@@ -221,15 +211,10 @@ test_stress: ../tests/test_stress.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-test_split_sensitivity: ../tests/test_split_sensitivity.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS))
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
-
 check-extended: test-extended
 	./test_length_variation
 	./test_depth_diffusion
 	./test_stress --big-mb 1 --iters-big 1 --small-kb 4 --iters-small 16 --quiet
-	./test_split_sensitivity
 
 bench: bench_hash
 

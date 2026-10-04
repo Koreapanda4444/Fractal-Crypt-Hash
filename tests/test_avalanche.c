@@ -410,6 +410,51 @@ static int test_length_csv(size_t len, flip_mode_t mode) {
 
 #include "test_patterns.c"
 
+#define BOUNDARY_REQUIRE(condition, message) \
+    do { \
+        if (!(condition)) { \
+            fprintf(stderr, "FAIL: %s\n", (message)); \
+            return 0; \
+        } \
+    } while (0)
+
+static int boundary_diffusion(void) {
+    static const size_t lengths[] = {
+        FCH_TREE_LEAF_BYTES - 10u,
+        FCH_TREE_LEAF_BYTES - 9u,
+        FCH_TREE_LEAF_BYTES - 8u,
+        FCH_TREE_LEAF_BYTES * 2u - 10u,
+        FCH_TREE_LEAF_BYTES * 2u - 9u,
+        FCH_TREE_LEAF_BYTES * 2u - 8u
+    };
+    uint8_t message[FCH_TREE_LEAF_BYTES * 2u];
+    uint8_t changed[FCH_TREE_LEAF_BYTES * 2u];
+    uint32_t state = UINT32_C(0xA5A55A5A);
+    for (size_t i = 0; i < sizeof(message); i++)
+        message[i] = (uint8_t)(xorshift32(&state) + (uint32_t)i * 29u);
+
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        size_t length = lengths[i];
+        uint8_t base256[32];
+        uint8_t changed256[32];
+        uint8_t base512[64];
+        uint8_t changed512[64];
+
+        memcpy(changed, message, length);
+        changed[length / 2u] ^= (uint8_t)(1u << (i % 8u));
+        BOUNDARY_REQUIRE(fch_hash_256_checked(message, length, base256) &&
+                fch_hash_256_checked(changed, length, changed256) &&
+                fch_hash_512_checked(message, length, base512) &&
+                fch_hash_512_checked(changed, length, changed512),
+                "boundary hash failed");
+        BOUNDARY_REQUIRE(bit_diff(base256, changed256, sizeof(base256)) >= 64,
+                "weak 256-bit diffusion at a leaf boundary");
+        BOUNDARY_REQUIRE(bit_diff(base512, changed512, sizeof(base512)) >= 160,
+                "weak 512-bit diffusion at a leaf boundary");
+    }
+    return 1;
+}
+
 int main(void) {
     size_t lengths[] = {
         0, 1, 8, 32,
@@ -443,6 +488,9 @@ int main(void) {
         if (!test_length_csv(lengths[i], FLIP_SWEEP))
             failures++;
     }
+
+    if (!boundary_diffusion())
+        failures++;
 
     if (!run_pattern_stress_tests())
         failures++;
