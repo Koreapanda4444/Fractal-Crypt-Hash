@@ -57,7 +57,15 @@ for bits in 256 512; do
 		fail "FCH-$bits file label is invalid"
 	[ "$(cat "$stdin_output")" = "$stdin_digest  -" ] ||
 		fail "FCH-$bits stdin label is invalid"
+
+	"$cli" "--$bits" < "$input" > "$tmpdir/alias-$bits.out"
+	[ "$(cat "$tmpdir/alias-$bits.out")" = "$stdin_digest  -" ] ||
+		fail "FCH-$bits long option differs from short option"
 done
+
+"$cli" < "$input" > "$tmpdir/default.out"
+[ "$(cat "$tmpdir/default.out")" = "$(cat "$tmpdir/stdin-256.out")" ] ||
+	fail "default mode differs from FCH-256"
 
 "$cli" -256 "$second_arg" > "$tmpdir/second.out"
 "$cli" -256 "$input_arg" "$second_arg" > "$tmpdir/multiple.out"
@@ -76,10 +84,12 @@ line_count=$(wc -l < "$tmpdir/multiple.out")
 [ "$actual_second" = "$expected_second" ] ||
 	fail "multiple-file second digest is invalid"
 
-"$cli" --help > "$tmpdir/help.out" 2> "$tmpdir/help.err" ||
-	fail "--help returned failure"
-[ ! -s "$tmpdir/help.out" ] || fail "--help wrote to stdout"
-grep -q '^Usage:' "$tmpdir/help.err" || fail "--help omitted usage"
+for option in -h --help; do
+	"$cli" "$option" > "$tmpdir/help.out" 2> "$tmpdir/help.err" ||
+		fail "$option returned failure"
+	[ ! -s "$tmpdir/help.out" ] || fail "$option wrote to stdout"
+	grep -q '^Usage:' "$tmpdir/help.err" || fail "$option omitted usage"
+done
 
 missing_status=0
 "$cli" "$tmpdir/missing.bin" > "$tmpdir/missing.out" 2> "$tmpdir/missing.err" ||

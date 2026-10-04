@@ -631,7 +631,7 @@ FCH-512 해시값을 직접 Grover 탐색하는 일반 경로는 여전히 완�
 - 경계값과 여러 청크 분할에서 원샷·스트리밍 결과 비교
 - big-endian CI를 포함한 little-endian 직렬화 확인
 - 메모리 할당, reader, 오버플로와 API 수명주기 실패 처리
-- AddressSanitizer, UndefinedBehaviorSanitizer와 목적별 libFuzzer 스모크 대상 5개
+- AddressSanitizer, UndefinedBehaviorSanitizer와 목적별 libFuzzer 스모크 대상 4개
 - 라이브러리, CLI, 벤치마크, regression, 연구와 fuzz 소스에 대해 경고를
   오류로 처리하는 GCC 경로 기반 정적 분석
 - 8 MiB 입력의 제한 메모리 스트리밍
@@ -650,9 +650,12 @@ libFuzzer 대상 및 regression과 겹쳐 제거했습니다. 구조 입력 패�
 청크 패턴 비교는 `test_stress.c`로 옮겼습니다.
 
 실제 핵심 해시 libFuzzer 진입점은 `tests/fuzz_hash.c`에 유지합니다. CI는 핵심
-해시, 스트림 분할, 패딩 경계, 정규 트리 결합과 CLI 입력 처리를 맡는 sanitizer
-기반 대상을 실행합니다. 각 대상은 서로 다른 고정 시드로 1,024회씩 실행하므로
-총 요청 횟수는 5,120회이며 입력 하나의 제한시간은 10초입니다. 패딩 대상은 작은
+해시, 스트림 분할, 패딩 경계와 정규 트리 결합을 맡는 sanitizer 기반 대상을
+실행합니다. CLI harness는 고정된 인자 모드만 선택하고 대부분 입력 해시를
+반복해 제거했습니다. 기본 모드, 짧은·긴 출력 옵션, 도움말, 출력 이름, 바이너리
+stdin, 여러 파일과 오류 처리는 `test_cli.sh`에 유지합니다. 유지한 각 대상은
+서로 다른 고정 시드로 1,024회씩 실행하므로 총 요청 횟수는 4,096회이며 입력
+하나의 제한시간은 10초입니다. 패딩 대상은 작은
 제어 입력을 최대 16,385바이트의 메시지 길이로 변환해 최소 패딩과 트리 리프
 경계 주변의 마커·길이 필드 전환을 직접 검사합니다.
 

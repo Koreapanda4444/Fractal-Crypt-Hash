@@ -10,7 +10,6 @@
 
 #include "fch.h"
 #include "fch_stream.h"
-#include "fch_cli.h"
 
 static int prepare_stdin(FILE *input, FILE *error) {
 #ifdef _WIN32
@@ -136,7 +135,7 @@ static void usage(FILE *error, const char *argv0) {
 		argv0);
 }
 
-int fch_cli_run(
+static int fch_cli_run(
 	int argc,
 	char **argv,
 	FILE *input,
@@ -183,8 +182,6 @@ int fch_cli_run(
 	return exit_code;
 }
 
-#ifndef FCH_CLI_NO_MAIN
 int main(int argc, char **argv) {
 	return fch_cli_run(argc, argv, stdin, stdout, stderr);
 }
-#endif

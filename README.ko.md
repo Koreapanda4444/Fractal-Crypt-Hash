@@ -144,7 +144,7 @@ make check-reference
 - 제한된 차분·선형·고정점·주기·근접 충돌 탐색
 - 멀티콜리전·제2원상·상태 이식·장문 트리 패턴
 - 원샷/스트리밍 동일성, API 수명주기와 강제 할당 실패
-- 핵심 해시, 스트림 분할, 패딩 경계, 트리 결합, CLI 입력 처리를 나눈
+- 핵심 해시, 스트림 분할, 패딩 경계와 트리 결합을 나눈
   sanitizer 기반 libFuzzer 검사
 - 8 MiB 입력의 제한 메모리 처리
 
@@ -227,7 +227,7 @@ make fuzz-smoke
 CI는 Linux에서 GCC와 Clang, macOS에서 Clang, Windows에서 UCRT64 GCC로
 빌드와 테스트를 수행합니다. 32비트 x86 빌드도 실행하며, big-endian PowerPC는
 QEMU에서 고정 벡터, 스트리밍, 구조 불변식과 실패 경로를 검사합니다. 별도 Linux
-작업에서 통합 sanitizer 검사와 제한된 libFuzzer 대상 5개를 모두 실행합니다.
+작업에서 통합 sanitizer 검사와 제한된 libFuzzer 대상 4개를 모두 실행합니다.
 
 ## 문서
 

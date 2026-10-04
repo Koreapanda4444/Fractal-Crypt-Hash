@@ -116,7 +116,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Run five ASan and UBSan libFuzzer smoke targets
+      - name: Run four ASan and UBSan libFuzzer smoke targets
         working-directory: build
         run: |
           make clean

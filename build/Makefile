@@ -39,7 +39,6 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/fuzz_stream.c \
         ../tests/fuzz_padding.c \
         ../tests/fuzz_tree_combine.c \
-        ../tests/fuzz_cli.c \
         ../tests/test_boundaries.c \
         ../tests/test_stream_equivalence.c \
         ../tests/test_invariants.c \
@@ -69,8 +68,7 @@ EXTENDED_TESTS = test_stress
 FUZZ_TARGETS = fuzz_hash \
                fuzz_stream \
                fuzz_padding \
-               fuzz_tree_combine \
-               fuzz_cli
+               fuzz_tree_combine
 
 FUZZ_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
                -fsanitize=fuzzer,address,undefined \
@@ -256,12 +254,6 @@ fuzz_tree_combine: ../tests/fuzz_tree_combine.c $(SRC)
 	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-fuzz_cli: ../tests/fuzz_cli.c ../tools/fch.c ../tools/fch_cli.h $(SRC)
-	$(call generate-dependencies,clang,$(FUZZ_CFLAGS) -DFCH_CLI_NO_MAIN)
-	clang $(CPPFLAGS) $(FUZZ_CFLAGS) -DFCH_CLI_NO_MAIN \
-		-o $@ ../tests/fuzz_cli.c ../tools/fch.c $(SRC) \
-		$(LDFLAGS) $(LDLIBS)
-
 fuzz-smoke: $(FUZZ_TARGETS)
 	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
 		./fuzz_hash -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=164981
@@ -271,8 +263,6 @@ fuzz-smoke: $(FUZZ_TARGETS)
 		./fuzz_padding -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=4096 -seed=314159
 	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
 		./fuzz_tree_combine -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=4096 -seed=141421
-	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
-		./fuzz_cli -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=173205
 
 analyze:
 	@set -e; for source in $(ANALYZE_SOURCES); do \

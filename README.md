@@ -149,7 +149,7 @@ The repository includes tests for:
 - multicollision, second-preimage, grafting, and long-message tree patterns
 - one-shot and streaming equivalence, API lifecycle, and forced allocation failures
 - sanitizer-backed libFuzzer targets for core hashing, stream chunking,
-  padding boundaries, tree combination, and CLI input handling
+  padding boundaries, and tree combination
 - bounded-memory processing of an 8 MiB input
 
 Run the regular and extended suites:
@@ -236,7 +236,7 @@ CI builds and tests the code with GCC and Clang on Linux, Clang on macOS, and
 UCRT64 GCC on Windows. It also runs a 32-bit x86 build and executes the fixed
 vectors, streaming checks, invariants, and failure paths on big-endian PowerPC
 through QEMU. Dedicated Linux jobs run the combined sanitizer suite and all
-five bounded libFuzzer targets.
+four bounded libFuzzer targets.
 
 ## Documentation
 

@@ -687,7 +687,7 @@ algorithm and the shipped code aligned:
 - one-shot and streaming equivalence across boundary and chunk patterns;
 - explicit little-endian serialization checks, including big-endian CI;
 - rejection of allocation, reader, overflow, and API-lifecycle failures;
-- AddressSanitizer, UndefinedBehaviorSanitizer, and five focused libFuzzer smoke targets;
+- AddressSanitizer, UndefinedBehaviorSanitizer, and four focused libFuzzer smoke targets;
 - GCC path-sensitive static analysis over library, CLI, benchmark, regression,
   research, and fuzz sources with warnings treated as errors;
 - an 8 MiB bounded-memory streaming test; and
@@ -709,8 +709,11 @@ now run in `test_failures.c`; the 8 MiB chunk-pattern comparison runs in
 
 The actual core-hash libFuzzer entry point is preserved in `tests/fuzz_hash.c`.
 CI runs sanitizer-backed targets for core hashing, streaming partitions,
-padding boundaries, canonical tree combination, and CLI input handling. Each
-target receives 1,024 runs under its own fixed seed, for 5,120 requested runs
+padding boundaries, and canonical tree combination. The CLI harness was removed
+because it selected from fixed argument modes and mostly repeated payload
+hashing. Default mode, short/long variant options, help, labels, binary stdin,
+multiple files and error handling remain in `test_cli.sh`. Each retained
+target receives 1,024 runs under its own fixed seed, for 4,096 requested runs
 in total, with a 10-second timeout on each individual input. The padding target
 maps compact control inputs onto message lengths through 16,385 bytes so the
 marker and length-field transitions around minimum-padding and tree-leaf
