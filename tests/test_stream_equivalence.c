@@ -56,6 +56,23 @@ static void fill_input(uint8_t *data, size_t length) {
     }
 }
 
+static void fill_structured(
+    uint8_t *data,
+    size_t length,
+    unsigned int pattern
+) {
+    for (size_t i = 0; i < length; i++) {
+        if (pattern == 0u)
+            data[i] = 0u;
+        else if (pattern == 1u)
+            data[i] = 0xFFu;
+        else if (pattern == 2u)
+            data[i] = (uint8_t)(i * 131u + i / 17u);
+        else
+            data[i] = (uint8_t)((i & 1u) ? 0xAAu : 0x55u);
+    }
+}
+
 static size_t next_chunk(
     const chunk_plan_t *plan,
     size_t index,
@@ -220,7 +237,8 @@ int main(void) {
             UINT64_C(0x94A53EED00000003)}
     };
     static const size_t boundary_lengths[] = {
-        0u, 1u, 54u, 55u, 56u, 63u, 64u, 65u,
+        0u, 1u, 7u, 8u, 31u, 32u, 54u, 55u, 56u, 63u, 64u, 65u,
+        127u, 128u, 129u, 255u, 256u, 257u, 511u, 512u, 513u,
         1014u, 1015u, 1016u, 1023u, 1024u, 1025u,
         2038u, 2039u, 2040u, 2047u, 2048u, 2049u,
         3062u, 3063u, 3064u, 3071u, 3072u, 3073u,
@@ -260,6 +278,23 @@ int main(void) {
             )) {
             free(data);
             return 1;
+        }
+    }
+
+    for (unsigned int pattern = 0u; pattern < 4u; pattern++) {
+        fill_structured(data, MAX_INPUT_LENGTH, pattern);
+        for (size_t i = 0u;
+             i < sizeof(boundary_lengths) / sizeof(boundary_lengths[0]);
+             i++) {
+            if (!check_length(
+                    data,
+                    boundary_lengths[i],
+                    exhaustive_plans,
+                    sizeof(exhaustive_plans) / sizeof(exhaustive_plans[0])
+                )) {
+                free(data);
+                return 1;
+            }
         }
     }
 

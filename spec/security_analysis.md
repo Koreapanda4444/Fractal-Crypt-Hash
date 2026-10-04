@@ -688,8 +688,8 @@ algorithm and the shipped code aligned:
 - explicit little-endian serialization checks, including big-endian CI;
 - rejection of allocation, reader, overflow, and API-lifecycle failures;
 - AddressSanitizer, UndefinedBehaviorSanitizer, and five focused libFuzzer smoke targets;
-- GCC path-sensitive static analysis over 31 source and test translation units
-  with warnings treated as errors;
+- GCC path-sensitive static analysis over library, CLI, benchmark, regression,
+  research, and fuzz sources with warnings treated as errors;
 - an 8 MiB bounded-memory streaming test; and
 - scaling plus same-length content timing, allocation-count, and peak-heap checks in CI.
 
@@ -698,24 +698,28 @@ does not turn implementation coverage into a cryptographic proof.
 
 ### Fuzzing, static analysis, and timing review
 
-The standalone hardening test now runs 1,024 pseudorandom cases up to 64 KiB
-and 140 structured cases at 35 boundary lengths. The structured inputs cover
-zeros, ones, an index-derived sequence, and an alternating pattern. CI also
-runs separate sanitizer-backed libFuzzer targets for core hashing, streaming
-partitions, padding boundaries, canonical tree combination, and CLI input
-handling. Each target receives 1,024 runs under its own fixed seed, for 5,120
-requested runs in total, with a 10-second timeout on each individual input.
-The padding target maps compact control inputs onto message lengths through
-16,385 bytes so the marker and length-field transitions around minimum-padding
-and tree-leaf boundaries are exercised directly.
+The standalone pseudorandom hardening smoke driver was removed because its
+hashing, partition, and lifecycle invariants overlap the libFuzzer targets and
+existing regression suites. Its four structured patterns were retained in
+`test_stream_equivalence.c`, where they cover 69 boundary lengths with three
+chunk plans for both output sizes. The existing 0-through-4097 exhaustive
+length checks and wider boundary chunk plans remain. API and reader failures
+now run in `test_failures.c`; the 8 MiB chunk-pattern comparison runs in
+`test_stress.c`.
 
-The GCC path-sensitive analyzer previously covered the eight library sources
-and the command-line tool. It now also checks the benchmark and 21 test
-translation units, including four focused fuzz targets and two reduced-round
-tests under their required build flag. Expanding the scope found an
-allocation-failure leak in the split sensitivity test; that path now frees
-either successful allocation before returning. The library code was unchanged
-by this fix.
+The actual core-hash libFuzzer entry point is preserved in `tests/fuzz_hash.c`.
+CI runs sanitizer-backed targets for core hashing, streaming partitions,
+padding boundaries, canonical tree combination, and CLI input handling. Each
+target receives 1,024 runs under its own fixed seed, for 5,120 requested runs
+in total, with a 10-second timeout on each individual input. The padding target
+maps compact control inputs onto message lengths through 16,385 bytes so the
+marker and length-field transitions around minimum-padding and tree-leaf
+boundaries are exercised directly.
+
+The GCC path-sensitive analyzer covers the library, command-line tool,
+benchmark, retained regression and fuzz sources, and consolidated diffusion
+runner. Reduced-round sources are checked under their required build flag.
+These changes reorganize verification without changing the hash algorithm.
 
 The timing check hashes four different 64 KiB content patterns through both
 one-shot and 1 KiB streaming paths for FCH-256 and FCH-512. Each pattern is

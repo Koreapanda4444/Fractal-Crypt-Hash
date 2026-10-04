@@ -276,7 +276,144 @@ static int test_tree_allocation_failures(void) {
     return 1;
 }
 
+static int test_api_failures(void) {
+    uint8_t byte = 0xA5u;
+    uint8_t output256[32];
+    uint8_t output512[64];
+
+    memset(output256, 0xA5, sizeof(output256));
+    if (fch_hash_256_checked(NULL, 1u, output256) ||
+        !all_zero(output256, sizeof(output256)))
+        return 0;
+
+    memset(output512, 0xA5, sizeof(output512));
+    if (fch_hash_512_checked(NULL, 1u, output512) ||
+        !all_zero(output512, sizeof(output512)))
+        return 0;
+
+    memset(output256, 0xA5, sizeof(output256));
+    if (fch_hash_256_checked(&byte, SIZE_MAX, output256) ||
+        !all_zero(output256, sizeof(output256)))
+        return 0;
+
+    if (fch_hash_256_checked(&byte, 1u, NULL) ||
+        fch_hash_512_checked(&byte, 1u, NULL))
+        return 0;
+    fch_hash_256(&byte, 1u, NULL);
+    fch_hash_512(&byte, 1u, NULL);
+
+    memset(output256, 0xA5, sizeof(output256));
+    if (fch256_final_checked(NULL, output256) ||
+        !all_zero(output256, sizeof(output256)))
+        return 0;
+    memset(output512, 0xA5, sizeof(output512));
+    if (fch512_final_checked(NULL, output512) ||
+        !all_zero(output512, sizeof(output512)))
+        return 0;
+
+    fch256_ctx overflow;
+    fch256_init(&overflow);
+    overflow.length = SIZE_MAX - 8u;
+    if (fch256_update(&overflow, &byte, 1u) || !overflow.failed)
+        return 0;
+    memset(output256, 0xA5, sizeof(output256));
+    if (fch256_final_checked(&overflow, output256) ||
+        !all_zero(output256, sizeof(output256)) ||
+        overflow.storage != NULL)
+        return 0;
+    fch256_free(&overflow);
+    fch256_free(&overflow);
+
+    fch512_ctx lifecycle;
+    fch512_init(&lifecycle);
+    if (fch512_final_checked(&lifecycle, NULL))
+        return 0;
+    if (!fch512_final_checked(&lifecycle, output512))
+        return 0;
+    if (fch512_update(&lifecycle, NULL, 0))
+        return 0;
+    memset(output512, 0xA5, sizeof(output512));
+    if (fch512_final_checked(&lifecycle, output512) ||
+        !all_zero(output512, sizeof(output512)))
+        return 0;
+    fch512_free(&lifecycle);
+    fch512_free(&lifecycle);
+    fch256_free(NULL);
+    fch512_free(NULL);
+
+    return 1;
+}
+
+typedef struct {
+    size_t calls;
+} rejecting_reader_t;
+
+static int reject_read(
+    void *context,
+    size_t offset,
+    uint8_t *output,
+    size_t length
+) {
+    rejecting_reader_t *reader = (rejecting_reader_t *)context;
+    (void)offset;
+    (void)output;
+    (void)length;
+
+    if (reader)
+        reader->calls++;
+    return 0;
+}
+
+static int test_reader_failures(void) {
+    rejecting_reader_t context = {0};
+    fch_reader_t reader = { reject_read, &context };
+
+    fch_state_t leaf = fch_process_reader(
+        &reader,
+        0,
+        FCH_TREE_LEAF_BYTES,
+        0,
+        FCH_INTERNAL_STATE_WORDS
+    );
+    if (leaf.state || context.calls == 0u) {
+        free(leaf.state);
+        return 0;
+    }
+
+    context.calls = 0;
+    fch_state_t node = fch_process_reader(
+        &reader,
+        0,
+        FCH_TREE_LEAF_BYTES * 2u,
+        0,
+        FCH_INTERNAL_STATE_WORDS
+    );
+    if (node.state || context.calls == 0u) {
+        free(node.state);
+        return 0;
+    }
+
+    uint8_t bytes[8] = {0};
+    uint8_t output = 0;
+    fch_memory_reader_t memory = { bytes, sizeof(bytes) };
+    if (fch_memory_read(&memory, SIZE_MAX, &output, 1u) ||
+        fch_memory_read(&memory, sizeof(bytes), &output, 1u) ||
+        !fch_memory_read(&memory, sizeof(bytes), NULL, 0u))
+        return 0;
+
+    return 1;
+}
+
 int main(void) {
+    allow_allocations();
+    if (!test_api_failures()) {
+        printf("FAIL: API failure paths\n");
+        return 1;
+    }
+    if (!test_reader_failures()) {
+        printf("FAIL: reader failure paths\n");
+        return 1;
+    }
     if (!test_one_shot_allocation_failures()) {
         printf("FAIL: one-shot allocation failures\n");
         return 1;
@@ -294,6 +431,6 @@ int main(void) {
         return 1;
     }
 
-    printf("PASS: allocation and streaming failure paths\n");
+    printf("PASS: API, reader, allocation and streaming failure paths\n");
     return 0;
 }

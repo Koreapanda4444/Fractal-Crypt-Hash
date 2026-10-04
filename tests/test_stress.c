@@ -6,6 +6,11 @@
 #include "fch.h"
 #include "fch_stream.h"
 
+enum {
+    FCH_LARGE_STREAM_BYTES = 8 * 1024 * 1024,
+    FCH_LARGE_STREAM_BUFFER = 64 * 1024
+};
+
 typedef struct {
     size_t big_mb;
     size_t small_kb;
@@ -159,6 +164,90 @@ static int exercise(
     return 1;
 }
 
+static void fill_large_pattern(
+    uint8_t *buffer,
+    size_t length,
+    size_t absolute_offset
+) {
+    for (size_t i = 0; i < length; i++) {
+        size_t position = absolute_offset + i;
+        buffer[i] = (uint8_t)(
+            position * 131u + position / 17u
+        );
+    }
+}
+
+static int test_large_stream(void) {
+    static const size_t chunks[] = {
+        1u, 7u, 63u, 4093u, 8191u, 16384u
+    };
+    uint8_t *buffer = (uint8_t *)malloc(FCH_LARGE_STREAM_BUFFER);
+    if (!buffer)
+        return 0;
+
+    fch256_ctx whole_chunks;
+    fch256_ctx mixed_chunks;
+    fch256_init(&whole_chunks);
+    fch256_init(&mixed_chunks);
+
+    size_t offset = 0;
+    size_t chunk_index = 0;
+    int ok = 1;
+    while (ok && offset < FCH_LARGE_STREAM_BYTES) {
+        size_t count = FCH_LARGE_STREAM_BYTES - offset;
+        if (count > FCH_LARGE_STREAM_BUFFER)
+            count = FCH_LARGE_STREAM_BUFFER;
+        fill_large_pattern(buffer, count, offset);
+
+        ok = fch256_update(&whole_chunks, buffer, count);
+        size_t local_offset = 0;
+        while (ok && local_offset < count) {
+            size_t part = chunks[
+                chunk_index % (sizeof(chunks) / sizeof(chunks[0]))
+            ];
+            if (part > count - local_offset)
+                part = count - local_offset;
+            ok = fch256_update(
+                &mixed_chunks,
+                buffer + local_offset,
+                part
+            );
+            local_offset += part;
+            chunk_index++;
+        }
+        offset += count;
+    }
+
+    uint8_t whole_digest[32];
+    uint8_t mixed_digest[32];
+    if (ok)
+        ok = whole_chunks.length == FCH_LARGE_STREAM_BYTES &&
+            mixed_chunks.length == FCH_LARGE_STREAM_BYTES;
+    if (ok)
+        ok = fch256_final_checked(&whole_chunks, whole_digest) &&
+            fch256_final_checked(&mixed_chunks, mixed_digest);
+    if (ok)
+        ok = whole_chunks.storage == NULL &&
+            mixed_chunks.storage == NULL &&
+            memcmp(
+                whole_digest,
+                mixed_digest,
+                sizeof(whole_digest)
+            ) == 0;
+
+    fch256_free(&whole_chunks);
+    fch256_free(&mixed_chunks);
+    free(buffer);
+
+    if (ok) {
+        printf(
+            "stress,large_stream_bytes=%u,chunk_patterns=2,PASS\n",
+            (unsigned int)FCH_LARGE_STREAM_BYTES
+        );
+    }
+    return ok;
+}
+
 int main(int argc, char **argv) {
     opts_t options;
     opts_default(&options);
@@ -213,7 +302,7 @@ int main(int argc, char **argv) {
     fill_random(small, small_length, options.seed ^ UINT32_C(0x9E3779B9));
 
     uint32_t sink = 0u;
-    int ok = exercise(
+    int ok = test_large_stream() && exercise(
             "large",
             big,
             big_length,

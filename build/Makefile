@@ -47,7 +47,7 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/test_portability.c \
         ../tests/test_vectors.c \
         ../tests/test_tree_attacks.c \
-        ../tests/test_hardening.c \
+        ../tests/fuzz_hash.c \
         ../tests/test_failures.c \
         ../tests/test_stress.c
 
@@ -62,7 +62,6 @@ TESTS = test_boundaries \
         test_vectors \
         test_cryptanalysis \
         test_tree_attacks \
-        test_hardening \
         test_failures
 
 EXTENDED_TESTS = test_stress
@@ -145,10 +144,6 @@ test_cryptanalysis: ../tests/test_cryptanalysis.c $(SRC)
 test_tree_attacks: ../tests/test_tree_attacks.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
-
-test_hardening: ../tests/test_hardening.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_FUZZ_STANDALONE)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_FUZZ_STANDALONE -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 test_failures: ../tests/test_failures.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -Dmalloc=fch_test_malloc -Dcalloc=fch_test_calloc)
@@ -241,7 +236,7 @@ bench-baseline-check:
 timing-check: bench_hash
 	./bench_hash --timing-check
 
-fuzz_hash: ../tests/test_hardening.c $(SRC)
+fuzz_hash: ../tests/fuzz_hash.c $(SRC)
 	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
 	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
