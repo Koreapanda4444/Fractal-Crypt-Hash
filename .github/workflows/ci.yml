@@ -36,7 +36,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended bench-check CC="$CC"
+          make all check check-extended check-diffusion bench-check CC="$CC"
 
       - name: Set up Python
         if: matrix.reference
@@ -142,7 +142,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended bench-check CC=gcc
+          make all check check-extended check-diffusion bench-check CC=gcc
 
       - name: Verify native Windows binary stdin
         shell: pwsh
@@ -227,7 +227,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended bench-check \
+          make all check check-extended check-diffusion bench-check \
             CC=gcc \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2 -m32" \
             LDFLAGS="-m32"

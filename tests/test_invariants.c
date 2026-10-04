@@ -185,7 +185,7 @@ static int check_split_case(
 
 static int check_content_independence(void) {
     static const size_t lengths[] = {
-        1u, 63u, 64u, 1023u, 1025u, 2047u, 2049u,
+        1u, 63u, 64u, 512u, 1023u, 1025u, 2047u, 2049u,
         3073u, 4097u, 5127u, 8193u, 9233u, 16385u
     };
     enum { LENGTH = FCH_TREE_LEAF_BYTES * 17u };

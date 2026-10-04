@@ -154,7 +154,10 @@ make check-reference
 cd build
 make check
 make check-extended
+make check-diffusion
 ```
+
+`make check-diffusion`은 `analysis/fch_diffusion.c`에 통합한 실험을 `make check`와 별도로 실행합니다. `./fch_diffusion avalanche`, `./fch_diffusion length`, `./fch_diffusion tree`로 개별 실험도 재현할 수 있습니다. 기존 표본과 임계값을 유지하며, 검사 통과가 암호학적 안전성을 증명하지는 않습니다.
 
 1~16라운드의 확산, XOR 차분, 회전 대칭과 구조 입력 편향 프로필 재현:
 

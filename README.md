@@ -158,7 +158,10 @@ Run the regular and extended suites:
 cd build
 make check
 make check-extended
+make check-diffusion
 ```
+
+`make check-diffusion` runs the consolidated experiments in `analysis/fch_diffusion.c`, separately from `make check`. Individual sections can be reproduced with `./fch_diffusion avalanche`, `./fch_diffusion length`, or `./fch_diffusion tree`. These screens preserve the existing samples and thresholds; they do not prove cryptographic security.
 
 Reproduce the 1-through-16-round diffusion, XOR-differential, rotational
 symmetry, and structured-input bias profile:

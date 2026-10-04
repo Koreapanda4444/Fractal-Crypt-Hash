@@ -51,25 +51,35 @@ static int check_512(const unsigned char *msg, size_t len, const char *expected_
 	return 1;
 }
 
+static int deterministic_input(const uint8_t *message, size_t length) {
+	uint8_t first256[32], repeated256[32];
+	uint8_t first512[64], repeated512[64];
+	return fch_hash_256_checked(message, length, first256) &&
+		fch_hash_256_checked(message, length, repeated256) &&
+		fch_hash_512_checked(message, length, first512) &&
+		fch_hash_512_checked(message, length, repeated512) &&
+		memcmp(first256, repeated256, sizeof(first256)) == 0 &&
+		memcmp(first512, repeated512, sizeof(first512)) == 0;
+}
+
 static int check_determinism(void) {
 	static const char *const messages[] = {
 		"", "a", "fractal", "fractal-crypt-hash",
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	};
+	static const size_t lengths[] = {0u, 1u, 64u, 128u, 1024u};
+	uint8_t input[1024];
+	memset(input, 0x3C, sizeof(input));
 
 	for (size_t i = 0; i < sizeof(messages) / sizeof(messages[0]); i++) {
-		const uint8_t *message = (const uint8_t *)messages[i];
-		size_t length = strlen(messages[i]);
-		uint8_t first256[32], repeated256[32];
-		uint8_t first512[64], repeated512[64];
-
-		if (!fch_hash_256_checked(message, length, first256) ||
-			!fch_hash_256_checked(message, length, repeated256) ||
-			!fch_hash_512_checked(message, length, first512) ||
-			!fch_hash_512_checked(message, length, repeated512) ||
-			memcmp(first256, repeated256, sizeof(first256)) != 0 ||
-			memcmp(first512, repeated512, sizeof(first512)) != 0) {
+		if (!deterministic_input((const uint8_t *)messages[i], strlen(messages[i]))) {
 			printf("FAIL: deterministic hashing for message %zu\n", i);
+			return 0;
+		}
+	}
+	for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+		if (!deterministic_input(input, lengths[i])) {
+			printf("FAIL: deterministic hashing at %zu bytes\n", lengths[i]);
 			return 0;
 		}
 	}

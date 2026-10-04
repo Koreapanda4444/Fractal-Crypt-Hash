@@ -49,11 +49,9 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/test_tree_attacks.c \
         ../tests/test_hardening.c \
         ../tests/test_failures.c \
-        ../tests/test_length_variation.c \
-        ../tests/test_depth_diffusion.c \
         ../tests/test_stress.c
 
-ANALYZE_REDUCED_SOURCES = ../tests/test_avalanche.c \
+ANALYZE_REDUCED_SOURCES = ../analysis/fch_diffusion.c \
         ../tests/test_cryptanalysis.c
 
 TESTS = test_boundaries \
@@ -62,15 +60,12 @@ TESTS = test_boundaries \
         test_tree_encoding \
         test_portability \
         test_vectors \
-        test_avalanche \
         test_cryptanalysis \
         test_tree_attacks \
         test_hardening \
         test_failures
 
-EXTENDED_TESTS = test_length_variation \
-                 test_depth_diffusion \
-                 test_stress
+EXTENDED_TESTS = test_stress
 
 FUZZ_TARGETS = fuzz_hash \
                fuzz_stream \
@@ -90,6 +85,7 @@ DEPS = $(OBJ:.o=.d) \
        fch.d \
        $(addsuffix .d,$(TESTS)) \
        $(addsuffix .d,$(EXTENDED_TESTS)) \
+       fch_diffusion.d \
        bench_hash.d \
        $(addsuffix .d,$(FUZZ_TARGETS))
 
@@ -133,9 +129,14 @@ test_vectors: ../tests/test_vectors.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-test_avalanche: ../tests/test_avalanche.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+fch_diffusion: ../analysis/fch_diffusion.c $(SRC)
+	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS \
+		-DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL \
+		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+
+check-diffusion: fch_diffusion
+	./fch_diffusion
 
 test_cryptanalysis: ../tests/test_cryptanalysis.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS)
@@ -165,7 +166,7 @@ sanitizer-check:
 	$(MAKE) clean
 	ASAN_OPTIONS="$(SANITIZER_ASAN_OPTIONS)" \
 	UBSAN_OPTIONS="$(SANITIZER_UBSAN_OPTIONS)" \
-		$(MAKE) check check-extended \
+		$(MAKE) check check-extended check-diffusion \
 		CC="$(SANITIZER_CC)" CFLAGS="$(SANITIZER_CFLAGS)"
 
 check-reference: fch
@@ -199,21 +200,11 @@ check-second-preimage-bounds:
 
 test-extended: $(EXTENDED_TESTS)
 
-test_length_variation: ../tests/test_length_variation.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS))
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
-
-test_depth_diffusion: ../tests/test_depth_diffusion.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
-
 test_stress: ../tests/test_stress.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 check-extended: test-extended
-	./test_length_variation
-	./test_depth_diffusion
 	./test_stress --big-mb 1 --iters-big 1 --small-kb 4 --iters-small 16 --quiet
 
 bench: bench_hash
@@ -299,8 +290,8 @@ analyze:
 	done
 
 clean:
-	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) fch $(TESTS) $(EXTENDED_TESTS) bench_hash $(FUZZ_TARGETS) test_vectors_ubsan test_vectors_san
+	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) fch $(TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS) test_vectors_ubsan test_vectors_san
 
 -include $(DEPS)
 
-.PHONY: all test check-cli check sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean
+.PHONY: all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean
