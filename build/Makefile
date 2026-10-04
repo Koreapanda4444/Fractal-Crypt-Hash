@@ -40,7 +40,6 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/fuzz_padding.c \
         ../tests/fuzz_tree_combine.c \
         ../tests/fuzz_cli.c \
-        ../tests/test_consistency.c \
         ../tests/test_boundaries.c \
         ../tests/test_tree_boundaries.c \
         ../tests/test_stream_equivalence.c \
@@ -59,8 +58,7 @@ ANALYZE_SOURCES = $(SRC) \
 ANALYZE_REDUCED_SOURCES = ../tests/test_avalanche.c \
         ../tests/test_cryptanalysis.c
 
-TESTS = test_consistency \
-        test_boundaries \
+TESTS = test_boundaries \
         test_tree_boundaries \
         test_stream_equivalence \
         test_invariants \
@@ -114,10 +112,6 @@ fch: $(OBJ) ../tools/fch.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $(OBJ) ../tools/fch.c $(LDFLAGS) $(LDLIBS)
 
 test: $(TESTS)
-
-test_consistency: ../tests/test_consistency.c $(SRC)
-	$(call generate-dependencies,$(CC),$(CFLAGS))
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 test_boundaries: ../tests/test_boundaries.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))

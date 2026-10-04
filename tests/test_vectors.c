@@ -51,8 +51,33 @@ static int check_512(const unsigned char *msg, size_t len, const char *expected_
 	return 1;
 }
 
+static int check_determinism(void) {
+	static const char *const messages[] = {
+		"", "a", "fractal", "fractal-crypt-hash",
+		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	};
+
+	for (size_t i = 0; i < sizeof(messages) / sizeof(messages[0]); i++) {
+		const uint8_t *message = (const uint8_t *)messages[i];
+		size_t length = strlen(messages[i]);
+		uint8_t first256[32], repeated256[32];
+		uint8_t first512[64], repeated512[64];
+
+		if (!fch_hash_256_checked(message, length, first256) ||
+			!fch_hash_256_checked(message, length, repeated256) ||
+			!fch_hash_512_checked(message, length, first512) ||
+			!fch_hash_512_checked(message, length, repeated512) ||
+			memcmp(first256, repeated256, sizeof(first256)) != 0 ||
+			memcmp(first512, repeated512, sizeof(first512)) != 0) {
+			printf("FAIL: deterministic hashing for message %zu\n", i);
+			return 0;
+		}
+	}
+	return 1;
+}
+
 int main(void) {
-	int ok = 1;
+	int ok = check_determinism();
 
 	ok &= check_256((const unsigned char *)"", 0,
 		"591a3e8b905a36eb6c89c5db9a65e521d3128fe1c60ec330f917ea80b1182b6c");
@@ -73,7 +98,7 @@ int main(void) {
 		"790f2f87ae566ddcac50e522ba08b0dcd7af4d0699d77e88d03fb90cbdfb7f21");
 
 	if (ok) {
-		printf("PASS: fixed test vectors\n");
+		printf("PASS: fixed test vectors and deterministic hashing\n");
 		return 0;
 	}
 
