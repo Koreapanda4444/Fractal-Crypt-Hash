@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "fch.h"
+#include "fch_stream.h"
 
 static void to_hex(const unsigned char *in, size_t in_len, char *out) {
 	static const char hexdigits[] = "0123456789abcdef";
@@ -86,8 +88,125 @@ static int check_determinism(void) {
 	return 1;
 }
 
-int main(void) {
+static int hex_digit(char c) {
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	return -1;
+}
+
+static int decode_hex(const char *hex, uint8_t *output, size_t length) {
+	if (strlen(hex) != length * 2u) return 0;
+	for (size_t i = 0; i < length; i++) {
+		int a = hex_digit(hex[i * 2u]), b = hex_digit(hex[i * 2u + 1u]);
+		if (a < 0 || b < 0) return 0;
+		output[i] = (uint8_t)((a << 4) | b);
+	}
+	return 1;
+}
+
+static int corpus_input(const char *recipe, uint8_t *input, size_t length) {
+	if (strcmp(recipe, "counter") == 0) {
+		for (size_t i = 0; i < length; i++) input[i] = (uint8_t)i;
+		return 1;
+	}
+	if (strncmp(recipe, "hex:", 4u) == 0) {
+		if (length == 0u) return strcmp(recipe, "hex:-") == 0;
+		return decode_hex(recipe + 4u, input, length);
+	}
+	if (strncmp(recipe, "repeat:", 7u) == 0) {
+		uint8_t value;
+		if (!decode_hex(recipe + 7u, &value, 1u)) return 0;
+		memset(input, value, length);
+		return 1;
+	}
+	return 0;
+}
+
+static int corpus_streams(
+	const uint8_t *input, size_t length,
+	const uint8_t expected256[32], const uint8_t expected512[64],
+	const size_t *chunks, size_t chunk_count
+) {
+	for (size_t plan = 0; plan <= chunk_count; plan++) {
+		fch256_ctx a;
+		fch512_ctx b;
+		fch256_init(&a);
+		fch512_init(&b);
+		int ok = fch256_update(&a, NULL, 0u) && fch512_update(&b, NULL, 0u);
+		size_t offset = 0u, index = 0u;
+		while (ok && offset < length) {
+			size_t count = chunks[plan < chunk_count ? plan : index++ % chunk_count];
+			if (count > length - offset) count = length - offset;
+			ok = fch256_update(&a, input + offset, count) &&
+				fch512_update(&b, input + offset, count);
+			offset += count;
+		}
+		uint8_t out256[32], out512[64];
+		ok = ok && fch256_update(&a, NULL, 0u) && fch512_update(&b, NULL, 0u) &&
+			fch256_final_checked(&a, out256) && fch512_final_checked(&b, out512) &&
+			memcmp(out256, expected256, sizeof(out256)) == 0 &&
+			memcmp(out512, expected512, sizeof(out512)) == 0;
+		fch256_free(&a);
+		fch512_free(&b);
+		if (!ok) return 0;
+	}
+	return 1;
+}
+
+static int check_corpus(const char *path) {
+	FILE *file = fopen(path, "r");
+	if (!file) {
+		fprintf(stderr, "FAIL: cannot open KAT corpus %s\n", path);
+		return 0;
+	}
+	char line[512];
+	size_t chunks[16], chunk_count = 0u, cases = 0u;
+	int ok = 1, version = 0;
+	while (ok && fgets(line, sizeof(line), file)) {
+		if (!strchr(line, '\n') && !feof(file)) { ok = 0; break; }
+		line[strcspn(line, "\r\n")] = '\0';
+		if (strcmp(line, "# FCH interoperability corpus v1; tree=2; padding=1; rounds=16; state_bits=512") == 0) {
+			version = 1;
+			continue;
+		}
+		const char *prefix = "# streaming-chunks: ";
+		if (strncmp(line, prefix, strlen(prefix)) == 0) {
+			char *token = strtok(line + strlen(prefix), ",\r\n");
+			while (token) {
+				char *end;
+				unsigned long value = strtoul(token, &end, 10);
+				if (!value || value > 65536u || *end || chunk_count == 16u) { ok = 0; break; }
+				chunks[chunk_count++] = (size_t)value;
+				token = strtok(NULL, ",\r\n");
+			}
+			continue;
+		}
+		if (line[0] == '#') continue;
+		char name[64], recipe[128], hex256[65], hex512[129], extra;
+		size_t length;
+		uint8_t input[32768], expected256[32], expected512[64];
+		if (!version || !chunk_count ||
+			sscanf(line, "%63s %zu %127s %64s %128s %c", name, &length, recipe, hex256, hex512, &extra) != 5 ||
+			length > sizeof(input) || !corpus_input(recipe, input, length) ||
+			!decode_hex(hex256, expected256, sizeof(expected256)) ||
+			!decode_hex(hex512, expected512, sizeof(expected512))) { ok = 0; break; }
+		ok = check_256(input, length, hex256) && check_512(input, length, hex512) &&
+			corpus_streams(input, length, expected256, expected512, chunks, chunk_count);
+		if (!ok) fprintf(stderr, "FAIL: KAT case %s\n", name);
+		cases++;
+	}
+	if (ferror(file) || cases != 54u || chunk_count != 10u) ok = 0;
+	fclose(file);
+	if (ok) printf("PASS: canonical KAT corpus (%zu cases, %zu C digests, 11 streaming plans)\n",
+		cases, cases * (chunk_count + 2u) * 2u);
+	else fprintf(stderr, "FAIL: invalid or mismatching KAT corpus\n");
+	return ok;
+}
+
+int main(int argc, char **argv) {
+	if (argc > 2) return 2;
 	int ok = check_determinism();
+	ok &= check_corpus(argc == 2 ? argv[1] : "../analysis/interoperability-v1.tsv");
 
 	ok &= check_256((const unsigned char *)"", 0,
 		"591a3e8b905a36eb6c89c5db9a65e521d3128fe1c60ec330f917ea80b1182b6c");

@@ -417,6 +417,22 @@ C 스트리밍 API는 update 중 완성된 1,024바이트 리프를 바로 처�
 
 ## 12. 분석 및 구현 상태
 
+정식 [interoperability corpus](../analysis/interoperability-v1.tsv)는 tree encoding 2,
+padding 1, 16라운드에 대해 54개 메시지와 두 변형의 expected digest를 고정합니다.
+탭으로 구분한 각 행은 식별자, 바이트 길이, 입력 recipe, FCH-256, FCH-512 순서입니다.
+`hex:`는 실제 바이트(`hex:-`는 빈 입력), `counter`는 위치 `i mod 256`인 바이트,
+`repeat:ff`는 0xff 반복을 뜻합니다. digest는 소문자 hex이며 검증 중 구현으로
+다시 생성하지 않습니다.
+
+빈 입력·작은 바이너리와 텍스트·padding·120바이트 leaf data 레코드 경계,
+padding 전후의 1,024바이트 leaf 경계, 최대 32개 leaf까지의 tree 경계를 포함합니다.
+헤더의 열 가지 고정 chunk 크기 외에 C는 크기를 순환하는 열한 번째 계획을 쓰며
+입력 전후에 빈 update를 넣습니다. chunk 구분에 관계없이 고정 digest와 일치해야
+합니다. `make check-interoperability`는 C 원샷·streaming, C CLI, Python reference를
+대조하고 `make check`는 기존 vector 프로그램에서 C corpus를 검사합니다.
+corpus 변경은 명시적인 버전 변경과 검토가 필요하며 regression을 감추기 위해
+expected digest를 새로 생성해서는 안 됩니다.
+
 자동화된 테스트에는 다음 항목이 포함됩니다.
 
 - C/Python 결과 비교와 고정 벡터

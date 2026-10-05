@@ -559,6 +559,73 @@ def check_c_implementation(executable: Path) -> int:
     return 0
 
 
+def load_corpus(path: Path) -> list[tuple[str, bytes, tuple[str, str]]]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0] != (
+        "# FCH interoperability corpus v1; tree=2; padding=1; rounds=16; state_bits=512"
+    ):
+        raise ValueError("unsupported KAT corpus format")
+    chunks = [line for line in lines if line.startswith("# streaming-chunks: ")]
+    if len(chunks) != 1 or tuple(map(int, chunks[0].split(": ")[1].split(","))) != (
+        1, 7, 64, 127, 128, 511, 1023, 1024, 1025, 4096
+    ):
+        raise ValueError("invalid corpus streaming plans")
+    cases = []
+    identifiers = set()
+    for line in lines[1:]:
+        if line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) != 5:
+            raise ValueError("invalid corpus row")
+        name, length_text, recipe, expected256, expected512 = fields
+        length = int(length_text)
+        if not name or name in identifiers or not 0 <= length <= 32768:
+            raise ValueError("invalid corpus case identifier or length")
+        identifiers.add(name)
+        if recipe == "counter":
+            message = bytes(i & 255 for i in range(length))
+        elif recipe.startswith("hex:"):
+            message = b"" if recipe == "hex:-" else bytes.fromhex(recipe[4:])
+        elif recipe.startswith("repeat:"):
+            value = bytes.fromhex(recipe[7:])
+            if len(value) != 1:
+                raise ValueError("invalid repeated-byte recipe")
+            message = value * length
+        else:
+            raise ValueError("unknown corpus input recipe")
+        if len(message) != length:
+            raise ValueError("corpus input length mismatch")
+        for expected, size in ((expected256, 64), (expected512, 128)):
+            if len(expected) != size or any(c not in "0123456789abcdef" for c in expected):
+                raise ValueError("invalid expected digest")
+        cases.append((name, message, (expected256, expected512)))
+    if len(cases) != 54:
+        raise ValueError("incomplete v1 corpus")
+    return cases
+
+
+def check_corpus(path: Path, executable: Path | None = None) -> int:
+    try:
+        cases = load_corpus(path)
+        if executable is not None:
+            executable = executable.resolve(strict=True)
+        for name, message, expected in cases:
+            for bits, known in zip((256, 512), expected):
+                if digest(message, bits).hex() != known:
+                    raise ValueError(f"Python KAT mismatch: {name}, FCH-{bits}")
+                if executable is not None and _c_digest(executable, message, bits) != known:
+                    raise ValueError(f"C CLI KAT mismatch: {name}, FCH-{bits}")
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f"corpus check: {error}", file=sys.stderr)
+        return 1
+    print(
+        f"PASS: canonical KAT corpus ({len(cases)} cases, 108 Python digests"
+        + (", 108 C CLI digests" if executable is not None else "") + ")"
+    )
+    return 0
+
+
 def _hash_files(paths: list[str], output_bits: int) -> int:
     if not paths:
         paths = ["-"]
@@ -587,8 +654,13 @@ def main(argv: list[str] | None = None) -> int:
         help="compare the reference implementation with a compiled FCH CLI",
     )
     parser.add_argument("files", nargs="*", metavar="FILE")
+    parser.add_argument("--check-corpus", type=Path, metavar="CORPUS")
     args = parser.parse_args(argv)
 
+    if args.check_corpus is not None:
+        if args.files:
+            parser.error("FILE arguments cannot be combined with --check-corpus")
+        return check_corpus(args.check_corpus, args.check_c)
     if args.check_c is not None:
         if args.files:
             parser.error("FILE arguments cannot be combined with --check-c")

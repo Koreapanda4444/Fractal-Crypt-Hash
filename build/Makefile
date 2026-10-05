@@ -169,7 +169,7 @@ check-research-native: $(RESEARCH_TESTS)
 
 check-research: check-research-native check-diffusion check-trails check-characteristics check-reduced-rounds check-second-preimage-bounds
 
-check-all: check check-extended check-reference check-research bench-check bench-baseline-check
+check-all: check check-extended check-reference check-interoperability check-research bench-check bench-baseline-check
 
 sanitizer-check:
 	$(MAKE) clean
@@ -177,6 +177,10 @@ sanitizer-check:
 	UBSAN_OPTIONS="$(SANITIZER_UBSAN_OPTIONS)" \
 		$(MAKE) $(SANITIZER_TARGETS) \
 		CC="$(SANITIZER_CC)" CFLAGS="$(SANITIZER_CFLAGS)"
+
+check-interoperability: fch test_vectors
+	./test_vectors ../analysis/interoperability-v1.tsv
+	$(PYTHON) ../tools/fch_reference.py --check-c ./fch --check-corpus ../analysis/interoperability-v1.tsv
 
 check-reference: fch
 	$(PYTHON) ../tools/fch_reference.py --check-c ./fch
@@ -298,4 +302,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean
+.PHONY: check-interoperability check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean

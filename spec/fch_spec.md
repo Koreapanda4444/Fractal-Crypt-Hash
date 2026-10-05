@@ -424,6 +424,25 @@ rejects updates or repeated finalization after its final call.
 
 ## 12. Analysis and implementation status
 
+The canonical [interoperability corpus](../analysis/interoperability-v1.tsv)
+freezes 54 messages and both expected digests for tree encoding 2, padding 1
+and 16 rounds. Each tab-separated row contains an identifier, byte length,
+input recipe, FCH-256 digest and FCH-512 digest. `hex:` supplies literal bytes
+(`hex:-` is empty); `counter` means byte `i mod 256`; `repeat:ff` repeats 0xff.
+Digests use lowercase hexadecimal and are fixed expectations, not generated
+by the implementation during validation.
+
+Cases cover empty and small binary/text inputs, padding and 120-byte leaf-data
+record transitions, padded and unpadded 1,024-byte leaf boundaries, and tree
+transitions through 32 leaves. The corpus header defines ten fixed update
+sizes; C also cycles through those sizes as an eleventh plan and inserts empty
+updates before and after the data. Expected digests are independent of update
+boundaries. `make check-interoperability` verifies the corpus with the C
+one-shot/streaming APIs, C CLI and Python reference; `make check` includes the
+C corpus in the existing fixed-vector program. A corpus change requires an
+explicit reviewed version change; existing expected digests must not be
+refreshed to hide a regression.
+
 The automated suite includes:
 
 - C/Python cross-checks and fixed vectors;

@@ -47,7 +47,7 @@ jobs:
       - name: Cross-check Python reference
         if: matrix.reference
         working-directory: build
-        run: make check-reference
+        run: make check-reference check-interoperability
 
   sanitizers:
     runs-on: ubuntu-latest
