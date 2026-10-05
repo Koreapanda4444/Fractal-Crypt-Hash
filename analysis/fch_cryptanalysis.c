@@ -1183,56 +1183,56 @@ static size_t mitm_lower_bound(
 }
 
 static int mix_roundtrip_check(void) {
-    uint8_t block[FCH_MIX_BLOCK_SIZE];
+    static const uint64_t domains[] = {
+        FCH_DOMAIN_LEAF, FCH_DOMAIN_LEAF, FCH_DOMAIN_NODE,
+        FCH_DOMAIN_NODE, FCH_DOMAIN_OUTPUT_256, FCH_DOMAIN_OUTPUT_512
+    };
+    static const uint64_t flags[] = {
+        FCH_MIX_FLAG_LEAF_HEADER, FCH_MIX_FLAG_LEAF_DATA | FCH_MIX_FLAG_FINAL,
+        FCH_MIX_FLAG_NODE_HEADER, FCH_MIX_FLAG_NODE_CHILD | FCH_MIX_FLAG_FINAL,
+        FCH_MIX_FLAG_OUTPUT | FCH_MIX_FLAG_FINAL,
+        FCH_MIX_FLAG_OUTPUT | FCH_MIX_FLAG_FINAL
+    };
     uint64_t stream = UINT64_C(0x494E564552534531);
-    uint64_t initial[16];
-    uint64_t work[16];
-    uint64_t message[16];
-    uint64_t roundtrip[16];
-    uint64_t checkpoint[16];
-    uint64_t expected[8];
-    uint64_t derived[8];
-    const uint64_t counter = UINT64_C(0x1020304050607080);
-    const uint64_t domain = UINT64_C(0x494E565445535431);
-    const uint64_t flags = FCH_MIX_FLAG_LEAF_DATA;
-
-    fill_bytes(block, sizeof(block), &stream);
-    if (!prepare_test_work(
-            block,
-            counter,
-            domain,
-            flags,
-            work,
-            message
-        ))
-        return 0;
-    memcpy(initial, work, sizeof(initial));
-    if (!fch_mix_test_forward(work, message, 0u, 8u))
-        return 0;
-
-    if (!fch_mix_init(derived, 8u, domain) ||
-        !core_output(block, counter, domain, flags, 8u, expected))
-        return 0;
-    for (size_t word = 0; word < 8u; word++)
-        derived[word] ^= work[word] ^ work[word + 8u];
-    if (memcmp(derived, expected, sizeof(derived)) != 0)
-        return 0;
-
-    memcpy(roundtrip, work, sizeof(roundtrip));
-    if (!fch_mix_test_inverse(roundtrip, message, 0u, 8u) ||
-        memcmp(roundtrip, initial, sizeof(roundtrip)) != 0)
-        return 0;
-
-    memcpy(roundtrip, initial, sizeof(roundtrip));
-    if (!fch_mix_test_forward(roundtrip, message, 0u, 2u))
-        return 0;
-    memcpy(checkpoint, roundtrip, sizeof(checkpoint));
-    if (!fch_mix_test_forward(roundtrip, message, 2u, 4u) ||
-        !fch_mix_test_inverse(roundtrip, message, 2u, 4u) ||
-        memcmp(roundtrip, checkpoint, sizeof(roundtrip)) != 0)
-        return 0;
-
-    printf("inverse_roundtrip,full=8,window=2+4,status=PASS\n");
+    unsigned int windows = 0u, outputs = 0u;
+    for (size_t context = 0u; context < 6u; context++) {
+        for (unsigned int sample = 0u; sample < 16u; sample++) {
+            uint8_t block[FCH_MIX_BLOCK_SIZE];
+            uint64_t message[16], trajectory[FCH_MIX_ROUNDS + 1u][16];
+            uint64_t work[16], expected[8], initial[8];
+            uint64_t counter = sample < 2u ? sample : splitmix64_next(&stream);
+            fill_bytes(block, sizeof(block), &stream);
+            if (!prepare_test_work(block, counter, domains[context], flags[context],
+                    trajectory[0], message) ||
+                !fch_mix_init(initial, 8u, domains[context]))
+                return 0;
+            for (unsigned int round = 1u; round <= FCH_MIX_ROUNDS; round++) {
+                memcpy(trajectory[round], trajectory[round - 1u], sizeof(work));
+                if (!fch_mix_test_forward(trajectory[round], message, round - 1u, 1u) ||
+                    !core_output(block, counter, domains[context], flags[context], round, expected))
+                    return 0;
+                for (size_t word = 0u; word < 8u; word++) {
+                    uint64_t derived = initial[word] ^ trajectory[round][word] ^
+                        trajectory[round][word + 8u];
+                    if (derived != expected[word]) return 0;
+                }
+                outputs++;
+            }
+            for (unsigned int begin = 0u; begin < FCH_MIX_ROUNDS; begin++) {
+                for (unsigned int end = begin + 1u; end <= FCH_MIX_ROUNDS; end++) {
+                    memcpy(work, trajectory[begin], sizeof(work));
+                    if (!fch_mix_test_forward(work, message, begin, end - begin) ||
+                        memcmp(work, trajectory[end], sizeof(work)) != 0 ||
+                        !fch_mix_test_inverse(work, message, begin, end - begin) ||
+                        memcmp(work, trajectory[begin], sizeof(work)) != 0)
+                        return 0;
+                    windows++;
+                }
+            }
+        }
+    }
+    printf("inverse_roundtrip,contexts=6,bases=16,rounds=1..16,"
+           "windows=%u,feedforward=%u,status=PASS\n", windows, outputs);
     return 1;
 }
 
@@ -1377,7 +1377,7 @@ static int rebound_screen(void) {
     return all_ok;
 }
 
-static int mitm_screen(void) {
+static int mitm_screen_case(unsigned int rounds, unsigned int split) {
     static mitm_entry_t entries[MITM_CANDIDATES];
     uint8_t base[FCH_MIX_BLOCK_SIZE];
     uint64_t stream = UINT64_C(0x4D49544D53435231);
@@ -1402,7 +1402,7 @@ static int mitm_screen(void) {
             target_work,
             target_message
         ) ||
-        !fch_mix_test_forward(target_work, target_message, 0u, 8u))
+        !fch_mix_test_forward(target_work, target_message, 0u, rounds))
         return 0;
 
     for (unsigned int candidate = 0u;
@@ -1424,7 +1424,7 @@ static int mitm_screen(void) {
                 entries[candidate].state,
                 message,
                 0u,
-                4u
+                split
             ))
             return 0;
         entries[candidate].key = work_projection(entries[candidate].state);
@@ -1451,7 +1451,7 @@ static int mitm_screen(void) {
             ))
             return 0;
         memcpy(backward, target_work, sizeof(backward));
-        if (!fch_mix_test_inverse(backward, message, 4u, 4u))
+        if (!fch_mix_test_inverse(backward, message, split, rounds - split))
             return 0;
 
         uint32_t key = work_projection(backward);
@@ -1479,9 +1479,10 @@ static int mitm_screen(void) {
         exact_matches == 1u &&
         recovered == 1u;
     printf(
-        "mitm_screen,rounds=8,split=4,candidates=%u,prefix_bits=%u,"
+        "mitm_screen,rounds=%u,split=%u,candidates=%u,prefix_bits=%u,"
         "forward=%u,backward=%u,prefix_pairs=%llu,exact_matches=%u,"
         "target=0x%03x,recovered=%s,status=%s\n",
+        rounds, split,
         MITM_CANDIDATES,
         MITM_PREFIX_BITS,
         MITM_CANDIDATES,
@@ -1492,6 +1493,17 @@ static int mitm_screen(void) {
         recovered ? "yes" : "no",
         ok ? "PASS" : "FAIL"
     );
+    return ok;
+}
+
+static int mitm_screen(void) {
+    static const unsigned int profiles[][2] = {
+        {8u, 4u}, {16u, 1u}, {16u, 4u}, {16u, 8u}, {16u, 12u}, {16u, 15u}
+    };
+    int ok = 1;
+    for (size_t i = 0u; i < sizeof(profiles) / sizeof(profiles[0]); i++) {
+        if (!mitm_screen_case(profiles[i][0], profiles[i][1])) ok = 0;
+    }
     return ok;
 }
 

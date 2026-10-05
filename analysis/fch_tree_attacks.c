@@ -20,7 +20,7 @@ enum {
     SECOND_PREIMAGE_MODES = 8,
     ATTACK_CHUNK_SIZE = 64,
     TREE_SHAPE_MIN_LEAVES = 3,
-    TREE_SHAPE_MAX_LEAVES = 16,
+    TREE_SHAPE_MAX_LEAVES = 33,
     SUBTREE_REPLACEMENT_LEAVES = 8,
     LONG_MESSAGE_LENGTH = 262144,
     LONG_CHUNK_SIZE = 4096,
@@ -798,123 +798,128 @@ static int canonical_partition_screen(void) {
     unsigned int rejected = 0;
     unsigned int expected_rejected = 0;
 
-    for (size_t leaf_count = TREE_SHAPE_MIN_LEAVES;
-         leaf_count <= TREE_SHAPE_MAX_LEAVES;
-         leaf_count++) {
-        size_t length = leaf_count * FCH_TREE_LEAF_BYTES;
-        fch_tree_position_t parent;
-        fch_tree_position_t expected_children[2];
-        if (!fch_tree_position_for_range(0u, length, &parent) ||
-            !fch_tree_split_position(&parent, expected_children))
-            return 0;
+    for (size_t position = 0u; position < 3u; position++) {
+        const size_t offsets[] = {0u, FCH_TREE_LEAF_BYTES, 7u * FCH_TREE_LEAF_BYTES};
+        size_t offset = offsets[position];
+        for (size_t leaf_count = TREE_SHAPE_MIN_LEAVES;
+             leaf_count <= TREE_SHAPE_MAX_LEAVES;
+             leaf_count++) {
+            size_t length = leaf_count * FCH_TREE_LEAF_BYTES;
+            fch_tree_position_t parent;
+            fch_tree_position_t expected_children[2];
+            if (!fch_tree_position_for_range(offset, length, &parent) ||
+                !fch_tree_split_position(&parent, expected_children))
+                return 0;
 
-        state_record_t direct;
-        state_record_t left;
-        state_record_t right;
-        state_record_t combined;
-        state_record_t rejected_output;
-        if (!make_subtree(message, length, 0u, &direct) ||
-            !make_subtree(
-                message,
-                expected_children[0].byte_length,
-                expected_children[0].byte_offset,
-                &left
-            ) ||
-            !make_subtree(
-                message + expected_children[1].byte_offset,
-                expected_children[1].byte_length,
-                expected_children[1].byte_offset,
-                &right
-            ))
-            return 0;
-
-        fch_block_t canonical_blocks[2] = {
-            {0u, expected_children[0].byte_length},
-            {
-                expected_children[0].byte_length,
-                expected_children[1].byte_length
-            }
-        };
-        fch_state_t canonical_children[2] = {
-            state_view(&left),
-            state_view(&right)
-        };
-        if (!combine_state(
-                canonical_children,
-                canonical_blocks,
-                2u,
-                length,
-                &combined
-            ) ||
-            !same_state(&direct, &combined))
-            return 0;
-        accepted++;
-
-        fch_state_t reversed_children[2] = {
-            state_view(&right),
-            state_view(&left)
-        };
-        expected_rejected++;
-        if (combine_state(
-                reversed_children,
-                canonical_blocks,
-                2u,
-                length,
-                &rejected_output
-            ))
-            return 0;
-        rejected++;
-
-        for (size_t split = 1u; split < leaf_count; split++) {
-            if (split == expected_children[0].leaf_count)
-                continue;
-
-            size_t left_length = split * FCH_TREE_LEAF_BYTES;
-            size_t right_length = length - left_length;
-            state_record_t alternative_left;
-            state_record_t alternative_right;
-            if (!make_subtree(
+            state_record_t direct;
+            state_record_t left;
+            state_record_t right;
+            state_record_t combined;
+            state_record_t rejected_output;
+            if (!make_subtree(message, length, offset, &direct) ||
+                !make_subtree(
                     message,
-                    left_length,
-                    0u,
-                    &alternative_left
+                    expected_children[0].byte_length,
+                    expected_children[0].byte_offset,
+                    &left
                 ) ||
                 !make_subtree(
-                    message + left_length,
-                    right_length,
-                    left_length,
-                    &alternative_right
+                    message + (expected_children[1].byte_offset - offset),
+                    expected_children[1].byte_length,
+                    expected_children[1].byte_offset,
+                    &right
                 ))
                 return 0;
 
-            fch_state_t alternative_children[2] = {
-                state_view(&alternative_left),
-                state_view(&alternative_right)
+            fch_block_t canonical_blocks[2] = {
+                {0u, expected_children[0].byte_length},
+                {
+                    expected_children[0].byte_length,
+                    expected_children[1].byte_length
+                }
             };
-            fch_block_t alternative_blocks[2] = {
-                {0u, left_length},
-                {left_length, right_length}
+            fch_state_t canonical_children[2] = {
+                state_view(&left),
+                state_view(&right)
+            };
+            if (!combine_state(
+                    canonical_children,
+                    canonical_blocks,
+                    2u,
+                    length,
+                    &combined
+                ) ||
+                !same_state(&direct, &combined))
+                return 0;
+            accepted++;
+
+            fch_state_t reversed_children[2] = {
+                state_view(&right),
+                state_view(&left)
             };
             expected_rejected++;
             if (combine_state(
-                    alternative_children,
-                    alternative_blocks,
+                    reversed_children,
+                    canonical_blocks,
                     2u,
                     length,
                     &rejected_output
                 ))
                 return 0;
             rejected++;
+
+            for (size_t split = 1u; split < leaf_count; split++) {
+                if (split == expected_children[0].leaf_count)
+                    continue;
+
+                size_t left_length = split * FCH_TREE_LEAF_BYTES;
+                size_t right_length = length - left_length;
+                state_record_t alternative_left;
+                state_record_t alternative_right;
+                if (!make_subtree(
+                        message,
+                        left_length,
+                        offset,
+                        &alternative_left
+                    ) ||
+                    !make_subtree(
+                        message + left_length,
+                        right_length,
+                        offset + left_length,
+                        &alternative_right
+                    ))
+                    return 0;
+
+                fch_state_t alternative_children[2] = {
+                    state_view(&alternative_left),
+                    state_view(&alternative_right)
+                };
+                fch_block_t alternative_blocks[2] = {
+                    {0u, left_length},
+                    {left_length, right_length}
+                };
+                expected_rejected++;
+                if (combine_state(
+                        alternative_children,
+                        alternative_blocks,
+                        2u,
+                        length,
+                        &rejected_output
+                    ))
+                    return 0;
+                rejected++;
+            }
         }
     }
 
     unsigned int expected_accepted =
-        TREE_SHAPE_MAX_LEAVES - TREE_SHAPE_MIN_LEAVES + 1u;
+        3u * (TREE_SHAPE_MAX_LEAVES - TREE_SHAPE_MIN_LEAVES + 1u);
+
     int ok =
         accepted == expected_accepted &&
         rejected == expected_rejected;
     printf(
-        "canonical_partition,leaf_counts=%u-%u,accepted=%u,"
+        "canonical_partition,leaf_counts=%u-%u,offsets=0:1024:7168,accepted=%u,"
         "alternatives_rejected=%u,%s\n",
         TREE_SHAPE_MIN_LEAVES,
         TREE_SHAPE_MAX_LEAVES,

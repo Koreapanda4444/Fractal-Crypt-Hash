@@ -167,7 +167,7 @@ check: test check-cli
 check-research-native: $(RESEARCH_TESTS)
 	@set -e; for test_bin in $(RESEARCH_TESTS); do ./$$test_bin; done
 
-check-research: check-research-native check-diffusion check-trails check-characteristics check-reduced-rounds check-second-preimage-bounds
+check-research: check-research-native check-diffusion check-trails check-characteristics check-full-rounds check-reduced-rounds check-second-preimage-bounds
 
 check-all: check check-extended check-reference check-interoperability check-research bench-check bench-baseline-check
 
@@ -187,6 +187,12 @@ check-reference: fch
 
 check-trails:
 	$(PYTHON) ../tools/fch_trail_search.py
+
+check-full-rounds:
+	$(PYTHON) ../tools/fch_characteristic_search.py \
+		--rounds 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16 \
+		--samples 128 --candidate-limit 1024 \
+		--check-report ../analysis/full-round-characteristics-v1.json
 
 check-characteristics:
 	$(PYTHON) ../tools/fch_characteristic_search.py
@@ -302,4 +308,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: check-interoperability check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean
+.PHONY: check-full-rounds check-interoperability check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean

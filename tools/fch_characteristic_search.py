@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import fch_reference as ref
 import fch_trail_search as trail
@@ -32,6 +34,8 @@ class RoundAccumulator:
     minimum_output_active_words: int = ref.STATE_WORDS + 1
     minimum_candidate: str = ""
     minimum_sample: int = 0
+    minimum_output_candidate: str = ""
+    minimum_output_sample: int = 0
     maximum_characteristic_count: int = 0
     characteristic_candidate: str = ""
     characteristic_sample: int = 0
@@ -131,29 +135,26 @@ def update_minimum(
         accumulator.zero_state_differences += 1
     if output_weight == 0:
         accumulator.zero_output_differences += 1
-    current = (
-        state_weight,
-        state_active_words,
-        output_weight,
-        output_active_words,
-        candidate.name,
-        sample,
-    )
-    minimum = (
-        accumulator.minimum_state_weight,
-        accumulator.minimum_state_active_words,
-        accumulator.minimum_output_weight,
-        accumulator.minimum_output_active_words,
-        accumulator.minimum_candidate,
-        accumulator.minimum_sample,
-    )
+    current = (state_weight, candidate.name, sample)
+    minimum = (accumulator.minimum_state_weight, accumulator.minimum_candidate,
+               accumulator.minimum_sample)
     if current < minimum:
         accumulator.minimum_state_weight = state_weight
-        accumulator.minimum_state_active_words = state_active_words
-        accumulator.minimum_output_weight = output_weight
-        accumulator.minimum_output_active_words = output_active_words
         accumulator.minimum_candidate = candidate.name
         accumulator.minimum_sample = sample
+    if (output_weight, candidate.name, sample) < (
+        accumulator.minimum_output_weight, accumulator.minimum_output_candidate,
+        accumulator.minimum_output_sample
+    ):
+        accumulator.minimum_output_weight = output_weight
+        accumulator.minimum_output_candidate = candidate.name
+        accumulator.minimum_output_sample = sample
+    accumulator.minimum_state_active_words = min(
+        accumulator.minimum_state_active_words, state_active_words
+    )
+    accumulator.minimum_output_active_words = min(
+        accumulator.minimum_output_active_words, output_active_words
+    )
 
 
 def analyze(
@@ -226,6 +227,9 @@ def main() -> int:
     parser.add_argument("--rounds", type=parse_rounds, default=DEFAULT_ROUNDS)
     parser.add_argument("--samples", type=int, default=DEFAULT_SAMPLES)
     parser.add_argument("--candidate-limit", type=int, default=1024)
+    reports = parser.add_mutually_exclusive_group()
+    reports.add_argument("--report", type=Path)
+    reports.add_argument("--check-report", type=Path)
     args = parser.parse_args()
     candidates = input_differences()
     if args.samples < 2:
@@ -241,7 +245,7 @@ def main() -> int:
             "full_state_characteristic,rounds,candidates,samples,pairs,"
             "min_state_weight,min_state_active_words,min_output_weight,"
             "min_output_active_words,max_exact_count,max_exact_frequency,"
-            "min_candidate,min_sample,characteristic_candidate,"
+            "min_candidate,min_sample,min_output_candidate,min_output_sample,characteristic_candidate,"
             "characteristic_sample,status"
         )
         failed = False
@@ -273,6 +277,7 @@ def main() -> int:
                 f"{result.maximum_characteristic_count},"
                 f"{result.maximum_characteristic_count / args.samples:.6f},"
                 f"{result.minimum_candidate},{result.minimum_sample},"
+                f"{result.minimum_output_candidate},{result.minimum_output_sample},"
                 f"{result.characteristic_candidate},"
                 f"{result.characteristic_sample},{status}"
             )
@@ -280,12 +285,41 @@ def main() -> int:
         if failed:
             print("CHARACTERISTIC_SEARCH: FAIL")
             return 1
+        document = {
+            "schema": "fch-characteristic-profile-v1",
+            "profile": {
+                "rounds": list(args.rounds), "samples": args.samples,
+                "candidates": len(selected_candidates),
+                "differences": "single-bit XOR in word-major bit order",
+                "sample_seed": "6a09e667f3bcc909",
+                "internal_state_bits": 512, "working_state_bits": 1024,
+                "block_bytes": ref.BLOCK_SIZE,
+                "counter": f"{trail.COUNTER:016x}",
+                "domain": f"{trail.DOMAIN:016x}", "flags": f"{trail.FLAGS:016x}",
+                "minimum_state_weight": MIN_STATE_WEIGHT,
+                "minimum_output_weight": MIN_OUTPUT_WEIGHT,
+            },
+            "results": [asdict(result) for result in results],
+            "limitations": [
+                "Bounded deterministic observations, not security proofs.",
+                "Round one is weak and excluded from quantitative thresholds.",
+                "Empirical characteristic counts do not bound differential probabilities.",
+                "Only the specified single-bit differences and initial context are sampled.",
+            ],
+        }
+        if args.report is not None:
+            args.report.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        if args.check_report is not None:
+            expected = json.loads(args.check_report.read_text(encoding="utf-8"))
+            if document != expected:
+                raise ValueError("characteristic profile differs from the frozen report")
+            print("PASS: exact characteristic profile match")
         print(
             "CHARACTERISTIC_SEARCH: PASS "
             "(bounded full-state single-bit search; not a security proof)"
         )
         return 0
-    except RuntimeError as error:
+    except (RuntimeError, ValueError, OSError) as error:
         print(f"CHARACTERISTIC_SEARCH: ERROR: {error}", file=sys.stderr)
         return 2
 

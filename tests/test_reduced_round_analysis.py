@@ -9,9 +9,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 import fch_reduced_round_analysis as analysis  # noqa: E402
+import fch_characteristic_search as characteristics  # noqa: E402
 
 
 class ReducedRoundAnalysisTests(unittest.TestCase):
+    def test_characteristic_minima_are_independent(self) -> None:
+        result = characteristics.RoundAccumulator(16)
+        sparse = tuple([1] * 8 + [0] * 8)
+        cancellation = tuple([0xffff] + [0] * 7 + [0xfffe] + [0] * 7)
+        for name, state in (("sparse", sparse), ("cancellation", cancellation)):
+            characteristics.update_minimum(
+                result, state, characteristics.output_difference(state),
+                characteristics.InputDifference(name, 0, 1), 0,
+            )
+        self.assertEqual(result.minimum_state_weight, 8)
+        self.assertEqual(result.minimum_state_active_words, 2)
+        self.assertEqual(result.minimum_output_weight, 1)
+        self.assertEqual(result.minimum_output_active_words, 1)
+        self.assertEqual(result.minimum_candidate, "sparse")
+        self.assertEqual(result.minimum_output_candidate, "cancellation")
+
     def test_round_evaluator_matches_reference(self) -> None:
         analysis.verify_reference()
 
