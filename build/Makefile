@@ -17,7 +17,7 @@ SANITIZER_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
                     -fno-omit-frame-pointer
 SANITIZER_ASAN_OPTIONS ?= detect_leaks=0:abort_on_error=1
 SANITIZER_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
-CPPFLAGS = -I../include
+CPPFLAGS = -I../include -I../src
 DEPFLAGS ?= -MMD -MP
 LDFLAGS =
 LDLIBS =

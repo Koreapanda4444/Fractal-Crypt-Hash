@@ -19,6 +19,10 @@ byte range. Root status is added only by output finalization.
 
 ## Source layout
 
+`include/fch.h` and `include/fch_stream.h` are the public API. Implementation
+headers, including research hooks, live beside their sources in `src/` and
+are not a supported external interface.
+
 - `src/mix.c` implements initialization, the 16-round ARX compression core,
   and output finalization.
 - `src/fractal_split.c` computes and validates canonical range descriptors and

@@ -19,6 +19,9 @@ C 구현과 `tools/fch_reference.py`는 모두 트리 인코딩 버전 2를 구�
 
 ## 소스 구성
 
+`include/fch.h`와 `include/fch_stream.h`만 공개 API입니다. 연구용 hook을 포함한
+내부 헤더는 `src/`의 구현 옆에 있으며 외부 사용자를 위한 지원 인터페이스가 아닙니다.
+
 - `src/mix.c`: 초기화, 16라운드 ARX 압축 코어, 출력 마무리
 - `src/fractal_split.c`: 정규 범위 구조와 이진 자식 경계 계산 및 검증
 - `src/leaf.c`: 리프 헤더와 데이터 레코드 인코딩

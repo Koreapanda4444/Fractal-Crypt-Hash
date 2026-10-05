@@ -694,7 +694,7 @@ fuzz 소스와 통합 diffusion 실행기를 검사합니다. 축소 라운드 �
 
 | 영역 | 우선 확인할 파일 |
 | ---- | ---------------- |
-| 파라미터, 라운드, 상수와 압축 | `include/params.h`, `src/mix.c`, `src/bitops.c` |
+| 파라미터, 라운드, 상수와 압축 | `src/params.h`, `src/mix.c`, `src/bitops.c` |
 | 역할별 레코드, 리프, 노드와 정규 분할 | `src/leaf.c`, `src/combine.c`, `src/fractal_split.c`, `src/fractal_process.c` |
 | 공개 API, 출력 마무리와 스트리밍 | `src/fch.c`, `src/fch_stream.c`, `include/fch.h`, `include/fch_stream.h` |
 | 기준 구현과 자동 탐색 | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tools/fch_reduced_round_analysis.py`, `tools/fch_second_preimage_bounds.py`, `analysis/`, `tests/` |

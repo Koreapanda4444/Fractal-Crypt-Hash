@@ -758,7 +758,7 @@ implementation and its tests.
 
 | Area | Primary files |
 | ---- | ------------- |
-| Parameters, rounds, constants, and compression | `include/params.h`, `src/mix.c`, `src/bitops.c` |
+| Parameters, rounds, constants, and compression | `src/params.h`, `src/mix.c`, `src/bitops.c` |
 | Typed records, leaves, nodes, and canonical splitting | `src/leaf.c`, `src/combine.c`, `src/fractal_split.c`, `src/fractal_process.c` |
 | Public API, finalization, and streaming | `src/fch.c`, `src/fch_stream.c`, `include/fch.h`, `include/fch_stream.h` |
 | Reference model and automated searches | `tools/fch_reference.py`, `tools/fch_trail_search.py`, `tools/fch_characteristic_search.py`, `tools/fch_reduced_round_analysis.py`, `tools/fch_second_preimage_bounds.py`, `analysis/`, `tests/` |
