@@ -31,7 +31,9 @@ SRC = ../src/fch.c \
       ../src/bitops.c \
       ../src/fch_stream.c
 
-OBJ = $(SRC:.c=.o)
+OBJ = $(patsubst ../src/%.c,obj/%.o,$(SRC))
+
+export PYTHONDONTWRITEBYTECODE = 1
 
 ANALYZE_SOURCES = $(SRC) \
         ../tools/fch.c \
@@ -91,7 +93,10 @@ define generate-dependencies
 	@mv $@.d.tmp $@.d
 endef
 
-%.o: %.c
+obj:
+	mkdir -p $@
+
+obj/%.o: ../src/%.c | obj
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -MT $@ -c -o $@ $<
 
 all: fch
@@ -274,8 +279,10 @@ analyze:
 			-c "$$source" -o /dev/null; \
 	done
 
+BINARIES = fch $(TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS)
+
 clean:
-	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) fch $(TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS) test_vectors_ubsan test_vectors_san
+	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
 
 -include $(DEPS)
 

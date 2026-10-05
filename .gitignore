@@ -1,0 +1,12 @@
+/build/obj/
+/build/*.d
+/build/*.d.tmp
+/build/*.exe
+/build/fch
+/build/test_*
+/build/fch_diffusion
+/build/bench_hash
+/build/fuzz_*
+/build/*.json
+/build/fuzz/
+/build/pycache/
