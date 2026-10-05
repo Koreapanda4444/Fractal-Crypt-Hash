@@ -82,7 +82,6 @@ static inline int fch_memory_read(
 fch_state_t fch_process(
     const uint8_t *data,
     size_t length,
-    int depth,
     size_t state_words
 );
 
@@ -90,14 +89,12 @@ fch_state_t fch_process_reader(
     const fch_reader_t *reader,
     size_t offset,
     size_t length,
-    int depth,
     size_t state_words
 );
 
 size_t fch_fractal_split(
     const uint8_t *data,
     size_t length,
-    int depth,
     fch_block_t *blocks,
     size_t max_blocks
 );
@@ -106,7 +103,6 @@ size_t fch_fractal_split_reader(
     const fch_reader_t *reader,
     size_t offset,
     size_t length,
-    int depth,
     fch_block_t *blocks,
     size_t max_blocks
 );

@@ -67,7 +67,7 @@ int fch_hash_256_checked(
     }
 
     fch_state_t root =
-        fch_process(padded, padded_len, 0, FCH_256_STATE_WORDS);
+        fch_process(padded, padded_len, FCH_256_STATE_WORDS);
 
     if (!root.state ||
         root.words != FCH_256_STATE_WORDS ||
@@ -115,7 +115,7 @@ int fch_hash_512_checked(
     }
 
     fch_state_t root =
-        fch_process(padded, padded_len, 0, FCH_512_STATE_WORDS);
+        fch_process(padded, padded_len, FCH_512_STATE_WORDS);
 
     if (!root.state ||
         root.words != FCH_512_STATE_WORDS ||

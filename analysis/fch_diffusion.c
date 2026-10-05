@@ -980,7 +980,7 @@ void fch_debug_hook(
 
 static int run_process(const uint8_t *data, size_t len, int collecting_base) {
     g_collecting_base = collecting_base;
-    fch_state_t out = fch_process(data, len, 0, FCH_256_STATE_WORDS);
+    fch_state_t out = fch_process(data, len, FCH_256_STATE_WORDS);
     if (!out.state)
         return 0;
     free(out.state);

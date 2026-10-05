@@ -130,13 +130,10 @@ size_t fch_fractal_split_reader(
     const fch_reader_t *reader,
     size_t offset,
     size_t length,
-    int depth,
     fch_block_t *blocks,
     size_t max_blocks
 ) {
     if (!reader || !reader->read || !blocks || max_blocks == 0u)
-        return 0;
-    if (depth < 0)
         return 0;
 
     fch_tree_position_t parent;
@@ -166,7 +163,6 @@ size_t fch_fractal_split_reader(
 size_t fch_fractal_split(
     const uint8_t *data,
     size_t length,
-    int depth,
     fch_block_t *blocks,
     size_t max_blocks
 ) {
@@ -179,7 +175,6 @@ size_t fch_fractal_split(
         &reader,
         0,
         length,
-        depth,
         blocks,
         max_blocks
     );

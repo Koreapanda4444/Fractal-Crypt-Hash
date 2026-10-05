@@ -82,7 +82,6 @@ static int combine_workspace_states(
             FCH_TREE_ARITY,
             node_length,
             FCH_INTERNAL_STATE_WORDS,
-            0,
             &combined
         ))
         return 0;
@@ -102,7 +101,6 @@ fch_state_t fch_process_reader(
     const fch_reader_t *reader,
     size_t offset,
     size_t length,
-    int depth,
     size_t state_words
 ) {
     fch_state_t result = {
@@ -111,7 +109,7 @@ fch_state_t fch_process_reader(
         { 0, 0, 0, 0, 0 }
     };
 
-    if (state_words != FCH_INTERNAL_STATE_WORDS || depth < 0 ||
+    if (state_words != FCH_INTERNAL_STATE_WORDS ||
         !reader || !reader->read)
         return result;
 
@@ -148,9 +146,7 @@ fch_state_t fch_process_reader(
                 reader,
                 leaf_offset,
                 leaf_length,
-                &leaf,
-                0
-            ))
+                &leaf))
             goto fail;
         carry.tree = leaf.tree;
 
@@ -249,7 +245,6 @@ fail:
 fch_state_t fch_process(
     const uint8_t *data,
     size_t length,
-    int depth,
     size_t state_words
 ) {
     fch_state_t result = {
@@ -258,11 +253,11 @@ fch_state_t fch_process(
         { 0, 0, 0, 0, 0 }
     };
 
-    if (state_words != FCH_INTERNAL_STATE_WORDS || depth < 0 ||
+    if (state_words != FCH_INTERNAL_STATE_WORDS ||
         (!data && length > 0u))
         return result;
 
     fch_memory_reader_t memory = { data, length };
     fch_reader_t reader = { fch_memory_read, &memory };
-    return fch_process_reader(&reader, 0, length, depth, state_words);
+    return fch_process_reader(&reader, 0, length, state_words);
 }

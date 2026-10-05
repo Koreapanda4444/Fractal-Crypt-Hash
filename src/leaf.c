@@ -7,13 +7,12 @@ int fch_leaf_compress_reader(
     const fch_reader_t *reader,
     size_t offset,
     size_t length,
-    fch_state_t *out,
-    int depth
+    fch_state_t *out
 ) {
     if (!out || !out->state ||
         out->words != FCH_INTERNAL_STATE_WORDS)
         return 0;
-    if (!reader || !reader->read || depth < 0)
+    if (!reader || !reader->read)
         return 0;
 
     fch_tree_position_t position;
@@ -93,13 +92,12 @@ int fch_leaf_compress_reader(
 void fch_leaf_compress(
     const uint8_t *data,
     size_t length,
-    fch_state_t *out,
-    int depth
+    fch_state_t *out
 ) {
     if (!data && length > 0u)
         return;
 
     fch_memory_reader_t memory = { data, length };
     fch_reader_t reader = { fch_memory_read, &memory };
-    (void)fch_leaf_compress_reader(&reader, 0, length, out, depth);
+    (void)fch_leaf_compress_reader(&reader, 0, length, out);
 }

@@ -95,7 +95,6 @@ static int manual_padding_hashes(
     fch_state_t root = fch_process(
         padded,
         padded_length,
-        0,
         FCH_INTERNAL_STATE_WORDS
     );
     free(padded);

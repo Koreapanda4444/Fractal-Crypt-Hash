@@ -122,9 +122,8 @@ static int check_leaf_boundaries(void) {
                 &reader,
                 0u,
                 lengths[i],
-                &state,
-                0
-            ) ||
+                &state
+           ) ||
             state.tree.level != 0u ||
             state.tree.first_leaf != 0u ||
             state.tree.leaf_count != 1u ||
@@ -146,9 +145,7 @@ static int check_leaf_boundaries(void) {
             &reader,
             0u,
             FCH_TREE_LEAF_BYTES + 1u,
-            &oversized,
-            0
-        )) {
+            &oversized)) {
         printf("FAIL: leaf compressor accepted an oversized leaf\n");
         free(input);
         return 0;

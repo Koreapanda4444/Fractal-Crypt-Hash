@@ -428,14 +428,14 @@ The automated suite includes:
 
 - C/Python cross-checks and fixed vectors;
 - exact record-layout, domain, endian, and canonical-position checks;
-- content- and legacy-depth-independent schedule tests;
+- content-independent schedule tests;
 - boundary, length, avalanche, and reduced-round diffusion tests;
 - bounded differential, linear, rotational, related-tweak, fixed-point,
   two-cycle, collision, and near-collision searches;
 - 4,096 leaf and derived-node multicollision samples;
 - 512 related candidates for a 16 KiB second-preimage screen;
 - canonical tree acceptance and reordered, skewed, flat, shifted, forged, and
-  negative-depth rejection checks;
+  forged-level rejection checks;
 - fifteen 256 KiB long-message variants;
 - one-shot/streaming equivalence, lifecycle, reader-failure, forced-allocation,
   fuzz, sanitizer, and stress paths; and

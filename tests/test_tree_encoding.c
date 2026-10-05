@@ -217,7 +217,7 @@ static int check_leaf_records(void) {
         data[i] = (uint8_t)(i * 17u + 3u);
 
     reset_capture();
-    fch_leaf_compress(data, sizeof(data), &state, 99);
+    fch_leaf_compress(data, sizeof(data), &state);
 
     REQUIRE(g_init_count == 1u, "leaf did not initialize exactly once");
     REQUIRE(g_init_state_words == FCH_INTERNAL_STATE_WORDS,
@@ -333,9 +333,7 @@ static int check_node_records(void) {
         blocks,
         FCH_TREE_ARITY,
         NODE_LENGTH,
-        FCH_INTERNAL_STATE_WORDS,
-        77
-    );
+        FCH_INTERNAL_STATE_WORDS);
 
     REQUIRE(parent.state != NULL, "canonical node combine failed");
     REQUIRE(g_init_count == 1u, "node did not initialize exactly once");

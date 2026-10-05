@@ -132,23 +132,18 @@ static int check_split_case(
 ) {
     fch_block_t a[FCH_TREE_ARITY];
     fch_block_t b[FCH_TREE_ARITY];
-    fch_block_t c[FCH_TREE_ARITY];
     size_t count_a = fch_fractal_split(
-        zeros, length, 0, a, FCH_TREE_ARITY
+        zeros, length, a, FCH_TREE_ARITY
     );
     size_t count_b = fch_fractal_split(
-        pattern, length, 0, b, FCH_TREE_ARITY
-    );
-    size_t count_c = fch_fractal_split(
-        pattern, length, 63, c, FCH_TREE_ARITY
+        pattern, length, b, FCH_TREE_ARITY
     );
     size_t leaves = 1u + (length - 1u) / FCH_TREE_LEAF_BYTES;
     size_t expected_count = leaves == 1u ? 1u : FCH_TREE_ARITY;
 
     REQUIRE(count_a == expected_count, "split count mismatch");
-    REQUIRE(count_b == count_a && count_c == count_a, "split count changed");
+    REQUIRE(count_b == count_a, "split count changed");
     REQUIRE(same_blocks(a, b, count_a), "message changed tree shape");
-    REQUIRE(same_blocks(a, c, count_a), "depth changed tree shape");
     REQUIRE(a[0].offset == 0u, "first child offset mismatch");
     if (leaves == 1u) {
         REQUIRE(a[0].length == length, "single leaf span mismatch");
@@ -173,7 +168,7 @@ static int check_split_case(
     fch_block_t reader_blocks[FCH_TREE_ARITY];
     REQUIRE(
         fch_fractal_split_reader(
-            &reader, 0u, length, 0, reader_blocks, FCH_TREE_ARITY
+            &reader, 0u, length, reader_blocks, FCH_TREE_ARITY
         ) == expected_count,
         "reader split failed"
     );
@@ -244,13 +239,9 @@ static int check_leaf_position_binding(void) {
     fch_memory_reader_t memory = { storage, sizeof(storage) };
     fch_reader_t reader = { fch_memory_read, &memory };
     uint64_t words_a[FCH_INTERNAL_STATE_WORDS] = {0};
-    uint64_t words_b[FCH_INTERNAL_STATE_WORDS] = {0};
     uint64_t words_c[FCH_INTERNAL_STATE_WORDS] = {0};
     fch_state_t a = {
         words_a, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 }
-    };
-    fch_state_t b = {
-        words_b, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 }
     };
     fch_state_t c = {
         words_c, FCH_INTERNAL_STATE_WORDS, { 0, 0, 0, 0, 0 }
@@ -258,31 +249,19 @@ static int check_leaf_position_binding(void) {
 
     REQUIRE(
         fch_leaf_compress_reader(
-            &reader, 0, FCH_TREE_LEAF_BYTES, &a, 0
+            &reader, 0, FCH_TREE_LEAF_BYTES, &a
         ),
         "first leaf compression failed"
-    );
-    REQUIRE(
-        fch_leaf_compress_reader(
-            &reader, 0, FCH_TREE_LEAF_BYTES, &b, 9
-        ),
-        "depth-independent leaf compression failed"
     );
     REQUIRE(
         fch_leaf_compress_reader(
             &reader,
             FCH_TREE_LEAF_BYTES,
             FCH_TREE_LEAF_BYTES,
-            &c,
-            0
-        ),
+            &c),
         "relocated leaf compression failed"
     );
 
-    REQUIRE(
-        memcmp(words_a, words_b, sizeof(words_a)) == 0,
-        "obsolete root depth changed leaf state"
-    );
     REQUIRE(
         memcmp(words_a, words_c, sizeof(words_a)) != 0,
         "leaf position was not bound"
@@ -308,8 +287,7 @@ static int check_combine_validation(void) {
 
     REQUIRE(
         fch_leaf_compress_reader(
-            &reader, 0, FCH_TREE_LEAF_BYTES, &children[0], 0
-        ),
+            &reader, 0, FCH_TREE_LEAF_BYTES, &children[0]),
         "left child compression failed"
     );
     REQUIRE(
@@ -317,9 +295,7 @@ static int check_combine_validation(void) {
             &reader,
             FCH_TREE_LEAF_BYTES,
             FCH_TREE_LEAF_BYTES,
-            &children[1],
-            0
-        ),
+            &children[1]),
         "right child compression failed"
     );
 
@@ -332,9 +308,7 @@ static int check_combine_validation(void) {
         blocks,
         FCH_TREE_ARITY,
         sizeof(data),
-        FCH_INTERNAL_STATE_WORDS,
-        0
-    );
+        FCH_INTERNAL_STATE_WORDS);
     REQUIRE(parent.state != NULL, "canonical children were rejected");
     REQUIRE(parent.tree.level == 1u && parent.tree.leaf_count == 2u,
         "parent descriptor mismatch");
@@ -352,7 +326,6 @@ static int check_combine_validation(void) {
             FCH_TREE_ARITY,
             sizeof(data),
             FCH_INTERNAL_STATE_WORDS,
-            0,
             &workspace_parent
         ),
         "caller-owned combine failed"
@@ -380,9 +353,7 @@ static int check_combine_validation(void) {
         blocks,
         FCH_TREE_ARITY,
         sizeof(data),
-        FCH_INTERNAL_STATE_WORDS,
-        0
-    );
+        FCH_INTERNAL_STATE_WORDS);
     REQUIRE(!rejected_swap.state, "reordered children were accepted");
 
     fch_block_t wrong_blocks[FCH_TREE_ARITY] = {
@@ -394,9 +365,7 @@ static int check_combine_validation(void) {
         wrong_blocks,
         FCH_TREE_ARITY,
         sizeof(data),
-        FCH_INTERNAL_STATE_WORDS,
-        0
-    );
+        FCH_INTERNAL_STATE_WORDS);
     REQUIRE(!rejected_layout.state, "non-canonical blocks were accepted");
 
     free(parent.state);

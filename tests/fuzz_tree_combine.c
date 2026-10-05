@@ -105,7 +105,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         FCH_INTERNAL_STATE_WORDS,
         {0, 0, 0, 0, 0}
     };
-    int depth = (int)(byte_at(data, size, 4u) & 31u);
 
     require_or_abort(fch_combine_into(
         children,
@@ -113,7 +112,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         FCH_TREE_ARITY,
         parent_length,
         FCH_INTERNAL_STATE_WORDS,
-        depth,
         &output
     ));
     require_or_abort(fch_combine_into(
@@ -122,7 +120,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         FCH_TREE_ARITY,
         parent_length,
         FCH_INTERNAL_STATE_WORDS,
-        depth,
         &repeat
     ));
     require_or_abort(memcmp(
@@ -138,9 +135,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         blocks,
         FCH_TREE_ARITY,
         parent_length,
-        FCH_INTERNAL_STATE_WORDS,
-        depth
-    );
+        FCH_INTERNAL_STATE_WORDS);
     require_or_abort(allocated.state != NULL);
     require_or_abort(memcmp(
         allocated.state,
@@ -160,7 +155,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     size_t invalid_count = FCH_TREE_ARITY;
     size_t invalid_length = parent_length;
     size_t invalid_words = FCH_INTERNAL_STATE_WORDS;
-    int invalid_depth = depth;
 
     switch (byte_at(data, size, 5u) % 14u) {
     case 0u:
@@ -191,7 +185,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         invalid_output.words--;
         break;
     case 9u:
-        invalid_depth = -1;
+        invalid_output.state = NULL;
         break;
     case 10u:
         invalid_count = 1u;
@@ -216,7 +210,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         invalid_count,
         invalid_length,
         invalid_words,
-        invalid_depth,
         &invalid_output
     ));
     return 0;

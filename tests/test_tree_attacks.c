@@ -169,7 +169,6 @@ static int make_leaf(
     const uint8_t *message,
     size_t length,
     size_t offset,
-    int depth,
     state_record_t *output
 ) {
     if (!output)
@@ -186,9 +185,7 @@ static int make_leaf(
         &reader,
         offset,
         length,
-        &state,
-        depth
-    );
+        &state);
     if (ok)
         output->tree = state.tree;
     return ok;
@@ -209,7 +206,6 @@ static int make_subtree(
         &reader,
         offset,
         length,
-        0,
         FCH_INTERNAL_STATE_WORDS
     );
     if (!state.state)
@@ -267,7 +263,6 @@ static int combine_state(
     const fch_block_t *blocks,
     size_t count,
     size_t node_length,
-    int depth,
     state_record_t *output
 ) {
     if (!output)
@@ -278,9 +273,7 @@ static int combine_state(
         blocks,
         count,
         node_length,
-        FCH_INTERNAL_STATE_WORDS,
-        depth
-    );
+        FCH_INTERNAL_STATE_WORDS);
     if (!combined.state)
         return 0;
 
@@ -397,7 +390,6 @@ static int multicollision_screen(void) {
             sibling_message,
             sizeof(sibling_message),
             FCH_TREE_LEAF_BYTES,
-            2,
             &sibling
         )) {
         free(leaves);
@@ -419,7 +411,6 @@ static int multicollision_screen(void) {
                 fixed_messages[i],
                 sizeof(fixed_messages[i]),
                 (i + 2u) * FCH_TREE_LEAF_BYTES,
-                2,
                 &fixed_leaves[i]
             )) {
             free(leaves);
@@ -447,7 +438,6 @@ static int multicollision_screen(void) {
             leaf_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 2u,
-            1,
             &fixed_subtree
         )) {
         free(leaves);
@@ -469,7 +459,6 @@ static int multicollision_screen(void) {
                 message,
                 sizeof(message),
                 0u,
-                2,
                 &leaves[sample]
             )) {
             generated = 0;
@@ -485,7 +474,6 @@ static int multicollision_screen(void) {
                 leaf_blocks,
                 2,
                 FCH_TREE_LEAF_BYTES * 2u,
-                1,
                 &nodes[sample]
             )) {
             generated = 0;
@@ -501,7 +489,6 @@ static int multicollision_screen(void) {
                 subtree_blocks,
                 2u,
                 FCH_TREE_LEAF_BYTES * 4u,
-                0,
                 &roots[sample]
             )) {
             generated = 0;
@@ -591,7 +578,6 @@ static int tree_shape_screen(void) {
                 message,
                 sizeof(message),
                 i * FCH_TREE_LEAF_BYTES,
-                2,
                 &leaves[i]
             ))
             return 0;
@@ -630,7 +616,6 @@ static int tree_shape_screen(void) {
             pair_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 2u,
-            1,
             &pair_ab
         ) ||
         !combine_state(
@@ -638,7 +623,6 @@ static int tree_shape_screen(void) {
             pair_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 2u,
-            1,
             &pair_cd
         ) ||
         !combine_state(
@@ -646,7 +630,6 @@ static int tree_shape_screen(void) {
             pair_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 2u,
-            1,
             &pair_bc
         ))
         return 0;
@@ -661,13 +644,11 @@ static int tree_shape_screen(void) {
             bcd_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 3u,
-            1,
             &subtree_bcd
         ))
         return 0;
 
-    state_record_t root_depth0;
-    state_record_t root_depth99;
+    state_record_t canonical_root;
     fch_state_t canonical_children[2] = {
         state_view(&pair_ab),
         state_view(&pair_cd)
@@ -677,24 +658,8 @@ static int tree_shape_screen(void) {
             root_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
-            &root_depth0
-        ) ||
-        !combine_state(
-            canonical_children,
-            root_blocks,
-            2u,
-            FCH_TREE_LEAF_BYTES * 4u,
-            99,
-            &root_depth99
+            &canonical_root
         ))
-        return 0;
-
-    if (memcmp(
-            root_depth0.words,
-            root_depth99.words,
-            sizeof(root_depth0.words)
-        ) != 0)
         return 0;
 
     state_record_t altered_ab = pair_ab;
@@ -709,15 +674,14 @@ static int tree_shape_screen(void) {
             root_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &altered_root
         ))
         return 0;
 
     int altered_distance = bit_diff(
-        (const uint8_t *)root_depth0.words,
+        (const uint8_t *)canonical_root.words,
         (const uint8_t *)altered_root.words,
-        sizeof(root_depth0.words)
+        sizeof(canonical_root.words)
     );
 
     unsigned int rejected = 0;
@@ -732,7 +696,6 @@ static int tree_shape_screen(void) {
             root_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &rejected_output
         ))
         rejected++;
@@ -750,7 +713,6 @@ static int tree_shape_screen(void) {
             skew_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &rejected_output
         ))
         rejected++;
@@ -772,7 +734,6 @@ static int tree_shape_screen(void) {
             flat_blocks,
             4u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &rejected_output
         ))
         rejected++;
@@ -787,7 +748,6 @@ static int tree_shape_screen(void) {
             shifted_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &rejected_output
         ))
         rejected++;
@@ -803,25 +763,25 @@ static int tree_shape_screen(void) {
             root_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &rejected_output
         ))
         rejected++;
 
+    state_record_t forged_level = pair_cd;
+    forged_level.tree.level++;
+    fch_state_t level_children[2] = {
+        state_view(&pair_ab), state_view(&forged_level)
+    };
     if (!combine_state(
-            canonical_children,
-            root_blocks,
-            2u,
-            FCH_TREE_LEAF_BYTES * 4u,
-            -1,
-            &rejected_output
+            level_children, root_blocks, 2u,
+            FCH_TREE_LEAF_BYTES * 4u, &rejected_output
         ))
         rejected++;
 
     int ok = rejected == 6u && altered_distance >= 160;
     printf(
         "tree_shape,canonical=accepted,invalid_rejected=%u,"
-        "depth_independent=yes,child_bit_distance=%d,%s\n",
+        "level_binding=yes,child_bit_distance=%d,%s\n",
         rejected,
         altered_distance,
         ok ? "PASS" : "FAIL"
@@ -884,7 +844,6 @@ static int canonical_partition_screen(void) {
                 canonical_blocks,
                 2u,
                 length,
-                0,
                 &combined
             ) ||
             !same_state(&direct, &combined))
@@ -901,7 +860,6 @@ static int canonical_partition_screen(void) {
                 canonical_blocks,
                 2u,
                 length,
-                0,
                 &rejected_output
             ))
             return 0;
@@ -943,7 +901,6 @@ static int canonical_partition_screen(void) {
                     alternative_blocks,
                     2u,
                     length,
-                    0,
                     &rejected_output
                 ))
                 return 0;
@@ -991,21 +948,18 @@ static int subtree_replacement_screen(void) {
             message,
             FCH_TREE_LEAF_BYTES,
             0u,
-            0,
             &leaf_left
         ) ||
         !make_leaf(
             message + FCH_TREE_LEAF_BYTES,
             FCH_TREE_LEAF_BYTES,
             FCH_TREE_LEAF_BYTES,
-            0,
             &leaf_next
         ) ||
         !make_leaf(
             message + FCH_TREE_LEAF_BYTES * 4u,
             FCH_TREE_LEAF_BYTES,
             FCH_TREE_LEAF_BYTES * 4u,
-            0,
             &leaf_relocated
         ) ||
         !make_subtree(
@@ -1071,7 +1025,6 @@ static int subtree_replacement_screen(void) {
             pair_blocks,
             2u,
             half_length,
-            0,
             &output
         ))
         rejected++;
@@ -1085,7 +1038,6 @@ static int subtree_replacement_screen(void) {
             pair_blocks,
             2u,
             half_length,
-            0,
             &output
         ))
         rejected++;
@@ -1099,7 +1051,6 @@ static int subtree_replacement_screen(void) {
             quad_blocks,
             2u,
             sizeof(message),
-            0,
             &output
         ))
         rejected++;
@@ -1126,7 +1077,6 @@ static int subtree_replacement_screen(void) {
                 pair_blocks,
                 2u,
                 half_length,
-                0,
                 &output
             ))
             rejected++;
@@ -1144,7 +1094,6 @@ static int subtree_replacement_screen(void) {
             leaf_blocks,
             2u,
             FCH_TREE_LEAF_BYTES * 2u,
-            0,
             &output
         ) ||
         same_state(&output, &pair_left))
@@ -1162,7 +1111,6 @@ static int subtree_replacement_screen(void) {
             pair_blocks,
             2u,
             half_length,
-            0,
             &output
         ) ||
         same_state(&output, &quad_left))
@@ -1180,7 +1128,6 @@ static int subtree_replacement_screen(void) {
             quad_blocks,
             2u,
             sizeof(message),
-            0,
             &output
         ) ||
         same_state(&output, &root))

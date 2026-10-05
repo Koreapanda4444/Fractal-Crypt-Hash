@@ -25,10 +25,9 @@ int fch_combine_into(
     size_t count,
     size_t node_length,
     size_t state_words,
-    int depth,
     fch_state_t *output
 ) {
-    if (!children || !blocks || !output || !output->state || depth < 0)
+    if (!children || !blocks || !output || !output->state)
         return 0;
     if (count != FCH_TREE_ARITY ||
         state_words != FCH_INTERNAL_STATE_WORDS ||
@@ -145,8 +144,7 @@ fch_state_t fch_combine(
     const fch_block_t *blocks,
     size_t count,
     size_t node_length,
-    size_t state_words,
-    int depth
+    size_t state_words
 ) {
     fch_state_t out = {
         NULL,
@@ -166,7 +164,6 @@ fch_state_t fch_combine(
             count,
             node_length,
             state_words,
-            depth,
             &prepared
         ))
         return out;

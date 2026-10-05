@@ -122,7 +122,6 @@ static int stream_combine_nodes(
             FCH_TREE_ARITY,
             node_length,
             FCH_INTERNAL_STATE_WORDS,
-            0,
             &combined
         ))
         return 0;
@@ -200,9 +199,7 @@ static int stream_push_leaf(
             &reader,
             state->processed_length,
             length,
-            &leaf,
-            0
-        ))
+            &leaf))
         return 0;
     carry.tree = leaf.tree;
 

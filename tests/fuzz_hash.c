@@ -27,11 +27,9 @@ static void require_or_abort(int condition) {
 
 static void check_split_invariants(const uint8_t *data, size_t size) {
     fch_block_t blocks[FCH_TREE_ARITY];
-    int depth = size == 0 ? 0 : (int)(data[0] & 31u);
     size_t count = fch_fractal_split(
         data,
         size,
-        depth,
         blocks,
         FCH_TREE_ARITY
     );

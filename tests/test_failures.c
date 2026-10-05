@@ -197,16 +197,12 @@ static int test_tree_allocation_failures(void) {
             &reader,
             0u,
             FCH_TREE_LEAF_BYTES,
-            &children[0],
-            0
-        ) ||
+            &children[0]) ||
         !fch_leaf_compress_reader(
             &reader,
             FCH_TREE_LEAF_BYTES,
             FCH_TREE_LEAF_BYTES,
-            &children[1],
-            0
-        ))
+            &children[1]))
         return 0;
 
     fch_block_t blocks[FCH_TREE_ARITY] = {
@@ -220,9 +216,7 @@ static int test_tree_allocation_failures(void) {
         blocks,
         FCH_TREE_ARITY,
         sizeof(input),
-        FCH_INTERNAL_STATE_WORDS,
-        0
-    );
+        FCH_INTERNAL_STATE_WORDS);
     if (allocated.state != NULL || allocation_calls != 1u)
         return 0;
 
@@ -238,7 +232,6 @@ static int test_tree_allocation_failures(void) {
             FCH_TREE_ARITY,
             sizeof(input),
             FCH_INTERNAL_STATE_WORDS,
-            0,
             &parent
         ) || allocation_calls != 0u)
         return 0;
@@ -248,7 +241,6 @@ static int test_tree_allocation_failures(void) {
         &reader,
         0u,
         sizeof(input),
-        0,
         FCH_INTERNAL_STATE_WORDS
     );
     if (processed.state != NULL || allocation_calls != 1u)
@@ -260,9 +252,7 @@ static int test_tree_allocation_failures(void) {
         blocks,
         FCH_TREE_ARITY,
         sizeof(input),
-        FCH_INTERNAL_STATE_WORDS,
-        0
-    );
+        FCH_INTERNAL_STATE_WORDS);
     if (!allocated.state ||
         memcmp(
             allocated.state,
@@ -372,7 +362,6 @@ static int test_reader_failures(void) {
         &reader,
         0,
         FCH_TREE_LEAF_BYTES,
-        0,
         FCH_INTERNAL_STATE_WORDS
     );
     if (leaf.state || context.calls == 0u) {
@@ -385,7 +374,6 @@ static int test_reader_failures(void) {
         &reader,
         0,
         FCH_TREE_LEAF_BYTES * 2u,
-        0,
         FCH_INTERNAL_STATE_WORDS
     );
     if (node.state || context.calls == 0u) {

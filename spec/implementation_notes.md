@@ -45,11 +45,9 @@ single-leaf range they return that range. For an internal range they return the
 two canonical children. The reader callback is validated but is not called
 while the schedule is calculated.
 
-The legacy `depth` arguments are also retained at the internal API boundary.
-Negative values are rejected; nonnegative values do not change the encoding or
-tree shape. Debug-hook parameters still use the old name in the C signature,
-but their value is the version-2 tree level: leaves are level zero and the root
-has `ceil(log2(leaf_count))`.
+The unused legacy `depth` arguments have been removed from internal calls.
+Position descriptors and debug hooks retain the actual version-2 tree level:
+leaves are level zero and the root has `ceil(log2(leaf_count))`.
 
 `fch_combine` accepts exactly two children. It recomputes the expected parent
 and split, checks the child descriptors, verifies relative block offsets and
