@@ -10,7 +10,7 @@
 #include "debug_hooks.h"
 #include "../tests/test_utils.h"
 
-#define MAX_INPUT 4096
+#define FCH_DIFFUSION_MAX_INPUT 4096
 #define ROUNDS 128
 
 typedef enum {
@@ -112,8 +112,8 @@ static void stats_add(stats_t *s, double v) {
 }
 
 static avalanche_stats_t compute_stats(size_t len, flip_mode_t mode, int hash_bits) {
-    uint8_t base[MAX_INPUT];
-    uint8_t mod[MAX_INPUT];
+    uint8_t base[FCH_DIFFUSION_MAX_INPUT];
+    uint8_t mod[FCH_DIFFUSION_MAX_INPUT];
     memset(base, 0xA5, len);
 
     avalanche_stats_t s;
@@ -479,7 +479,7 @@ static avalanche_stats_t compute_stats_on_base(
     uint32_t flip_seed,
     int hash_bits
 ) {
-    uint8_t mod[MAX_INPUT];
+    uint8_t mod[FCH_DIFFUSION_MAX_INPUT];
 
     avalanche_stats_t s;
     s.avg = 0.0;
@@ -519,8 +519,8 @@ static int pattern_row(
     flip_mode_t mode,
     int hash_bits
 ) {
-    uint8_t base[MAX_INPUT];
-    uint8_t ref[MAX_INPUT];
+    uint8_t base[FCH_DIFFUSION_MAX_INPUT];
+    uint8_t ref[FCH_DIFFUSION_MAX_INPUT];
 
     fill_pattern(base, len, pat, 0);
     fill_pattern(ref,  len, PAT_RANDOM, (uint32_t)(0x12345678u ^ (uint32_t)len ^ (uint32_t)mode ^ (uint32_t)hash_bits));
@@ -779,7 +779,7 @@ static int run_length_variation(void) {
 
     const double MIN_DIFF = 0.35;
 
-    uint8_t stream[MAX_INPUT];
+    uint8_t stream[FCH_DIFFUSION_MAX_INPUT];
     fill_deterministic(stream, sizeof(stream), 0x12345678u);
 
     struct { size_t a, b; const char *id; } pairs[] = {
@@ -828,8 +828,8 @@ static int run_length_variation(void) {
             return 0;
         }
 
-        uint8_t a[MAX_INPUT];
-        uint8_t b[MAX_INPUT];
+        uint8_t a[FCH_DIFFUSION_MAX_INPUT];
+        uint8_t b[FCH_DIFFUSION_MAX_INPUT];
 
         size_t alen = 0;
         memcpy(a + alen, prefix, sizeof(prefix)); alen += sizeof(prefix);
@@ -842,7 +842,7 @@ static int run_length_variation(void) {
 
         ok &= check_length_case("pad_inject", "prefix_suffix_vs_prefix_pad_suffix", a, alen, b, blen, &pad256, &pad512);
 
-        uint8_t c[MAX_INPUT];
+        uint8_t c[FCH_DIFFUSION_MAX_INPUT];
         size_t clen = 0;
         memcpy(c + clen, prefix, sizeof(prefix)); clen += sizeof(prefix);
         memcpy(c + clen, pad_tail, tail_len);     clen += tail_len;
