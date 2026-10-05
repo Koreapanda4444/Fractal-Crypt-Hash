@@ -5,11 +5,13 @@
 이 문서는 현재 Fractal Crypt-Hash(FCH)의 동작을 바이트 단위로 정의합니다.
 FCH는 암호학 연구를 위해 개발 중인 공개·결정적 비키 해시 함수입니다. 아래
 보안 강도는 설계 목표이며, 저장소에 포함된 테스트가 이를 증명한다는 뜻은
-아닙니다. 독립적인 분석은 계속 진행 중입니다.
+아닙니다. 현재 리비전은 FCH research candidate이며 독립 암호 검토는 아직
+확립하지 못했습니다.
 
-이번 개정부터 트리 인코딩 버전 2가 규범 형식입니다. 메시지 내용으로 트리
-분할을 정하던 버전 1을 대체하며, 모든 해시 결과가 의도적으로 달라집니다.
-두 버전을 섞거나 실패 시 이전 형식으로 돌아가는 모드는 없습니다.
+트리 인코딩 버전 2가 규범 형식이며, 메시지 내용으로 분할을 정하던 버전 1과
+호환되지 않습니다. cleanup과 research candidate 작업은 기존 버전 2 알고리즘과
+해시 결과를 유지합니다. 두 버전을 섞거나 실패 시 이전 형식으로 돌아가는 모드는
+없습니다.
 
 영문 사양서는 [fch_spec.md](fch_spec.md)에 있습니다.
 
@@ -425,7 +427,7 @@ padding 1, 16라운드에 대해 54개 메시지와 두 변형의 expected diges
 다시 생성하지 않습니다.
 
 빈 입력·작은 바이너리와 텍스트·padding·120바이트 leaf data 레코드 경계,
-padding 전후의 1,024바이트 leaf 경계, 최대 32개 leaf까지의 tree 경계를 포함합니다.
+padding 전후의 1,024바이트 leaf 경계, 32개 leaf를 넘는 전환의 tree 경계를 포함합니다.
 헤더의 열 가지 고정 chunk 크기 외에 C는 크기를 순환하는 열한 번째 계획을 쓰며
 입력 전후에 빈 update를 넣습니다. chunk 구분에 관계없이 고정 digest와 일치해야
 합니다. `make check-interoperability`는 C 원샷·streaming, C CLI, Python reference를
@@ -433,24 +435,35 @@ padding 전후의 1,024바이트 leaf 경계, 최대 32개 leaf까지의 tree �
 corpus 변경은 명시적인 버전 변경과 검토가 필요하며 regression을 감추기 위해
 expected digest를 새로 생성해서는 안 됩니다.
 
-자동화된 테스트에는 다음 항목이 포함됩니다.
+공개 API는 `include/fch.h`, `include/fch_stream.h` 두 헤더입니다. 내부 헤더는
+`src/`에 있으며 제거한 과거 `depth` 인자는 인코딩된 tree level이나 공개 API에
+속하지 않았습니다.
 
-- C/Python 결과 비교와 고정 벡터
-- 레코드 배치, 영역, endian과 정규 위치 검사
-- 메시지 내용에 독립적인 스케줄 검사
-- 경계값, 길이 변화, avalanche와 축소 라운드 확산
+`make check`는 correctness 프로그램 7개와 CLI를 실행합니다. 고정 벡터,
+입력·리프·트리 경계, 레코드 인코딩과 불변식, 원샷/스트리밍 동일성, 잘못된 입력,
+실패 경로와 이식성을 검사합니다. `check-reference`와 `check-interoperability`는
+Python과 C를 대조하고 `check-extended`는 stress와 제한 메모리의 8 MiB 스트리밍을
+검사합니다.
+
+별도 연구 계층에는 다음이 있습니다.
+
+- 통합 avalanche·길이·패턴·레벨별 확산
 - 제한된 차분·선형·회전·관련 tweak·고정점·2주기·충돌·근접 충돌 탐색
-- 리프 4,096개와 파생 노드 4,096개의 멀티콜리전 표본
-- 16 KiB 목표에 대한 관련 후보 512개의 제2원상 검사
-- 정규 트리 허용과 순서 변경·편향·평면·경계 이동·위조·위조 level 거부
-- 256 KiB 장문 변형 15개
-- 원샷/스트리밍 동일성, 수명주기, 리더 실패, 강제 할당 실패, fuzz,
-  sanitizer와 stress 경로
-- Linux·macOS·Windows·32비트 x86 및 에뮬레이션된 big-endian PowerPC CI 실행
+- 축소 라운드 trail과 단일 비트 차분 1,024개·기준 입력 128개를 쓰는
+  1~16라운드 고정 characteristic 프로필
+- 역할 6개에서 정식 라운드 역산 구간·feed-forward 재검산, rebound,
+  알려진 내부 표적을 쓰는 제한된 meet-in-the-middle 검사
+- 리프 및 파생 노드 4,096개씩의 멀티콜리전 표본, 제2원상·장문·herding·
+  다중 표적·grafting·서브트리 교체 탐색
+- 절대 오프셋 3개에서 리프 3~33개의 정규 분할 검사
+- 조건부 FCH-512 제2원상 비용 계산
+- 기존 libFuzzer 대상 4개의 결정적 campaign과 runtime sanitizer·누수 검사
+- 성능·할당 자원·내용별 실행 시간 관측
 
-모두 범위가 제한된 회귀 검사이며 보안 증명이 아닙니다. 전체 압축 코어,
-트리 멀티콜리전 경계, 장문 제2원상 논증과 코어·인코딩 트리의 상호작용은
-계속 독립적인 분석이 필요합니다.
+`correctness`와 `research-verification` CI가 이 범위를 구분합니다. 완료한 검사와
+정확한 소스 리비전은 [validation_status.ko.md](validation_status.ko.md)에 있습니다.
+제한된 실험과 CI 통과는 설계 목표를 확립하지 않습니다. 전체 코어, 트리 공격의
+비용과 압축·트리 인코딩의 상호작용은 독립 분석이 더 필요합니다.
 
 ## 13. 설계 근거와 호환성
 

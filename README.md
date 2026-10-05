@@ -5,8 +5,9 @@ a 16-round ARX compression core and a canonical recursive tree. The compression
 core handles local mixing, while fixed 1,024-byte leaves and position-bound
 binary nodes carry changes across the message and combine them at the root.
 
-FCH is an open research project. Its security goals are defined below, and
-independent public analysis is still ongoing.
+This revision is an **FCH research candidate**. It preserves tree encoding 2,
+padding 1, the 16-round core, and existing digests. Independent cryptographic
+review and the stated full-round security strengths have not been established.
 
 Korean documentation: [README.ko.md](README.ko.md)
 
@@ -23,8 +24,8 @@ generic classical attack costs expected for each output size.
 These figures are design targets. The specification describes what still has
 to be analyzed before those targets can be treated as established properties.
 The [validation and security status](spec/validation_status.md) separates
-locally reproduced passes, CI-only coverage, conditional analysis, and work
-that has not been established.
+local and completed CI passes, bounded observations, conditional analysis,
+and work that has not been established.
 
 ## Design
 
@@ -73,6 +74,9 @@ uint8_t out512[64];
 int ok256 = fch_hash_256_checked(data, len, out256);
 int ok512 = fch_hash_512_checked(data, len, out512);
 ```
+
+Only `include/fch.h` and `include/fch_stream.h` are public headers. Tree,
+compression, parameter, and research-hook headers in `src/` are internal.
 
 The checked functions return `1` on success and `0` for invalid input,
 unsupported length, or allocation failure. Compatibility wrappers with the
@@ -124,6 +128,8 @@ cat path/to/file | ./fch -256
 specification using only the Python standard library. It is kept separate from
 the C sources so the two implementations can be compared independently.
 
+From the repository root:
+
 ```sh
 python3 tools/fch_reference.py -256 path/to/file
 python3 tools/fch_reference.py -512 path/to/file
@@ -137,62 +143,64 @@ cd build
 make check-reference
 ```
 
-## Tests
+## Tests and research verification
 
-The repository includes tests for:
-
-- determinism, fixed outputs, boundaries, and invalid inputs
-- avalanche behavior and reduced-round diffusion
-- canonical tree boundaries, prefix stability, and content independence
-- domain separation and portable little-endian serialization
-- bounded differential, linear, fixed-point, cycle, and near-collision searches
-- multicollision, second-preimage, grafting, and long-message tree patterns
-- one-shot and streaming equivalence, API lifecycle, and forced allocation failures
-- sanitizer-backed libFuzzer targets for core hashing, stream chunking,
-  padding boundaries, and tree combination
-- bounded-memory processing of an 8 MiB input
-
-Run the regular and extended suites:
+From `build/`, the regular correctness suite runs seven C programs and the
+CLI regression:
 
 ```sh
-cd build
 make check
+make check-reference
+make check-interoperability
+```
+
+Coverage includes fixed vectors, input/leaf/tree boundaries, exact tree
+records and invariants, one-shot/streaming equivalence, invalid input, reader
+and allocation failures, portability, and CLI behavior. The fixed
+[interoperability corpus](analysis/interoperability-v1.tsv) contains 54 inputs
+for both variants. C checks 1,296 one-shot/streaming digests across eleven
+update plans; Python and the C CLI each check 108 expected digests. The separate
+reference comparison retains 384 cases with three fixed seeds.
+
+Research and stress checks are separate:
+
+```sh
 make check-extended
-make check-diffusion
+make check-research
 ```
 
-`make check-diffusion` runs the consolidated experiments in `analysis/fch_diffusion.c`, separately from `make check`. Individual sections can be reproduced with `./fch_diffusion avalanche`, `./fch_diffusion length`, or `./fch_diffusion tree`. These screens preserve the existing samples and thresholds; they do not prove cryptographic security.
+`check-extended` runs the existing stress program, including 8 MiB streaming
+with two chunk patterns. `check-research` runs native cryptanalysis and tree
+screens, consolidated avalanche/length/pattern/tree diffusion, trail and
+characteristic searches, fixed reduced-round experiments, and conditional
+second-preimage accounting. Trail replay requires `z3-solver==4.13.1.0`.
+Individual groups remain available as `check-research-native`,
+`check-diffusion`, `check-trails`, and `check-characteristics`.
 
-Reproduce the 1-through-16-round diffusion, XOR-differential, rotational
-symmetry, and structured-input bias profile:
+Reproduce the fixed research profiles:
 
 ```sh
+make check-full-rounds
 make check-reduced-rounds
-```
-
-The command validates unit tests and reruns the fixed `reduced-round-v1`
-profile against `analysis/reduced-round-v1.json`. The checked-in JSON contains
-all 160 per-round results and thresholds; an intentional profile update can be
-captured with `make reduced-round-report` and must be reviewed with the code
-change.
-
-Reproduce the conditional FCH-512 second-preimage accounting:
-
-```sh
 make check-second-preimage-bounds
 ```
 
-This checks padding and tree boundaries, canonical descriptor uniqueness, and
-the separation between complete-message queries and typed-map work against
-`analysis/fch512-second-preimage-v1.json`. The reported exponents are
-ideal-map union-bound scales, not attacks or security proofs. An intentional
-profile update is captured with `make second-preimage-report`.
+These require exact matches to the checked-in all-round characteristic,
+160-row reduced-round, and conditional FCH-512 bound reports. The expanded
+characteristic profile covers 1,024 single-bit differences on 128 bases at
+each round from 1 through 16. State/output minima are aggregated independently.
+Round one is weak and excluded from quantitative acceptance thresholds.
+The full 16-round observed minima are 448 working-state bits and 203
+compression-output bits; these are bounded observations, not security bounds.
+Profile updates require review and must not refresh expected results to hide
+a regression.
 
 Run the same combined AddressSanitizer and UndefinedBehaviorSanitizer suite as
-the Linux CI job:
+the Linux CI job, with leak detection enabled by default:
 
 ```sh
-make sanitizer-check
+make sanitizer-check SANITIZER_TARGETS=check
+make sanitizer-check SANITIZER_TARGETS="check-research-native check-diffusion check-extended"
 ```
 
 Build and run the full scaling benchmark:
@@ -211,8 +219,8 @@ the input grows.
 Capture a machine-specific reproducible baseline and compare a later build:
 
 ```sh
-make bench-baseline BASELINE=../bench/baselines/local.json
-make bench-compare BASELINE=../bench/baselines/local.json
+make bench-baseline BASELINE=benchmark-local.json
+make bench-compare BASELINE=benchmark-local.json
 ```
 
 The `baseline-v1` profile uses the fixed input seed and complete case matrix,
@@ -223,20 +231,30 @@ require the same recorded environment, reject resource-profile changes, and
 use a 20 percent per-case throughput regression limit by default. Set
 `MAX_REGRESSION` to choose another limit.
 
-Run the bounded focused libFuzzer targets with Clang:
+Run the four retained sanitizer-backed libFuzzer targets with Clang:
 
 ```sh
 make fuzz-smoke
+make fuzz-campaign FUZZ_SECONDS=300
 ```
 
-The smoke run uses 1,024 inputs per target and a 10-second per-input timeout.
-`FUZZ_RUNS` and `FUZZ_TIMEOUT` can override those bounds for local runs.
+Smoke runs request 1,024 executions per target; the campaign runs each target
+for the requested number of seconds. Both use named deterministic boundary
+corpora and fixed seeds. Inputs, crashes, logs, binary/corpus hashes, revision,
+compiler flags, and sanitizer settings are recorded under `build/fuzz/`.
+ASan/UBSan and leak detection are enabled by default. A scheduled or manual
+research CI job configures 600 seconds per target; it is skipped on normal
+pushes. See the [validation record](spec/validation_status.md) for the campaigns
+actually executed and their limits.
 
-CI builds and tests the code with GCC and Clang on Linux, Clang on macOS, and
-UCRT64 GCC on Windows. It also runs a 32-bit x86 build and executes the fixed
-vectors, streaming checks, invariants, and failure paths on big-endian PowerPC
-through QEMU. Dedicated Linux jobs run the combined sanitizer suite and all
-four bounded libFuzzer targets.
+The `correctness` workflow covers Linux GCC/Clang, macOS Clang, Windows UCRT64
+GCC with native binary stdin, 32-bit x86, and all seven C regressions on
+big-endian PowerPC under QEMU. It also runs ASan/UBSan/leaks, GCC static
+analysis, and C/Python interoperability. The separate `research-verification`
+workflow runs native research, stress, benchmarks, content timing, fixed
+profiles, all-round trail replay, and fuzz/runtime sanitizers. `make check-all`
+combines local correctness, reference, interoperability, stress, research,
+and benchmark checks; fuzzing and timing remain explicit commands.
 
 ## Documentation
 

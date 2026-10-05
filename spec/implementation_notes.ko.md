@@ -2,7 +2,7 @@
 
 이 문서는 C 레퍼런스 구현에서 선택한 방식과 제약을 정리합니다. 규범 알고리즘은
 [fch_spec.ko.md](fch_spec.ko.md)에 정의되어 있습니다.
-현재 통과 항목, CI 전용 범위와 미검증 항목은
+완료한 로컬·CI 통과, 구성된 campaign과 미검증 항목은
 [validation_status.ko.md](validation_status.ko.md)에 정리합니다.
 
 ## 현재 형식
@@ -39,8 +39,8 @@ C 구현과 `tools/fch_reference.py`는 모두 트리 인코딩 버전 2를 구�
 
 ## 정규 스케줄
 
-소스 호환성을 위해 `fch_fractal_split*` 함수 이름은 남아 있지만, 더는 입력
-바이트를 읽거나 가변 자식 수를 파생하지 않습니다. 리프 범위에는 그 범위
+과거의 내부 함수 이름 `fch_fractal_split*`는 유지하지만 그 시그니처는 지원되는
+호환 인터페이스가 아닙니다. 입력 바이트를 읽거나 가변 자식 수를 파생하지 않습니다. 리프 범위에는 그 범위
 하나를, 내부 범위에는 정규 자식 두 개를 반환합니다. 리더 콜백의 유효성은
 검사하지만 스케줄 계산 중에는 호출하지 않습니다.
 
@@ -84,7 +84,7 @@ update는 1,024바이트 버퍼 하나를 채웁니다. 완성된 리프는 즉�
 - 구조 값은 고정 64비트 레코드 필드에 기록합니다.
 - 범위를 더하거나 곱하기 전에 overflow를 검사합니다.
 
-CI는 x86-64 Linux·macOS·Windows, 네이티브 32비트 x86과 QEMU에서 실행하는
+CI는 Linux·macOS·Windows, 네이티브 32비트 x86과 QEMU에서 실행하는
 big-endian PowerPC 구성을 검사합니다. big-endian 대상에서도 고정 벡터와
 little-endian 직렬화 검사를 직접 실행합니다.
 
@@ -105,10 +105,27 @@ checked 원샷·스트리밍 API는 성공 여부를 반환합니다. 잘못된 
 
 ## 테스트와 벤치마크
 
-일반·확장 테스트는 고정 벡터, C/Python 일치, 레코드 바이트, 정규 경계, 내용
-독립성, 앞부분 안정성, 비정규 트리 거부, 스트리밍 경계 동일성, 강제 할당
-실패, 축소 라운드 확산, 제한된 암호분석 탐색, 장문, 수명주기 오류, fuzz 경로와 sanitizer 빌드를
-검사합니다.
+object와 해당 dependency는 `build/obj/`, 바이너리·바이너리 dependency·benchmark·
+fuzz 생성물은 `build/` 안에 둡니다. Make는 Python bytecode 생성을 비활성화합니다.
+검토 후 저장한 연구 dataset은 검증 입력이며 자동 빌드 산출물이 아닙니다.
+
+`make check`는 기존 C correctness 프로그램 7개와 CLI 회귀를 실행합니다.
+정식 KAT reader는 새 테스트 파일 대신 `test_vectors.c`에 넣었습니다.
+`check-reference`의 차등 입력 384개를 유지하며 `check-interoperability`는 고정
+입력 54개를 C 원샷·스트리밍 계획 11개·C CLI·Python에서 검사합니다.
+`check-extended`는 `test_stress.c`를 실행합니다.
+
+native 암호분석과 트리 공격 소스는 `analysis/`에 있습니다. 통합
+`fch_diffusion.c`는 다른 `.c`를 include하지 않고 avalanche·길이·패턴·트리
+확산을 실행합니다. 이 실험과 trail·characteristic·조건부 계산은 `check`와
+분리한 `check-research`에 둡니다.
+
+고정 전 라운드 characteristic 보고서는 1~16라운드에서 기준 입력 128개와 단일
+비트 차분 1,024개를 사용합니다. 상태·출력 가중치와 활성 워드의 최소값을
+독립적으로 집계하고 상태와 출력 증거를 각각 저장합니다. `check-full-rounds`는
+`analysis/full-round-characteristics-v1.json`과 정확히 일치해야 합니다.
+기존 Python 분석 테스트에는 상태 최소 증거와 출력 최소 증거를 구분하는
+회귀 사례를 흡수했습니다.
 
 `tools/fch_reduced_round_analysis.py`는 같은 압축 문맥의 1~16라운드를 모두
 평가합니다. 고정 프로필은 내부 상태·출력 확산, 선택한 XOR 차분, 워드 회전과
@@ -143,6 +160,13 @@ FCH-512의 조건부 제2원상 비용 계산을 재현합니다. 정규 구조 
 이 결과를 소스·실행 환경 정보와 함께 저장하고 CPU, 플랫폼, 컴파일러와 플래그가
 같은 후속 실행만 비교합니다. 처리량 한계는 바꿀 수 있지만 힙이나 할당 횟수가
 달라지면 항상 명시적인 검토가 필요합니다.
+
+기존 `tests/fuzz_*.c` 대상 4개는 `tools/fch_fuzz.py`로 실행합니다.
+이름이 있는 seed 파일 456개, 고정 시드, 제한된 smoke와 시간 제한 campaign을
+사용하며 메타데이터와 로그는 `build/fuzz/`에 둡니다. 일반 push CI는 smoke와
+ASan·UBSan·누수를 검사하고 예약·수동 campaign은 대상마다 600초로 구성했습니다.
+로컬 ptrace 환경에서는 누수 검사를 끄고 실행해야 했으므로 완료된 CI 누수
+검사 결과를 검증 상태에 별도로 기록했습니다.
 
 ## 호환성 원칙
 

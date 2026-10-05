@@ -5,12 +5,13 @@
 This document defines the current byte-for-byte behavior of Fractal Crypt-Hash
 (FCH). FCH is a deterministic, public, non-keyed hash function developed for
 cryptographic research. The security levels below are design targets, not
-claims established by the bundled tests. Independent analysis is still in
-progress.
+claims established by the bundled tests. The current revision is an FCH
+research candidate; independent cryptographic review has not been established.
 
-This revision makes tree encoding version 2 normative. It replaces the former
-content-dependent tree and intentionally changes every digest produced by tree
-encoding version 1. There is no mixed-version or fallback mode.
+Tree encoding version 2 is normative and is incompatible with the former
+content-dependent version 1. The cleanup and research-candidate work preserves
+the existing version-2 algorithm and digests. There is no mixed-version or
+fallback mode.
 
 The Korean version is available in [fch_spec.ko.md](fch_spec.ko.md).
 
@@ -434,7 +435,7 @@ by the implementation during validation.
 
 Cases cover empty and small binary/text inputs, padding and 120-byte leaf-data
 record transitions, padded and unpadded 1,024-byte leaf boundaries, and tree
-transitions through 32 leaves. The corpus header defines ten fixed update
+transitions across the 32-leaf boundary. The corpus header defines ten fixed update
 sizes; C also cycles through those sizes as an eleventh plan and inserts empty
 updates before and after the data. Expected digests are independent of update
 boundaries. `make check-interoperability` verifies the corpus with the C
@@ -443,27 +444,39 @@ C corpus in the existing fixed-vector program. A corpus change requires an
 explicit reviewed version change; existing expected digests must not be
 refreshed to hide a regression.
 
-The automated suite includes:
+The implementation exposes only `include/fch.h` and `include/fch_stream.h`
+as public API. Internal headers live in `src/`; removed legacy `depth`
+arguments were not part of the encoded tree level or public API.
 
-- C/Python cross-checks and fixed vectors;
-- exact record-layout, domain, endian, and canonical-position checks;
-- content-independent schedule tests;
-- boundary, length, avalanche, and reduced-round diffusion tests;
+`make check` covers seven correctness programs and the CLI: fixed vectors,
+input/leaf/tree boundaries, exact record encoding and invariants,
+one-shot/streaming equivalence, invalid input and failure paths, and
+portability. `check-reference` and `check-interoperability` cross-check Python
+and C; `check-extended` runs stress and bounded-memory 8 MiB streaming.
+
+The separate research layer includes:
+
+- consolidated avalanche, length, pattern, and per-level diffusion;
 - bounded differential, linear, rotational, related-tweak, fixed-point,
-  two-cycle, collision, and near-collision searches;
-- 4,096 leaf and derived-node multicollision samples;
-- 512 related candidates for a 16 KiB second-preimage screen;
-- canonical tree acceptance and reordered, skewed, flat, shifted, forged, and
-  forged-level rejection checks;
-- fifteen 256 KiB long-message variants;
-- one-shot/streaming equivalence, lifecycle, reader-failure, forced-allocation,
-  fuzz, sanitizer, and stress paths; and
-- Linux, macOS, Windows, 32-bit x86, and emulated big-endian PowerPC CI runs.
+  two-cycle, collision, and near-collision screens;
+- reduced-round trails and a fixed 1-through-16-round characteristic profile
+  with 1,024 single-bit differences on 128 bases;
+- full-round inverse-window and feed-forward replay in six typed roles,
+  rebound screens, and bounded known-internal-target meet-in-the-middle checks;
+- 4,096 leaf and derived-node multicollision samples, second-preimage,
+  long-message, herding, multi-target, grafting, and subtree-replacement screens;
+- canonical partition checks for 3 through 33 leaves at three absolute offsets;
+- conditional FCH-512 second-preimage accounting;
+- four existing libFuzzer targets with deterministic campaigns and runtime
+  sanitizer/leak checks; and
+- performance, allocator-resource, and content-timing observations.
 
-These are bounded regression checks, not a security proof. The design still
-requires independent cryptanalysis, especially for the full compression core,
-tree multicollision bounds, long-message second-preimage arguments, and the
-interaction between the core and encoded tree mode.
+The `correctness` and `research-verification` workflows keep those scopes
+separate. Completed checks and exact source revisions are recorded in
+[validation_status.md](validation_status.md). Bounded experiments and CI passes
+do not establish the design targets. Independent analysis of the full core,
+tree attack costs, and the interaction of compression with tree encoding
+remains necessary.
 
 ## 13. Rationale and compatibility
 

@@ -30,6 +30,12 @@ encoding version 2, and separate output-finalization domains.
 Any change to the rounds, constants, domains, records, padding, leaf span, or
 tree schedule requires this report to be rerun and reviewed.
 
+This is the security record for the FCH research candidate. The implementation
+source anchor and completed validation runs are pinned in
+[validation_status.md](validation_status.md). The classical strengths remain
+design targets; bounded experiments and conditional ideal-map arguments do
+not establish full-round security or production suitability.
+
 ## Why the current structure was chosen
 
 | Component | Intended effect |
@@ -56,7 +62,7 @@ The current deterministic run produced the following results:
 | Differential bias | 2,048 samples at four input-bit positions for 8 and 16 rounds | 49.97% and 49.99% average; maximum per-bit bias 3.42% and 3.27% |
 | Linear correlation | 8,192 inputs and 32 masks for 8 and 16 rounds | Maximum absolute correlation 3.32% and 2.27% |
 | Low-weight trails | 24,576 candidates at every round from 1 through 16 | One round was weak; at 8 and 16 rounds the minimum output weights were 212 and 210 of 512 bits |
-| Full-state characteristics | All 1,024 single-bit message differences over 32 bases through rounds 1 to 8 | One round was weak; from round 2 every state and output word was active, and no exact full-state trajectory repeated across bases |
+| Full-state characteristics | All 1,024 single-bit differences over 128 bases at rounds 1 through 16, with independent minima | Round one weak; full-round state/output minima 448/203 bits, full word activity, and exact trajectory count at most 1/128 from round 2 |
 | Integrated round profile | 256 diffusion pairs, 1,024 XOR-differential pairs, 896 rotational pairs, and 896 structured outputs at every round from 1 through 16 | One round was weak; all 150 checked round/family results passed from round 2 onward |
 | Rotation-related patterns | Six 4,096-candidate pattern sets | One round was weak; tested sets had all eight state words active from round 2 onward |
 | Rotational pairs | 3,072 pairs at 1, 2, 4, 8, and 16 rounds over six word rotations | No exact relation; round averages stayed between 49.95% and 50.02% |
@@ -64,7 +70,8 @@ The current deterministic run produced the following results:
 | Projected differential probability | Eight XOR characteristics with 4,096 samples each at 1, 2, 4, 8, and 16 rounds | The largest observed 16-bit projection probability was 0.0977%; no zero output difference occurred |
 | Related contexts | 4,096 pairs per round over eight counter, domain, and flag relations | One round was weak; from round 2 all output words were active and the maximum bit bias was 2.95% |
 | Rebound-style inbound screen | 4,095 nonzero 12-bit message differences at 4, 8, and 16 rounds, split after 2, 4, and 8 rounds | Minimum middle-state weights were 373, 455, and 460 of 1,024 bits; no candidate was at or below 256 bits |
-| Meet-in-the-middle screen | 4,096 candidates over an 8-round core split 4+4 with a 24-bit middle-state projection | One projected pair and one exact pair occurred; the known 12-bit target was the only exact match |
+| Inverse and feed-forward replay | Six typed roles, 16 bases, every nonempty window through 16 rounds | All 13,056 inverse windows and 1,536 feed-forward comparisons matched |
+| Meet-in-the-middle screen | 4,096 candidates per side, 8-round 4+4 plus five full 16-round splits, 24-bit projection | Only the planted candidate matched exactly at each split; projected pairs are recorded below |
 | Output-only attack screen | 65,536 candidates at 4, 8, and 16 rounds with planted and unplanted 512-bit targets | Only the planted candidate matched exactly; no unplanted preimage or full collision occurred, and every nonmatch was at least 201 bits away |
 | Fixed points and two-cycles | 4,096 samples for 4, 8, and 16-round cores, plus both complete hashes | No tested fixed point or two-cycle was found |
 | Near collisions | All pairs among 2,048 64-byte messages | No exact collision; minimum distances were 90 bits for FCH-256 and 199 bits for FCH-512 |
@@ -133,40 +140,57 @@ characteristics of the 8- and 16-round cores.
 
 ### Full-state characteristic search
 
-`tools/fch_characteristic_search.py` extends the concrete search from two
-8-bit families to every single-bit difference in the complete 1,024-bit
-message block. It applies each of the 1,024 differences to 32 deterministic
-base messages and records the full 1,024-bit working-state difference after
-every round from 1 through 8. This gives 32,768 message pairs per round.
+`tools/fch_characteristic_search.py` applies all 1,024 single-bit differences
+in the 128-byte message block to 128 deterministic bases for rounds 1 through
+16: 131,072 pairs per round. The fixed context, seed, candidates, thresholds,
+and witnesses are recorded in
+[full-round-characteristics-v1.json](../analysis/full-round-characteristics-v1.json)
+and reproduced exactly by `make check-full-rounds`.
 
-An exact characteristic here is the entire sequence of working-state
-differences from the first round through the reported round. The final column
-counts how many of the 32 bases produced the most common exact sequence for one
-input difference.
+An exact characteristic is the entire sequence of 1,024-bit working-state
+differences from round one through the reported round. The final column is
+the largest repeated sequence count among 128 bases for one input difference.
+Each weight and active-word minimum is independently aggregated over all
+tested pairs; the state and output minima need not share a witness.
 
-| Rounds | Minimum state weight | Active state words | Minimum output weight | Active output words | Largest exact count |
-| ------ | -------------------- | ------------------ | --------------------- | ------------------- | ------------------- |
-| 1 | 4 | 4 | 4 | 4 | 20/32 |
-| 2 | 357 | 16 | 223 | 8 | 1/32 |
-| 3 | 449 | 16 | 245 | 8 | 1/32 |
-| 4 | 445 | 16 | 233 | 8 | 1/32 |
-| 5 | 443 | 16 | 225 | 8 | 1/32 |
-| 6 | 445 | 16 | 245 | 8 | 1/32 |
-| 7 | 445 | 16 | 249 | 8 | 1/32 |
-| 8 | 446 | 16 | 252 | 8 | 1/32 |
+| Rounds | Minimum state weight | Minimum active state words | Minimum output weight | Minimum active output words | Largest exact count |
+| ------ | -------------------- | -------------------------- | --------------------- | --------------------------- | ------------------- |
+| 1 | 4 | 4 | 4 | 4 | 69/128 |
+| 2 | 328 | 16 | 192 | 8 | 1/128 |
+| 3 | 446 | 16 | 206 | 8 | 1/128 |
+| 4 | 432 | 16 | 208 | 8 | 1/128 |
+| 5 | 436 | 16 | 200 | 8 | 1/128 |
+| 6 | 445 | 16 | 205 | 8 | 1/128 |
+| 7 | 445 | 16 | 207 | 8 | 1/128 |
+| 8 | 446 | 16 | 204 | 8 | 1/128 |
+| 9 | 439 | 16 | 203 | 8 | 1/128 |
+| 10 | 436 | 16 | 206 | 8 | 1/128 |
+| 11 | 448 | 16 | 207 | 8 | 1/128 |
+| 12 | 438 | 16 | 209 | 8 | 1/128 |
+| 13 | 444 | 16 | 207 | 8 | 1/128 |
+| 14 | 440 | 16 | 206 | 8 | 1/128 |
+| 15 | 441 | 16 | 207 | 8 | 1/128 |
+| 16 | 448 | 16 | 203 | 8 | 1/128 |
 
-The one-round result confirms a sparse deterministic path for some message
-bits. From round 2 onward, every tested pair activated all 16 working-state
-words and all eight compression-output words. No two bases produced the same
-complete characteristic prefix for a fixed input difference at those rounds.
+The previous evaluator reported output weight and active-word statistics at
+the minimum-state witness, rather than their independent minima. That
+aggregation bug is fixed, with a counterexample absorbed into the existing
+Python analysis test. The table replaces the older 32-base table; the change
+in reported minima reflects both correct aggregation and the expanded sample.
 
-The evaluator is checked against the 16-round Python reference before the
-search starts. These results are an empirical screen of single-bit input
-differences and 32 fixed bases. They are not probabilities or upper bounds for
-arbitrary, chosen, or higher-weight characteristics, and they do not replace a
-solver-assisted search. The CI thresholds of 256 state bits, 128 output bits,
-full word activation, and no repeated trajectory from round 2 are conservative
-regression alarms rather than claimed security bounds.
+Round one has sparse deterministic paths. In rounds 2 through 16, every
+sampled pair activated all 16 working-state words and all eight
+compression-output words, with no zero differences or repeated exact
+trajectory for a fixed input difference. At full round 16, the independently
+observed minima are 448 of 1,024 working-state bits and 203 of 512 output bits.
+
+The evaluator is checked against the full-round Python reference before the
+search. These are observations for the fixed initial context and single-bit
+differences. A count of 1/128 is an empirical count, not a differential
+probability upper bound. Higher-weight differences, other contexts, and
+optimized characteristics remain open. The round-2-through-16 thresholds
+(state weight 256, output weight 128, full word activation, no repeated
+trajectory) are regression alarms, not claimed security bounds.
 
 ### Integrated round-by-round experiments
 
@@ -269,36 +293,44 @@ meet-in-the-middle attacks.
 
 ### Rebound and meet-in-the-middle screens
 
-The reduced-round test build now exposes preparation, forward-round, and
-inverse-round operations for the internal 1,024-bit work state. The inverse was
-checked over a complete eight-round path and a four-round window beginning at
-round 2. Returning to the exact starting state is required, and the forward
-state is also checked against the normal compression output. These functions
-are compiled only with `FCH_ENABLE_REDUCED_ROUND_TESTS` and do not change the
-production hash interface.
+Analysis builds expose preparation, forward rounds, and inverse rounds on the
+internal 1,024-bit working state. Replay now covers leaf-header, final leaf-data,
+node-header, final child, FCH-256 output, and FCH-512 output roles. For each
+role, 16 bases exercise all nonempty windows within the full 16-round schedule:
+13,056 forward/inverse windows return to their exact starting states.
+A further 1,536 feed-forward comparisons agree with normal compression.
+The helpers require `FCH_ENABLE_REDUCED_ROUND_TESTS` and do not change public
+hashing or the production round count.
 
-The rebound-style screen changes 12 message bits spread across the first and
-last block bytes and enumerates all 4,095 nonzero differences. It measures the
-full work-state difference at 2+2, 4+4, and 8+8 round splits. The lightest
-middle states had weights 373, 455, and 460 of 1,024 bits. Every middle and end
-state activated all 16 words, no difference was zero, and no middle state had
-weight at or below 256 bits. The corresponding minimum end-state weights were
-455, 460, and 462 bits.
+The existing rebound-style screen changes 12 message bits across the first
+and last block bytes and enumerates all 4,095 nonzero differences. At 2+2,
+4+4, and 8+8 splits, minimum middle-state weights were 373, 455, and 460 of
+1,024 bits; minimum end-state weights were 455, 460, and 462. Every middle
+and end state activated all 16 words. No zero difference or middle state of
+weight at most 256 occurred. This is fixed-family enumeration, without an
+optimized inbound solver.
 
-The meet-in-the-middle screen uses a deliberately small 12-bit candidate space
-and an eight-round core split after round 4. It stores 4,096 forward middle
-states, reverses four rounds from a known full internal target for another
-4,096 candidates, and first matches a 24-bit projection before checking all
-1,024 bits. The run produced one projected pair and one exact pair, recovering
-only the planted candidate.
+The known-internal-target meet-in-the-middle screen retains the eight-round
+4+4 case and adds five full 16-round splits. Each row evaluates the same
+4,096-member 12-bit candidate family on both sides, matches a 24-bit
+projection, and verifies all 1,024 state bits.
 
-This recovery is a consistency check, not a preimage attack on FCH. It assumes
-the complete internal target state and all but 12 message bits are known. The
-same candidate must be evaluated on both sides because every round injects all
-16 message words, so this construction costs 4,096 forward and 4,096 backward
-evaluations without an independent early/late variable split. The rebound
-screen likewise enumerates a fixed difference family rather than solving an
-optimized inbound phase.
+| Rounds | Forward/backward split | Projected pairs | Exact pairs |
+| ------ | ---------------------- | --------------- | ----------- |
+| 8 | 4/4 | 1 | 1 |
+| 16 | 1/15 | 4 | 1 |
+| 16 | 4/12 | 1 | 1 |
+| 16 | 8/8 | 2 | 1 |
+| 16 | 12/4 | 1 | 1 |
+| 16 | 15/1 | 1 | 1 |
+
+Every exact match recovers only the planted candidate. This checks inverse
+consistency and the bounded search model; it is not an FCH preimage attack.
+The full internal target and all but 12 message bits are given. Every round
+injects all 16 message words, so the experiment has no independent early/late
+variable split and requires 4,096 forward plus 4,096 backward evaluations
+per row. Optimized inbound phases, neutral variables, and digest-only
+targets remain outside this screen.
 
 ### Output-only attack search
 
@@ -331,8 +363,8 @@ or bound stronger rebound, meet-in-the-middle, splice, and output-only attacks.
 | Check | Coverage | Result |
 | ----- | -------- | ------ |
 | Truncated multicollision screen | 4,096 leaf, node, and root states with 20-bit buckets | Expected truncated-prefix pairs occurred; no exact state collision was found |
-| Canonical shape validation | Leaf counts 3 through 16 | All 14 canonical layouts accepted; 119 alternative partitions rejected |
-| Malformed tree rejection | Reordering, forged ranges, gaps, overlaps, depth changes, and invalid children | Six malformed shapes, eight invalid replacements, and three graft attempts rejected or detected |
+| Canonical shape validation | Leaf counts 3 through 33 at byte offsets 0, 1,024, and 7,168, with full-round subtree states | All 93 canonical layouts accepted; 1,581 alternative partitions rejected |
+| Malformed tree rejection | Reordering, forged ranges, gaps, overlaps, forged tree levels, and invalid children | Six malformed shapes, eight invalid replacements, and three graft attempts rejected or detected |
 | Second-preimage screen | 512 candidates, eight mutation modes, 16 KiB target | No match; minimum distances were 103 bits for FCH-256 and 227 bits for FCH-512 |
 | Long-message screen | Fifteen variants of a 256 KiB message | No collision; minimum distances were 108 bits for FCH-256 and 229 bits for FCH-512 |
 | Expandable-message splice screen | 96 short/long pairs sharing a 2 KiB suffix, with one to four inserted leaves | No root or digest match; minimum distances were 216 root bits, 108 FCH-256 bits, and 225 FCH-512 bits |
@@ -683,11 +715,14 @@ The security tests are backed by implementation checks that keep the analyzed
 algorithm and the shipped code aligned:
 
 - fixed vectors and 384 C/Python reference comparisons over three fixed seeds;
+- a 54-message canonical corpus: 1,296 C one-shot/streaming checks and
+  108 checks each through Python and C CLI;
 - exhaustive 8-bit reduced-round searches with Z3 witness replay;
 - one-shot and streaming equivalence across boundary and chunk patterns;
 - explicit little-endian serialization checks, including big-endian CI;
 - rejection of allocation, reader, overflow, and API-lifecycle failures;
-- AddressSanitizer, UndefinedBehaviorSanitizer, and four focused libFuzzer smoke targets;
+- AddressSanitizer, UndefinedBehaviorSanitizer, leak detection in completed CI,
+  and four focused libFuzzer targets;
 - GCC path-sensitive static analysis over library, CLI, benchmark, regression,
   research, and fuzz sources with warnings treated as errors;
 - an 8 MiB bounded-memory streaming test; and
@@ -718,6 +753,23 @@ in total, with a 10-second timeout on each individual input. The padding target
 maps compact control inputs onto message lengths through 16,385 bytes so the
 marker and length-field transitions around minimum-padding and tree-leaf
 boundaries are exercised directly.
+
+The existing harnesses are now driven by `tools/fch_fuzz.py`, with 456 named
+initial seed files for padding, leaf, and tree boundaries and structured
+patterns. Hash and stream inputs are capped at 65,536 bytes; padding and
+combine control inputs at 4,096 bytes. Each target has a fixed seed. The
+runner preserves inputs, crashes, logs, binary and initial-corpus hashes,
+revision/dirty state, compiler flags, sanitizer settings, and available run
+statistics under `build/fuzz/`.
+
+A bounded local campaign ran each of the four targets for 60 seconds and
+recorded 599,160 executions in total without a crash or ASan/UBSan failure.
+Local leak detection was disabled because LeakSanitizer cannot run in that
+ptrace environment. Separately, normal-push CI smoke and the correctness and
+research sanitizer jobs completed with `detect_leaks=1`. The 600-second-per-target
+scheduled/manual CI campaign is configured and is skipped on normal pushes;
+it has not been executed for this candidate record. None of these runs
+establishes absence of memory bugs or cryptographic attacks.
 
 The GCC path-sensitive analyzer covers the library, command-line tool,
 benchmark, retained regression and fuzz sources, and consolidated diffusion
@@ -865,24 +917,30 @@ points for these tasks, not as evidence that stronger attacks do not exist.
 
 ## Reproducing the checks
 
-From the `build` directory:
+From `build/`, with Python and `z3-solver==4.13.1.0` available:
 
 ```sh
 make clean
 make check
+make check-reference check-interoperability
 make check-extended
-make check-reference
-make check-trails
-make check-characteristics
-make check-reduced-rounds
-make check-second-preimage-bounds
-make bench-check
-make bench-baseline-check
-make timing-check
-make fuzz-smoke
+make check-research
+make bench-check bench-baseline-check timing-check
 make analyze
+make sanitizer-check SANITIZER_TARGETS=check
+make sanitizer-check SANITIZER_TARGETS="check-research-native check-diffusion check-extended"
+make fuzz-smoke
 ```
 
-`test_cryptanalysis` and `test_tree_attacks` print the measured bounds and
-sample counts. Their pseudorandom inputs use fixed seeds, so the same source and
-parameters produce the same analysis data.
+`make check-full-rounds` reproduces the expanded 128-base all-round report;
+`check-reduced-rounds` and `check-second-preimage-bounds` reproduce the other
+fixed profiles. `test_cryptanalysis`, `test_tree_attacks`, and
+`fch_diffusion` print measured values and sample counts under fixed seeds.
+Research sources remain in `analysis/`, although the first two executable
+names are retained for compatibility.
+
+A longer campaign uses `make fuzz-campaign FUZZ_SECONDS=600`. Duration is
+per target, so four targets request about 40 minutes in total. This command
+describes a reproducible next campaign, not a pass claimed in this record.
+Clang with libFuzzer support is required. The validation status distinguishes
+the local leak-disabled runs from completed CI leak-enabled checks.

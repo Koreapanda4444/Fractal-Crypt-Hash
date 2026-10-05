@@ -2,7 +2,7 @@
 
 This file records choices made by the C reference implementation. The
 normative algorithm is defined in [fch_spec.md](fch_spec.md).
-Current pass, CI-only, and unverified coverage is tracked in
+Completed local/CI passes, configured campaigns, and unverified coverage are tracked in
 [validation_status.md](validation_status.md).
 
 ## Current format
@@ -43,8 +43,9 @@ the wrong position accidentally.
 
 ## Canonical scheduling
 
-The functions named `fch_fractal_split*` remain for source compatibility, but
-they no longer inspect input bytes or derive a variable fan-out. For a
+The historical internal names `fch_fractal_split*` remain, but their signatures
+are not a supported compatibility interface. They do not inspect input bytes
+or derive a variable fan-out. For a
 single-leaf range they return that range. For an internal range they return the
 two canonical children. The reader callback is validated but is not called
 while the schedule is calculated.
@@ -93,7 +94,7 @@ The implementation avoids native byte-order assumptions:
 - structural values use fixed 64-bit record fields; and
 - range calculations check addition and multiplication before use.
 
-CI covers x86-64 Linux, macOS, and Windows, a native 32-bit x86 build, and a
+CI covers Linux, macOS, and Windows, a native 32-bit x86 build, and a
 big-endian PowerPC build executed through QEMU. Fixed vectors and explicit
 little-endian serialization checks run on the emulated big-endian target.
 
@@ -115,11 +116,30 @@ context cleanup after every failure.
 
 ## Tests and benchmark
 
-The regular and extended suites check fixed vectors, C/Python agreement,
-record bytes, canonical boundaries, content independence, prefix stability,
-tree-layout rejection, streaming boundary equivalence, forced allocation
-failures, reduced-round diffusion, bounded cryptanalytic searches, long messages, lifecycle failures,
-fuzz paths, and sanitizer builds.
+All compiler objects and dependencies are written under `build/obj/`; binary,
+binary-dependency, benchmark, and fuzz outputs remain under `build/`.
+Make disables Python bytecode generation. Checked-in research datasets are
+reviewed inputs to verification and are not generated build artifacts.
+
+`make check` runs seven existing C correctness programs and CLI regression.
+The canonical KAT reader is part of `test_vectors.c`, not another test file.
+`check-reference` retains 384 differential cases; `check-interoperability`
+checks all 54 fixed corpus inputs through C one-shot, eleven streaming plans,
+C CLI, and Python. `check-extended` runs `test_stress.c`.
+
+Native cryptanalysis and tree attack sources live in `analysis/`. The
+consolidated `fch_diffusion.c` implements avalanche, length, pattern, and
+tree-level experiments without including another `.c` file. These groups,
+trails, characteristics, and conditional accounting run through
+`check-research` rather than `check`.
+
+The fixed all-round characteristic report uses 128 bases and 1,024 single-bit
+differences for rounds 1 through 16. Working-state/output weights and active
+word minima are aggregated independently, with separate state/output
+witnesses. `check-full-rounds` requires exact agreement with
+`analysis/full-round-characteristics-v1.json`. A regression in the existing
+Python analysis test distinguishes the state-minimum witness from the
+output-minimum witness.
 
 `tools/fch_reduced_round_analysis.py` evaluates the same compression context
 after every round from 1 through 16. Its fixed profile combines internal-state
@@ -158,6 +178,14 @@ It emits the median processor time with the deterministic resource counts.
 and compares later runs only when their CPU, platform, compiler, and flags
 match. Throughput limits are configurable; heap and allocation changes always
 require explicit review.
+
+The four existing `tests/fuzz_*.c` targets are driven by
+`tools/fch_fuzz.py`. It maintains 456 named seed files, fixed seeds, bounded
+smoke runs, and duration-limited campaigns; metadata and logs remain under
+`build/fuzz/`. CI runs smoke and ASan/UBSan/leaks on normal pushes and offers
+600 seconds per target for scheduled/manual campaigns. The local ptrace
+environment required leak detection to be disabled; completed CI leak passes
+are recorded separately in the validation status.
 
 ## Compatibility policy
 
