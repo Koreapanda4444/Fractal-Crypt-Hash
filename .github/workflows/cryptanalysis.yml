@@ -94,6 +94,41 @@ jobs:
       - name: Run four sanitizer-backed libFuzzer targets
         working-directory: build
         run: make fuzz-smoke
+      - name: Preserve smoke inputs, crashes, logs and metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fch-fuzz-smoke-${{ github.sha }}
+          path: build/fuzz/smoke/
+          retention-days: 14
+
+  runtime-sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run research and streaming stress with ASan, UBSan and leaks
+        working-directory: build
+        run: >-
+          make sanitizer-check
+          SANITIZER_TARGETS="check-research-native check-diffusion check-extended"
+
+  fuzz-campaign:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run four ten-minute sanitizer campaigns
+        working-directory: build
+        run: make fuzz-campaign FUZZ_SECONDS=600
+      - name: Preserve campaign inputs, crashes, logs and metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fch-fuzz-campaign-${{ github.sha }}
+          path: build/fuzz/campaign/
+          retention-days: 30
 
   windows-research:
     runs-on: windows-latest

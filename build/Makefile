@@ -16,7 +16,7 @@ SANITIZER_CC ?= clang
 SANITIZER_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
                     -fsanitize=address,undefined \
                     -fno-omit-frame-pointer
-SANITIZER_ASAN_OPTIONS ?= detect_leaks=0:abort_on_error=1
+SANITIZER_ASAN_OPTIONS ?= detect_leaks=1:abort_on_error=1
 SANITIZER_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 CPPFLAGS = -I../include -I../src
 DEPFLAGS ?= -MMD -MP
@@ -73,12 +73,14 @@ FUZZ_TARGETS = fuzz_hash \
                fuzz_padding \
                fuzz_tree_combine
 
+FUZZ_CC ?= clang
+FUZZ_SECONDS ?= 300
 FUZZ_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
                -fsanitize=fuzzer,address,undefined \
                -fno-omit-frame-pointer
 FUZZ_RUNS ?= 1024
 FUZZ_TIMEOUT ?= 10
-FUZZ_ASAN_OPTIONS ?= detect_leaks=0:abort_on_error=1
+FUZZ_ASAN_OPTIONS ?= detect_leaks=1:abort_on_error=1
 FUZZ_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 
 DEPS = $(OBJ:.o=.d) \
@@ -249,34 +251,35 @@ timing-check: bench_hash
 	./bench_hash --timing-check
 
 fuzz_hash: ../tests/fuzz_hash.c $(SRC)
-	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
-	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+	$(call generate-dependencies,$(FUZZ_CC),$(FUZZ_CFLAGS))
+	$(FUZZ_CC) $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 fuzz_stream: ../tests/fuzz_stream.c $(SRC)
-	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
-	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+	$(call generate-dependencies,$(FUZZ_CC),$(FUZZ_CFLAGS))
+	$(FUZZ_CC) $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 fuzz_padding: ../tests/fuzz_padding.c $(SRC)
-	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
-	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+	$(call generate-dependencies,$(FUZZ_CC),$(FUZZ_CFLAGS))
+	$(FUZZ_CC) $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 fuzz_tree_combine: ../tests/fuzz_tree_combine.c $(SRC)
-	$(call generate-dependencies,clang,$(FUZZ_CFLAGS))
-	clang $(CPPFLAGS) $(FUZZ_CFLAGS) \
+	$(call generate-dependencies,$(FUZZ_CC),$(FUZZ_CFLAGS))
+	$(FUZZ_CC) $(CPPFLAGS) $(FUZZ_CFLAGS) \
 		-o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
 fuzz-smoke: $(FUZZ_TARGETS)
 	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
-		./fuzz_hash -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=164981
+		$(PYTHON) ../tools/fch_fuzz.py --mode smoke --runs $(FUZZ_RUNS) \
+		--timeout $(FUZZ_TIMEOUT) --compiler "$(FUZZ_CC)" --cflags "$(FUZZ_CFLAGS)"
+
+fuzz-campaign: $(FUZZ_TARGETS)
 	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
-		./fuzz_stream -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=65536 -seed=271828
-	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
-		./fuzz_padding -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=4096 -seed=314159
-	ASAN_OPTIONS="$(FUZZ_ASAN_OPTIONS)" UBSAN_OPTIONS="$(FUZZ_UBSAN_OPTIONS)" \
-		./fuzz_tree_combine -runs=$(FUZZ_RUNS) -timeout=$(FUZZ_TIMEOUT) -max_len=4096 -seed=141421
+		$(PYTHON) ../tools/fch_fuzz.py --mode campaign --runs 0 \
+		--seconds $(FUZZ_SECONDS) --timeout $(FUZZ_TIMEOUT) \
+		--compiler "$(FUZZ_CC)" --cflags "$(FUZZ_CFLAGS)"
 
 analyze:
 	@set -e; for source in $(ANALYZE_SOURCES); do \
@@ -295,4 +298,4 @@ clean:
 
 -include $(DEPS)
 
-.PHONY: check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean
+.PHONY: check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean
