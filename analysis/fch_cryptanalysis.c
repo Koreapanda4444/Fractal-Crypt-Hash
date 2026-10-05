@@ -6,7 +6,7 @@
 #include "bitops.h"
 #include "fch.h"
 #include "mix.h"
-#include "test_utils.h"
+#include "../tests/test_utils.h"
 
 enum {
     DIFFERENTIAL_SAMPLES = 2048,

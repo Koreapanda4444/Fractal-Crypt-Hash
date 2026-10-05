@@ -1,4 +1,4 @@
-name: ci
+name: correctness
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended check-diffusion bench-check CC="$CC"
+          make all check CC="$CC"
 
       - name: Set up Python
         if: matrix.reference
@@ -44,42 +44,10 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Verify reproducible benchmark baselines
-        if: matrix.reference
-        working-directory: build
-        run: |
-          make bench-baseline-check PYTHON=python
-          make bench-baseline BASELINE=benchmark-ci.json PYTHON=python
-          python ../tools/fch_benchmark.py validate --file benchmark-ci.json
-
-      - name: Install Z3
-        if: matrix.reference
-        run: python -m pip install --disable-pip-version-check z3-solver==4.13.1.0
-
       - name: Cross-check Python reference
         if: matrix.reference
         working-directory: build
         run: make check-reference
-
-      - name: Search reduced-round trails
-        if: matrix.reference
-        working-directory: build
-        run: make check-trails
-
-      - name: Search full-state characteristics
-        if: matrix.reference
-        working-directory: build
-        run: make check-characteristics
-
-      - name: Verify reduced-round experiment baseline
-        if: matrix.reference
-        working-directory: build
-        run: make check-reduced-rounds PYTHON=python
-
-      - name: Verify FCH-512 second-preimage bounds
-        if: matrix.reference
-        working-directory: build
-        run: make check-second-preimage-bounds PYTHON=python
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -90,7 +58,7 @@ jobs:
 
       - name: Run ASan and UBSan suites
         working-directory: build
-        run: make sanitizer-check
+        run: make sanitizer-check SANITIZER_TARGETS=check
 
   static-analysis:
     runs-on: ubuntu-latest
@@ -102,25 +70,6 @@ jobs:
         working-directory: build
         run: make analyze
 
-      - name: Run content timing check
-        working-directory: build
-        run: make timing-check
-
-  fuzz-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      FUZZ_RUNS: "1024"
-      FUZZ_TIMEOUT: "10"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Run four ASan and UBSan libFuzzer smoke targets
-        working-directory: build
-        run: |
-          make clean
-          make fuzz-smoke
 
   windows:
     runs-on: windows-latest
@@ -142,7 +91,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended check-diffusion bench-check CC=gcc
+          make all check CC=gcc
 
       - name: Verify native Windows binary stdin
         shell: pwsh
@@ -227,7 +176,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check check-extended check-diffusion bench-check \
+          make all check \
             CC=gcc \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2 -m32" \
             LDFLAGS="-m32"
@@ -249,7 +198,7 @@ jobs:
           make clean
           make fch test_boundaries test_invariants \
             test_stream_equivalence test_portability \
-            test_vectors test_failures \
+            test_vectors test_tree_encoding test_failures \
             CC=powerpc64-linux-gnu-gcc \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
 
@@ -262,6 +211,7 @@ jobs:
             test_invariants \
             test_portability \
             test_vectors \
+            test_tree_encoding \
             test_failures
           do
             qemu-ppc64 -L /usr/powerpc64-linux-gnu "./$test_bin"

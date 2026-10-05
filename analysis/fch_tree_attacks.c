@@ -10,7 +10,7 @@
 #include "fractal.h"
 #include "leaf.h"
 #include "params.h"
-#include "test_utils.h"
+#include "../tests/test_utils.h"
 
 enum {
     MULTICOLLISION_SAMPLES = 4096,

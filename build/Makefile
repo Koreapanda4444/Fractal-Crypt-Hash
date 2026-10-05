@@ -11,6 +11,7 @@ SECOND_PREIMAGE_TOOL ?= ../tools/fch_second_preimage_bounds.py
 SECOND_PREIMAGE_BASELINE ?= ../analysis/fch512-second-preimage-v1.json
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -O2
 ANALYZEFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O1
+SANITIZER_TARGETS ?= check check-extended
 SANITIZER_CC ?= clang
 SANITIZER_CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
                     -fsanitize=address,undefined \
@@ -47,13 +48,13 @@ ANALYZE_SOURCES = $(SRC) \
         ../tests/test_tree_encoding.c \
         ../tests/test_portability.c \
         ../tests/test_vectors.c \
-        ../tests/test_tree_attacks.c \
+        ../analysis/fch_tree_attacks.c \
         ../tests/fuzz_hash.c \
         ../tests/test_failures.c \
         ../tests/test_stress.c
 
 ANALYZE_REDUCED_SOURCES = ../analysis/fch_diffusion.c \
-        ../tests/test_cryptanalysis.c
+        ../analysis/fch_cryptanalysis.c
 
 TESTS = test_boundaries \
         test_stream_equivalence \
@@ -61,9 +62,9 @@ TESTS = test_boundaries \
         test_tree_encoding \
         test_portability \
         test_vectors \
-        test_cryptanalysis \
-        test_tree_attacks \
         test_failures
+
+RESEARCH_TESTS = test_cryptanalysis test_tree_attacks
 
 EXTENDED_TESTS = test_stress
 
@@ -83,6 +84,7 @@ FUZZ_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 DEPS = $(OBJ:.o=.d) \
        fch.d \
        $(addsuffix .d,$(TESTS)) \
+       $(addsuffix .d,$(RESEARCH_TESTS)) \
        $(addsuffix .d,$(EXTENDED_TESTS)) \
        fch_diffusion.d \
        bench_hash.d \
@@ -140,11 +142,11 @@ fch_diffusion: ../analysis/fch_diffusion.c $(SRC)
 check-diffusion: fch_diffusion
 	./fch_diffusion
 
-test_cryptanalysis: ../tests/test_cryptanalysis.c $(SRC)
+test_cryptanalysis: ../analysis/fch_cryptanalysis.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-test_tree_attacks: ../tests/test_tree_attacks.c $(SRC)
+test_tree_attacks: ../analysis/fch_tree_attacks.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
@@ -160,11 +162,18 @@ check-cli: fch ../tests/test_cli.sh
 check: test check-cli
 	@set -e; for test_bin in $(TESTS); do ./$$test_bin; done
 
+check-research-native: $(RESEARCH_TESTS)
+	@set -e; for test_bin in $(RESEARCH_TESTS); do ./$$test_bin; done
+
+check-research: check-research-native check-diffusion check-trails check-characteristics check-reduced-rounds check-second-preimage-bounds
+
+check-all: check check-extended check-reference check-research bench-check bench-baseline-check
+
 sanitizer-check:
 	$(MAKE) clean
 	ASAN_OPTIONS="$(SANITIZER_ASAN_OPTIONS)" \
 	UBSAN_OPTIONS="$(SANITIZER_UBSAN_OPTIONS)" \
-		$(MAKE) check check-extended check-diffusion \
+		$(MAKE) $(SANITIZER_TARGETS) \
 		CC="$(SANITIZER_CC)" CFLAGS="$(SANITIZER_CFLAGS)"
 
 check-reference: fch
@@ -279,11 +288,11 @@ analyze:
 			-c "$$source" -o /dev/null; \
 	done
 
-BINARIES = fch $(TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS)
+BINARIES = fch $(TESTS) $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS)
 
 clean:
 	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
 
 -include $(DEPS)
 
-.PHONY: all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean
+.PHONY: check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke analyze clean

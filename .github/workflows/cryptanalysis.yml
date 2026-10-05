@@ -1,4 +1,4 @@
-name: extended-cryptanalysis
+name: research-verification
 
 on:
   push:
@@ -11,6 +11,8 @@ on:
       - "src/**"
       - "tests/**"
       - "tools/**"
+      - "analysis/**"
+      - "bench/**"
   pull_request:
     paths:
       - ".github/workflows/cryptanalysis.yml"
@@ -19,9 +21,14 @@ on:
       - "src/**"
       - "tests/**"
       - "tools/**"
+      - "analysis/**"
+      - "bench/**"
   schedule:
     - cron: "17 3 * * 0"
   workflow_dispatch:
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
 
 permissions:
   contents: read
@@ -32,27 +39,92 @@ concurrency:
 
 jobs:
   native-screens:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+          - os: ubuntu-latest
+            compiler: clang
+          - os: macos-latest
+            compiler: clang
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Build cryptanalysis tests
+      - name: Run native research, stress and resource screens
+        working-directory: build
+        run: >-
+          make check-research-native check-diffusion check-extended bench-check
+          CC=${{ matrix.compiler }}
+          CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+
+      - name: Observe content timing
+        if: matrix.compiler == 'gcc'
+        working-directory: build
+        run: make timing-check
+
+      - name: Verify benchmark profile
+        if: matrix.compiler == 'gcc'
         working-directory: build
         run: |
-          make clean
-          make test_cryptanalysis test_tree_attacks \
-            CC=gcc \
-            CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+          make bench-baseline-check
+          make bench-baseline BASELINE=benchmark-ci.json
+          python3 ../tools/fch_benchmark.py validate --file benchmark-ci.json
 
-      - name: Run compression-core screens
+  reproducible-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Reproduce fixed research reports
         working-directory: build
-        run: ./test_cryptanalysis
+        run: make check-reduced-rounds check-second-preimage-bounds
 
-      - name: Run tree-mode screens
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run four sanitizer-backed libFuzzer targets
         working-directory: build
-        run: ./test_tree_attacks
+        run: make fuzz-smoke
+
+  windows-research:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+      - name: Run native research, stress and resource screens
+        shell: msys2 {0}
+        working-directory: build
+        run: make check-research-native check-diffusion check-extended bench-check
+
+  x86-research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install 32-bit toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+      - name: Run native research, stress and resource screens
+        working-directory: build
+        run: >-
+          make check-research-native check-diffusion check-extended bench-check
+          CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2 -m32"
+          LDFLAGS="-m32"
 
   reduced-round-trails:
     runs-on: ubuntu-latest
