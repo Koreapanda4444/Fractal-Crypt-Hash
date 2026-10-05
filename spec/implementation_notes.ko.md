@@ -30,6 +30,9 @@ C 구현과 `tools/fch_reference.py`는 모두 트리 인코딩 버전 2를 구�
 - `src/fch.c`: 원샷 패딩과 해시 직렬화
 - `src/fch_stream.c`: 증분 리프 및 서브트리 처리
 
+`src/fractal_process.c`의 leaf push와 root fold는 one-shot과 streaming이
+공유합니다. workspace와 위치 비교도 내부 공통 로직을 사용합니다.
+
 `fch_state_t`는 상태 워드와 `fch_tree_position_t`를 함께 보관합니다. 상태 옆에
 구조 정보를 두어 호출자가 올바른 상태를 다른 위치에 잘못 결합하기 어렵게
 했습니다.

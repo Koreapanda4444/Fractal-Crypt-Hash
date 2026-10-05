@@ -33,6 +33,10 @@ are not a supported external interface.
 - `src/fch.c` applies one-shot padding and serializes the digest.
 - `src/fch_stream.c` implements incremental leaf and subtree processing.
 
+The one-shot and streaming paths share leaf push, binary-carry merges, and
+root folding in `src/fractal_process.c`, using one internal workspace type
+and a common descriptor comparison.
+
 `fch_state_t` carries both state words and `fch_tree_position_t`. Keeping the
 descriptor beside the state makes it harder for callers to combine a state at
 the wrong position accidentally.

@@ -20,6 +20,14 @@ typedef struct {
     fch_tree_position_t tree;
 } fch_state_t;
 
+enum { FCH_TREE_WORKSPACE_SLOTS = sizeof(size_t) * CHAR_BIT };
+
+typedef struct {
+    uint64_t words[FCH_INTERNAL_STATE_WORDS];
+    fch_tree_position_t tree;
+    int occupied;
+} fch_tree_node_t;
+
 typedef struct {
     size_t offset;
     size_t length;
@@ -52,6 +60,23 @@ int fch_tree_position_for_range(
 );
 
 int fch_tree_position_valid(const fch_tree_position_t *position);
+int fch_tree_position_equal(
+    const fch_tree_position_t *left,
+    const fch_tree_position_t *right
+);
+
+int fch_tree_push_leaf(
+    fch_tree_node_t workspace[FCH_TREE_WORKSPACE_SLOTS],
+    const fch_reader_t *reader,
+    size_t offset,
+    size_t length
+);
+
+int fch_tree_fold_root(
+    fch_tree_node_t workspace[FCH_TREE_WORKSPACE_SLOTS],
+    const fch_tree_position_t *expected,
+    fch_state_t *output
+);
 
 int fch_tree_split_position(
     const fch_tree_position_t *parent,

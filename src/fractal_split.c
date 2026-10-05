@@ -49,6 +49,19 @@ int fch_tree_position_for_range(
     return 1;
 }
 
+int fch_tree_position_equal(
+    const fch_tree_position_t *left,
+    const fch_tree_position_t *right
+) {
+    return
+        left && right &&
+        left->level == right->level &&
+        left->first_leaf == right->first_leaf &&
+        left->leaf_count == right->leaf_count &&
+        left->byte_offset == right->byte_offset &&
+        left->byte_length == right->byte_length;
+}
+
 int fch_tree_position_valid(const fch_tree_position_t *position) {
     if (!position)
         return 0;

@@ -6,19 +6,6 @@
 #include "mix.h"
 #include "params.h"
 
-static int same_position(
-    const fch_tree_position_t *left,
-    const fch_tree_position_t *right
-) {
-    return
-        left && right &&
-        left->level == right->level &&
-        left->first_leaf == right->first_leaf &&
-        left->leaf_count == right->leaf_count &&
-        left->byte_offset == right->byte_offset &&
-        left->byte_length == right->byte_length;
-}
-
 int fch_combine_into(
     fch_state_t *children,
     const fch_block_t *blocks,
@@ -58,8 +45,8 @@ int fch_combine_into(
 
     fch_tree_position_t expected[FCH_TREE_ARITY];
     if (!fch_tree_split_position(&parent, expected) ||
-        !same_position(&children[0].tree, &expected[0]) ||
-        !same_position(&children[1].tree, &expected[1]))
+        !fch_tree_position_equal(&children[0].tree, &expected[0]) ||
+        !fch_tree_position_equal(&children[1].tree, &expected[1]))
         return 0;
 
     if (blocks[0].offset != 0u ||

@@ -22,17 +22,7 @@ void fch_debug_hook(
 }
 #endif
 
-enum {
-    FCH_TREE_WORKSPACE_SLOTS = sizeof(size_t) * CHAR_BIT
-};
-
-typedef struct {
-    uint64_t words[FCH_INTERNAL_STATE_WORDS];
-    fch_tree_position_t tree;
-    int occupied;
-} fch_workspace_state_t;
-
-static fch_state_t workspace_view(fch_workspace_state_t *entry) {
+static fch_state_t workspace_view(fch_tree_node_t *entry) {
     fch_state_t view = {
         entry ? entry->words : NULL,
         FCH_INTERNAL_STATE_WORDS,
@@ -41,23 +31,10 @@ static fch_state_t workspace_view(fch_workspace_state_t *entry) {
     return view;
 }
 
-static int same_position(
-    const fch_tree_position_t *left,
-    const fch_tree_position_t *right
-) {
-    return
-        left && right &&
-        left->level == right->level &&
-        left->first_leaf == right->first_leaf &&
-        left->leaf_count == right->leaf_count &&
-        left->byte_offset == right->byte_offset &&
-        left->byte_length == right->byte_length;
-}
-
 static int combine_workspace_states(
-    fch_workspace_state_t *left,
-    fch_workspace_state_t *right,
-    fch_workspace_state_t *output
+    fch_tree_node_t *left,
+    fch_tree_node_t *right,
+    fch_tree_node_t *output
 ) {
     if (!left || !right || !output ||
         !left->occupied || !right->occupied ||
@@ -97,6 +74,118 @@ static int combine_workspace_states(
     return 1;
 }
 
+int fch_tree_push_leaf(
+    fch_tree_node_t workspace[FCH_TREE_WORKSPACE_SLOTS],
+    const fch_reader_t *reader,
+    size_t offset,
+    size_t length
+) {
+    if (!workspace)
+        return 0;
+
+    fch_tree_node_t carry = {
+        {0},
+        {0, 0, 0, 0, 0},
+        1
+    };
+    fch_state_t leaf = workspace_view(&carry);
+    if (!fch_leaf_compress_reader(
+            reader,
+            offset,
+            length,
+            &leaf))
+        return 0;
+    carry.tree = leaf.tree;
+
+    FCH_DEBUG_EMIT(
+        FCH_HOOK_AFTER_LEAF,
+        (int)carry.tree.level,
+        carry.words,
+        FCH_INTERNAL_STATE_WORDS
+    );
+
+    size_t level = 0;
+    while (level < FCH_TREE_WORKSPACE_SLOTS &&
+           workspace[level].occupied) {
+        fch_tree_node_t combined = {
+            {0},
+            {0, 0, 0, 0, 0},
+            0
+        };
+        if (!combine_workspace_states(
+                &workspace[level],
+                &carry,
+                &combined
+            ))
+            return 0;
+        workspace[level].occupied = 0;
+        carry = combined;
+        level++;
+    }
+    if (level >= FCH_TREE_WORKSPACE_SLOTS)
+        return 0;
+    workspace[level] = carry;
+
+    return 1;
+}
+
+int fch_tree_fold_root(
+    fch_tree_node_t workspace[FCH_TREE_WORKSPACE_SLOTS],
+    const fch_tree_position_t *expected,
+    fch_state_t *output
+) {
+    if (!workspace || !expected || !output || !output->state ||
+        output->words != FCH_INTERNAL_STATE_WORDS)
+        return 0;
+
+    fch_tree_node_t root = {
+        {0},
+        {0, 0, 0, 0, 0},
+        0
+    };
+    for (size_t level = 0;
+         level < FCH_TREE_WORKSPACE_SLOTS;
+         level++) {
+        if (!workspace[level].occupied)
+            continue;
+        if (!root.occupied) {
+            root = workspace[level];
+            continue;
+        }
+
+        fch_tree_node_t combined = {
+            {0},
+            {0, 0, 0, 0, 0},
+            0
+        };
+        if (!combine_workspace_states(
+                &workspace[level],
+                &root,
+                &combined
+            ))
+            return 0;
+        root = combined;
+    }
+
+    if (!root.occupied || !fch_tree_position_equal(&root.tree, expected))
+        return 0;
+
+    memcpy(
+        output->state,
+        root.words,
+        output->words * sizeof(*output->state)
+    );
+    output->tree = root.tree;
+
+    FCH_DEBUG_EMIT(
+        FCH_HOOK_AFTER_ROOT,
+        (int)output->tree.level,
+        output->state,
+        output->words
+    );
+    return 1;
+}
+
 fch_state_t fch_process_reader(
     const fch_reader_t *reader,
     size_t offset,
@@ -125,7 +214,7 @@ fch_state_t fch_process_reader(
     if (!result.state)
         return result;
 
-    fch_workspace_state_t workspace[FCH_TREE_WORKSPACE_SLOTS] = {0};
+    fch_tree_node_t workspace[FCH_TREE_WORKSPACE_SLOTS] = {0};
     size_t remaining = length;
     size_t leaf_offset = offset;
 
@@ -136,48 +225,8 @@ fch_state_t fch_process_reader(
         if (leaf_length > FCH_TREE_LEAF_BYTES)
             leaf_length = FCH_TREE_LEAF_BYTES;
 
-        fch_workspace_state_t carry = {
-            {0},
-            {0, 0, 0, 0, 0},
-            1
-        };
-        fch_state_t leaf = workspace_view(&carry);
-        if (!fch_leaf_compress_reader(
-                reader,
-                leaf_offset,
-                leaf_length,
-                &leaf))
+        if (!fch_tree_push_leaf(workspace, reader, leaf_offset, leaf_length))
             goto fail;
-        carry.tree = leaf.tree;
-
-        FCH_DEBUG_EMIT(
-            FCH_HOOK_AFTER_LEAF,
-            (int)carry.tree.level,
-            carry.words,
-            FCH_INTERNAL_STATE_WORDS
-        );
-
-        size_t level = 0;
-        while (level < FCH_TREE_WORKSPACE_SLOTS &&
-               workspace[level].occupied) {
-            fch_workspace_state_t combined = {
-                {0},
-                {0, 0, 0, 0, 0},
-                0
-            };
-            if (!combine_workspace_states(
-                    &workspace[level],
-                    &carry,
-                    &combined
-                ))
-                goto fail;
-            workspace[level].occupied = 0;
-            carry = combined;
-            level++;
-        }
-        if (level >= FCH_TREE_WORKSPACE_SLOTS)
-            goto fail;
-        workspace[level] = carry;
 
         remaining -= leaf_length;
         if (leaf_offset > SIZE_MAX - leaf_length)
@@ -188,51 +237,8 @@ fch_state_t fch_process_reader(
     if (remaining != 0u)
         goto fail;
 
-    fch_workspace_state_t root = {
-        {0},
-        {0, 0, 0, 0, 0},
-        0
-    };
-    for (size_t level = 0;
-         level < FCH_TREE_WORKSPACE_SLOTS;
-         level++) {
-        if (!workspace[level].occupied)
-            continue;
-        if (!root.occupied) {
-            root = workspace[level];
-            continue;
-        }
-
-        fch_workspace_state_t combined = {
-            {0},
-            {0, 0, 0, 0, 0},
-            0
-        };
-        if (!combine_workspace_states(
-                &workspace[level],
-                &root,
-                &combined
-            ))
-            goto fail;
-        root = combined;
-    }
-
-    if (!root.occupied || !same_position(&root.tree, &root_position))
+    if (!fch_tree_fold_root(workspace, &root_position, &result))
         goto fail;
-
-    memcpy(
-        result.state,
-        root.words,
-        state_words * sizeof(*result.state)
-    );
-    result.tree = root.tree;
-
-    FCH_DEBUG_EMIT(
-        FCH_HOOK_AFTER_ROOT,
-        (int)result.tree.level,
-        result.state,
-        result.words
-    );
     return result;
 
 fail:

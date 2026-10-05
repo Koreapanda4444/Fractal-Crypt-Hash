@@ -1,28 +1,18 @@
-#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "bitops.h"
-#include "combine.h"
-#include "debug_hooks.h"
 #include "fch_stream.h"
-#include "leaf.h"
+#include "fractal.h"
 #include "mix.h"
 #include "params.h"
 
 enum {
-    FCH_STREAM_WORKSPACE_SLOTS = sizeof(size_t) * CHAR_BIT,
     FCH_STREAM_TAIL_BYTES = FCH_TREE_LEAF_BYTES + 9u
 };
 
 typedef struct {
-    uint64_t words[FCH_INTERNAL_STATE_WORDS];
-    fch_tree_position_t tree;
-    int occupied;
-} fch_stream_node_t;
-
-typedef struct {
-    fch_stream_node_t workspace[FCH_STREAM_WORKSPACE_SLOTS];
+    fch_tree_node_t workspace[FCH_TREE_WORKSPACE_SLOTS];
     uint8_t pending[FCH_TREE_LEAF_BYTES];
     size_t pending_length;
     size_t processed_length;
@@ -69,71 +59,6 @@ static int stream_window_read(
 
     if (length > 0u)
         memcpy(output, window->data + relative, length);
-    return 1;
-}
-
-static fch_state_t stream_node_view(fch_stream_node_t *node) {
-    fch_state_t view = {
-        node ? node->words : NULL,
-        FCH_INTERNAL_STATE_WORDS,
-        node ? node->tree : (fch_tree_position_t){0, 0, 0, 0, 0}
-    };
-    return view;
-}
-
-static int same_position(
-    const fch_tree_position_t *left,
-    const fch_tree_position_t *right
-) {
-    return
-        left && right &&
-        left->level == right->level &&
-        left->first_leaf == right->first_leaf &&
-        left->leaf_count == right->leaf_count &&
-        left->byte_offset == right->byte_offset &&
-        left->byte_length == right->byte_length;
-}
-
-static int stream_combine_nodes(
-    fch_stream_node_t *left,
-    fch_stream_node_t *right,
-    fch_stream_node_t *output
-) {
-    if (!left || !right || !output ||
-        !left->occupied || !right->occupied ||
-        left->tree.byte_length > SIZE_MAX - right->tree.byte_length)
-        return 0;
-
-    fch_state_t children[FCH_TREE_ARITY] = {
-        stream_node_view(left),
-        stream_node_view(right)
-    };
-    fch_block_t blocks[FCH_TREE_ARITY] = {
-        {0u, left->tree.byte_length},
-        {left->tree.byte_length, right->tree.byte_length}
-    };
-    fch_state_t combined = stream_node_view(output);
-    size_t node_length =
-        left->tree.byte_length + right->tree.byte_length;
-
-    if (!fch_combine_into(
-            children,
-            blocks,
-            FCH_TREE_ARITY,
-            node_length,
-            FCH_INTERNAL_STATE_WORDS,
-            &combined
-        ))
-        return 0;
-
-    output->tree = combined.tree;
-    output->occupied = 1;
-    FCH_DEBUG_EMIT(
-        FCH_HOOK_AFTER_NODE,
-        (int)output->tree.level,
-        output->words,
-        FCH_INTERNAL_STATE_WORDS
-    );
     return 1;
 }
 
@@ -188,108 +113,12 @@ static int stream_push_leaf(
         length
     };
     fch_reader_t reader = {stream_window_read, &window};
-    fch_stream_node_t carry = {
-        {0},
-        {0, 0, 0, 0, 0},
-        1
-    };
-    fch_state_t leaf = stream_node_view(&carry);
-
-    if (!fch_leaf_compress_reader(
-            &reader,
-            state->processed_length,
-            length,
-            &leaf))
-        return 0;
-    carry.tree = leaf.tree;
-
-    FCH_DEBUG_EMIT(
-        FCH_HOOK_AFTER_LEAF,
-        (int)carry.tree.level,
-        carry.words,
-        FCH_INTERNAL_STATE_WORDS
-    );
-
-    size_t level = 0u;
-    while (level < FCH_STREAM_WORKSPACE_SLOTS &&
-           state->workspace[level].occupied) {
-        fch_stream_node_t combined = {
-            {0},
-            {0, 0, 0, 0, 0},
-            0
-        };
-        if (!stream_combine_nodes(
-                &state->workspace[level],
-                &carry,
-                &combined
-            ))
-            return 0;
-        state->workspace[level].occupied = 0;
-        carry = combined;
-        level++;
-    }
-    if (level >= FCH_STREAM_WORKSPACE_SLOTS)
+    if (!fch_tree_push_leaf(
+            state->workspace, &reader, state->processed_length, length
+        ))
         return 0;
 
-    state->workspace[level] = carry;
     state->processed_length += length;
-    return 1;
-}
-
-static int stream_fold_root(
-    fch_stream_state_t *state,
-    const fch_tree_position_t *expected,
-    fch_state_t *output
-) {
-    if (!state || !expected || !output || !output->state ||
-        output->words != FCH_INTERNAL_STATE_WORDS)
-        return 0;
-
-    fch_stream_node_t root = {
-        {0},
-        {0, 0, 0, 0, 0},
-        0
-    };
-    for (size_t level = 0u;
-         level < FCH_STREAM_WORKSPACE_SLOTS;
-         level++) {
-        if (!state->workspace[level].occupied)
-            continue;
-        if (!root.occupied) {
-            root = state->workspace[level];
-            continue;
-        }
-
-        fch_stream_node_t combined = {
-            {0},
-            {0, 0, 0, 0, 0},
-            0
-        };
-        if (!stream_combine_nodes(
-                &state->workspace[level],
-                &root,
-                &combined
-            ))
-            return 0;
-        root = combined;
-    }
-
-    if (!root.occupied || !same_position(&root.tree, expected))
-        return 0;
-
-    memcpy(
-        output->state,
-        root.words,
-        output->words * sizeof(*output->state)
-    );
-    output->tree = root.tree;
-
-    FCH_DEBUG_EMIT(
-        FCH_HOOK_AFTER_ROOT,
-        (int)output->tree.level,
-        output->state,
-        output->words
-    );
     return 1;
 }
 
@@ -446,7 +275,7 @@ static int stream_final_checked(
     if (ok)
         ok = state->processed_length == padded_length &&
             fch_tree_position_for_range(0u, padded_length, &expected) &&
-            stream_fold_root(state, &expected, &root);
+            fch_tree_fold_root(state->workspace, &expected, &root);
     if (ok)
         ok = fch_mix_finalize_output(
             root.state,
