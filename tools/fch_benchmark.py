@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
@@ -65,6 +66,9 @@ COMPATIBILITY_FIELDS = (
     "logical_cpus",
     "compiler_version",
     "cflags",
+    "cppflags",
+    "ldflags",
+    "ldlibs",
 )
 
 
@@ -282,9 +286,45 @@ def source_record() -> dict[str, Any]:
     }
 
 
+def build_record(binary: Path, compiler: str, cflags: str) -> dict[str, Any]:
+    executable = binary.expanduser().resolve()
+    config = executable.parent / "obj" / f"{executable.name}.build-config"
+    try:
+        contents = config.read_text(encoding="utf-8")
+        binary_hash = hashlib.sha256(executable.read_bytes()).hexdigest()
+    except OSError as error:
+        raise BenchmarkError(f"could not read benchmark build record: {error}") from error
+    lines = contents.splitlines()
+    fields = ("CC", "CFLAGS", "CPPFLAGS", "DEPFLAGS", "LDFLAGS", "LDLIBS")
+    if len(lines) <= len(fields):
+        raise BenchmarkError("benchmark build record is incomplete")
+    settings = {}
+    for field, line in zip(fields, lines):
+        key, separator, value = line.partition("=")
+        if key != field or not separator:
+            raise BenchmarkError(f"invalid build setting: {field}")
+        settings[field] = value
+    if settings["CC"] != compiler or settings["CFLAGS"] != cflags:
+        raise BenchmarkError("requested compiler or flags do not match the binary build")
+    return {
+        "settings": settings,
+        "compiler_version": lines[len(fields)],
+        "binary_sha256": binary_hash,
+        "config_sha256": hashlib.sha256(contents.encode("utf-8")).hexdigest(),
+    }
+
+
 def capture_document(
     binary: Path, compiler: str, cflags: str
 ) -> dict[str, Any]:
+    build = build_record(binary, compiler, cflags)
+    environment = environment_record(compiler, cflags)
+    if environment["compiler_version"] != build["compiler_version"]:
+        raise BenchmarkError("compiler changed since the benchmark binary was built")
+    environment.update({
+        field.lower(): build["settings"][field]
+        for field in ("CPPFLAGS", "LDFLAGS", "LDLIBS")
+    })
     return {
         "schema": SCHEMA,
         "captured_at_utc": datetime.now(timezone.utc)
@@ -293,7 +333,8 @@ def capture_document(
         .replace("+00:00", "Z"),
         "profile": dict(PROFILE),
         "source": source_record(),
-        "environment": environment_record(compiler, cflags),
+        "environment": environment,
+        "build": build,
         "results": run_profile(binary),
     }
 
@@ -351,7 +392,9 @@ def validate_document(document: Any) -> dict[str, Any]:
     environment = document.get("environment")
     if not isinstance(environment, dict):
         raise BenchmarkError("baseline environment is missing")
-    required_environment = set(COMPATIBILITY_FIELDS) | {
+    required_environment = (set(COMPATIBILITY_FIELDS) - {
+        "cppflags", "ldflags", "ldlibs"
+    }) | {
         "release",
         "compiler_command",
         "python",

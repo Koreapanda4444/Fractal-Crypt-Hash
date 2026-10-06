@@ -89,6 +89,23 @@ def make_csv() -> str:
 
 
 class BenchmarkBaselineTests(unittest.TestCase):
+    def test_build_record_rejects_mislabeled_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "bench_hash"
+            binary.write_bytes(b"benchmark executable")
+            config = binary.parent / "obj" / "bench_hash.build-config"
+            config.parent.mkdir()
+            config.write_text(
+                "CC=cc\nCFLAGS=-O2\nCPPFLAGS=-Iinclude\nDEPFLAGS=-MMD\n"
+                "LDFLAGS=\nLDLIBS=\ncc 1.0\n", encoding="utf-8"
+            )
+            record = benchmark.build_record(binary, "cc", "-O2")
+            self.assertEqual(record["settings"]["CPPFLAGS"], "-Iinclude")
+            self.assertEqual(len(record["binary_sha256"]), 64)
+            for compiler, flags in (("clang", "-O2"), ("cc", "-O3")):
+                with self.assertRaises(benchmark.BenchmarkError):
+                    benchmark.build_record(binary, compiler, flags)
+
     def test_parse_complete_profile(self) -> None:
         results = benchmark.parse_profile_csv(make_csv())
         self.assertEqual(len(results), 48)

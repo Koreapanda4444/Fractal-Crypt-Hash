@@ -1,4 +1,5 @@
 CC = gcc
+.DEFAULT_GOAL := all
 ANALYZER ?= gcc
 PYTHON ?= python3
 BENCHMARK_TOOL ?= ../tools/fch_benchmark.py
@@ -97,10 +98,29 @@ define generate-dependencies
 	@mv $@.d.tmp $@.d
 endef
 
+shell-quote = '$(subst ','"'"',$(1))'
+
+define write-build-config
+	@{ printf '%s\n' $(call shell-quote,CC=$(1)) \
+		$(call shell-quote,CFLAGS=$(2)) \
+		$(call shell-quote,CPPFLAGS=$(CPPFLAGS)) \
+		$(call shell-quote,DEPFLAGS=$(DEPFLAGS)) \
+		$(call shell-quote,LDFLAGS=$(LDFLAGS)) \
+		$(call shell-quote,LDLIBS=$(LDLIBS)); \
+		$(1) --version; } > $@.tmp
+	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
+endef
+
+obj/build-config: FORCE | obj
+	$(call write-build-config,$(CC),$(CFLAGS))
+
+obj/fuzz-config: FORCE | obj
+	$(call write-build-config,$(FUZZ_CC),$(FUZZ_CFLAGS))
+
 obj:
 	mkdir -p $@
 
-obj/%.o: ../src/%.c | obj
+obj/%.o: ../src/%.c obj/build-config | obj
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -MT $@ -c -o $@ $<
 
 all: fch
@@ -233,6 +253,7 @@ bench_hash: ../bench/bench_hash.c $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
 		-Dmalloc=fch_bench_malloc -Dcalloc=fch_bench_calloc \
 		-Dfree=fch_bench_free -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+	cp obj/build-config obj/$@.build-config
 
 bench-check: bench_hash
 	./bench_hash --quick
@@ -303,8 +324,16 @@ analyze:
 
 BINARIES = fch $(TESTS) $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS)
 
+$(filter-out $(FUZZ_TARGETS),$(BINARIES)): obj/build-config
+$(FUZZ_TARGETS): obj/fuzz-config
+
+FORCE:
+
+.PHONY: FORCE
+
 clean:
 	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
+	rm -f obj/build-config obj/fuzz-config obj/*.build-config obj/*config.tmp
 
 -include $(DEPS)
 
