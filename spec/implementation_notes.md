@@ -75,8 +75,11 @@ given platform; tree work is linear in the padded input plus the number of nodes
 
 ## Streaming path
 
-Update calls fill one 1,024-byte buffer. Each complete leaf is compressed
-immediately and merged through a binary-carry subtree workspace. Finalization
+Update calls pass complete 1,024-byte leaves directly to the reader when no
+partial leaf is pending. Only partial leaves are copied into the pending buffer;
+the caller's input is consumed before `update` returns and is not retained.
+Each complete leaf is compressed immediately and merged through a binary-carry
+subtree workspace. Finalization
 constructs at most 1,033 bytes of pending data and padding, processes the last
 one or two leaves, and folds the saved subtrees into the canonical root.
 

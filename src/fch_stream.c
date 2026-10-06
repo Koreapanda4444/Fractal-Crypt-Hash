@@ -151,6 +151,16 @@ static int stream_append(
 
     size_t consumed = 0u;
     while (consumed < data_length) {
+        if (state->pending_length == 0u &&
+            data_length - consumed >= FCH_TREE_LEAF_BYTES) {
+            if (!stream_push_leaf(
+                    state, data + consumed, FCH_TREE_LEAF_BYTES
+                ))
+                return 0;
+            consumed += FCH_TREE_LEAF_BYTES;
+            continue;
+        }
+
         size_t count = FCH_TREE_LEAF_BYTES - state->pending_length;
         if (count > data_length - consumed)
             count = data_length - consumed;
