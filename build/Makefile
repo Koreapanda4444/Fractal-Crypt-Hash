@@ -34,7 +34,6 @@ SRC = ../src/fch.c \
       ../src/leaf.c \
       ../src/combine.c \
       ../src/mix.c \
-      ../src/bitops.c \
       ../src/fch_stream.c
 
 OBJ = $(patsubst ../src/%.c,obj/%.o,$(SRC))
@@ -128,7 +127,7 @@ obj/peer-config: FORCE | obj
 obj:
 	mkdir -p $@
 
-obj/%.o: ../src/%.c obj/build-config | obj
+obj/%.o: ../src/%.c obj/build-config Makefile | obj
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -MT $@ -c -o $@ $<
 
 all: fch
@@ -151,9 +150,9 @@ test_invariants: ../tests/test_invariants.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
 
-test_tree_encoding: ../tests/test_tree_encoding.c ../src/leaf.c ../src/combine.c ../src/fractal_split.c ../src/bitops.c
+test_tree_encoding: ../tests/test_tree_encoding.c ../src/leaf.c ../src/combine.c ../src/fractal_split.c
 	$(call generate-dependencies,$(CC),$(CFLAGS))
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< ../src/leaf.c ../src/combine.c ../src/fractal_split.c ../src/bitops.c $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< ../src/leaf.c ../src/combine.c ../src/fractal_split.c $(LDFLAGS) $(LDLIBS)
 
 test_portability: ../tests/test_portability.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
@@ -350,6 +349,7 @@ analyze:
 
 BINARIES = fch $(TESTS) $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash bench_hash_peers $(FUZZ_TARGETS)
 
+$(BINARIES): Makefile
 $(filter-out $(FUZZ_TARGETS) bench_hash_peers,$(BINARIES)): obj/build-config
 $(FUZZ_TARGETS): obj/fuzz-config
 
@@ -358,9 +358,14 @@ FORCE:
 .PHONY: FORCE bench-peers bench-matrix
 
 clean:
-	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
+	rm -f obj/*.o obj/*.d obj/*.d.tmp $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
 	rm -f obj/build-config obj/fuzz-config obj/peer-config obj/*.build-config obj/*config.tmp
 
--include $(DEPS)
+CURRENT_DEPS = $(shell for dependency in $(DEPS); do \
+	if [ -f "$$dependency" ] && [ ! Makefile -nt "$$dependency" ]; then \
+		printf '%s ' "$$dependency"; \
+	fi; done)
+
+-include $(CURRENT_DEPS)
 
 .PHONY: check-full-rounds check-interoperability check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean

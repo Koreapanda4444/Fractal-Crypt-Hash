@@ -32,11 +32,11 @@ static const uint8_t FCH_MIX_SIGMA[FCH_MIX_ROUNDS][16] = {
     { 2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9 }
 };
 
-static uint64_t fch_rotr64(uint64_t value, unsigned int count) {
+static inline uint64_t fch_rotr64(uint64_t value, unsigned int count) {
     return fch_rotl64(value, 64u - (count & 63u));
 }
 
-static void fch_mix_g(
+static inline void fch_mix_g(
     uint64_t v[16],
     size_t a,
     size_t b,
