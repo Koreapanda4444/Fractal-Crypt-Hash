@@ -101,6 +101,30 @@ fch256_free(&ctx);
 활성 컨텍스트는 하나의 호출 흐름에서만 소유해야 합니다. final 이후의 update와
 final 재호출은 실패합니다.
 
+## 라이브러리 빌드와 설치
+
+저장소 루트에서 실행합니다.
+
+```sh
+make -C build lib
+cc -Iinclude consumer.c -Lbuild -lfch -o consumer
+make -C build check-library check-install
+```
+
+`make all`은 CLI와 `libfch.a`를 빌드합니다. 정적 라이브러리는 OpenSSL에
+의존하지 않습니다. `check-library`는 기존 벡터 테스트를 외부 소비자로
+재사용하고, `check-install`은 staging에 설치된 헤더와 archive만 사용합니다.
+
+```sh
+make -C build install PREFIX=/usr/local
+make -C build install PREFIX=/usr DESTDIR="$PWD/build/obj/package"
+```
+
+설치 파일은 `libfch.a`, `fch.h`, `fch_stream.h`입니다. `LIBDIR`와 `INCLUDEDIR`로
+prefix에서 파생된 위치를 바꿀 수 있습니다. 교차 컴파일할 때는 대상 toolchain에
+맞는 `AR`를 지정합니다. 현재 빌드는 production crypto release가 아닌
+research candidate입니다.
+
 ## 명령줄 도구
 
 빌드:
@@ -153,8 +177,9 @@ make check-interoperability
 고정 벡터, 입력·리프·트리 경계, 트리 레코드와 불변식, 원샷/스트리밍 동일성,
 잘못된 입력, reader·할당 실패, 이식성과 CLI 동작을 확인합니다.
 고정 [interoperability corpus](analysis/interoperability-v1.tsv)는 두 변형에 대한
-입력 54개를 담습니다. C는 원샷과 스트리밍 계획 11개에서 digest 1,296개,
-Python과 C CLI는 각각 expected digest 108개를 검사합니다. 별도 기준 구현
+입력 54개를 담습니다. C는 원샷과 스트리밍 계획 11개에서 digest 1,296개와
+입력·출력이 겹치는 경우 216개, 총 1,512개를 검사합니다. Python과 C CLI는
+각각 expected digest 108개를 검사합니다. 별도 기준 구현
 비교의 고정 시드 3개와 입력 384개도 유지합니다.
 
 연구 분석과 stress는 별도로 실행합니다.

@@ -1,4 +1,11 @@
 CC = gcc
+AR ?= ar
+ARFLAGS = rcs
+PREFIX ?= /usr/local
+LIBDIR ?= $(PREFIX)/lib
+INCLUDEDIR ?= $(PREFIX)/include
+DESTDIR ?=
+INSTALL ?= install
 .DEFAULT_GOAL := all
 ANALYZER ?= gcc
 PYTHON ?= python3
@@ -90,6 +97,7 @@ FUZZ_UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 
 DEPS = $(OBJ:.o=.d) \
        fch.d \
+       test_vectors_library.d \
        $(addsuffix .d,$(TESTS)) \
        $(addsuffix .d,$(RESEARCH_TESTS)) \
        $(addsuffix .d,$(EXTENDED_TESTS)) \
@@ -99,7 +107,7 @@ DEPS = $(OBJ:.o=.d) \
        $(addsuffix .d,$(FUZZ_TARGETS))
 
 define generate-dependencies
-	@$(1) $(CPPFLAGS) $(2) -MM -MP -MT $@ $(filter %.c,$^) > $@.d.tmp
+	@$(1) $(if $(3),$(3),$(CPPFLAGS)) $(2) -MM -MP -MT $@ $(filter %.c,$^) > $@.d.tmp
 	@mv $@.d.tmp $@.d
 endef
 
@@ -125,13 +133,29 @@ obj/fuzz-config: FORCE | obj
 obj/peer-config: FORCE | obj
 	$(call write-build-config,$(CC),$(CFLAGS),$(CPPFLAGS) -DFCH_BENCH_OPENSSL $(BENCH_OPENSSL_CFLAGS),$(LDLIBS) $(BENCH_OPENSSL_LIBS))
 
+obj/archive-config: FORCE | obj
+	@printf '%s\n' $(call shell-quote,AR=$(AR)) $(call shell-quote,ARFLAGS=$(ARFLAGS)) > $@.tmp
+	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
+
 obj:
 	mkdir -p $@
 
 obj/%.o: ../src/%.c obj/build-config Makefile | obj
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -MF $(@:.o=.d) -MT $@ -c -o $@ $<
 
-all: fch
+all: fch libfch.a
+
+lib: libfch.a
+
+libfch.a: $(OBJ) obj/archive-config Makefile
+	rm -f $@.tmp
+	$(AR) $(ARFLAGS) $@.tmp $(OBJ)
+	mv $@.tmp $@
+
+install: libfch.a
+	$(INSTALL) -d "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(INCLUDEDIR)"
+	$(INSTALL) -m 644 libfch.a "$(DESTDIR)$(LIBDIR)/libfch.a"
+	$(INSTALL) -m 644 ../include/fch.h ../include/fch_stream.h "$(DESTDIR)$(INCLUDEDIR)"
 
 fch: $(OBJ) ../tools/fch.c
 	$(call generate-dependencies,$(CC),$(CFLAGS))
@@ -162,6 +186,24 @@ test_portability: ../tests/test_portability.c $(SRC)
 test_vectors: ../tests/test_vectors.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS))
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(SRC) $(LDFLAGS) $(LDLIBS)
+
+test_vectors_library: ../tests/test_vectors.c libfch.a
+	$(call generate-dependencies,$(CC),$(CFLAGS),-I../include)
+	$(CC) -I../include $(CFLAGS) -o $@ $< libfch.a $(LDFLAGS) $(LDLIBS)
+
+check-library: test_vectors_library
+	./test_vectors_library ../analysis/interoperability-v1.tsv
+
+check-install: libfch.a
+	$(MAKE) install DESTDIR="$(CURDIR)/obj/install-check" \
+		PREFIX=/usr LIBDIR=/usr/lib INCLUDEDIR=/usr/include
+	@set -e; set -- obj/install-check/usr/include/*; test "$$#" -eq 2; \
+		test -f obj/install-check/usr/include/fch.h; \
+		test -f obj/install-check/usr/include/fch_stream.h
+	$(CC) -Iobj/install-check/usr/include $(CFLAGS) \
+		-o obj/test_vectors_installed ../tests/test_vectors.c \
+		obj/install-check/usr/lib/libfch.a $(LDFLAGS) $(LDLIBS)
+	./obj/test_vectors_installed ../analysis/interoperability-v1.tsv
 
 fch_diffusion: ../analysis/fch_diffusion.c $(SRC)
 	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_ENABLE_REDUCED_ROUND_TESTS -DFCH_DEBUG_HOOKS -DFCH_DEBUG_HOOK_EXTERNAL)
@@ -197,7 +239,7 @@ check-research-native: $(RESEARCH_TESTS)
 
 check-research: check-research-native check-diffusion check-trails check-characteristics check-full-rounds check-reduced-rounds check-second-preimage-bounds
 
-check-all: check check-extended check-reference check-interoperability check-research bench-check bench-baseline-check
+check-all: check check-library check-install check-extended check-reference check-interoperability check-research bench-check bench-baseline-check
 
 sanitizer-check:
 	$(MAKE) clean
@@ -349,7 +391,7 @@ analyze:
 			-c "$$source" -o /dev/null; \
 	done
 
-BINARIES = fch $(TESTS) $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash bench_hash_peers $(FUZZ_TARGETS)
+BINARIES = fch $(TESTS) test_vectors_library $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash bench_hash_peers $(FUZZ_TARGETS)
 
 $(BINARIES): Makefile
 $(filter-out $(FUZZ_TARGETS) bench_hash_peers,$(BINARIES)): obj/build-config
@@ -361,7 +403,9 @@ FORCE:
 
 clean:
 	rm -f obj/*.o obj/*.d obj/*.d.tmp $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
-	rm -f obj/build-config obj/fuzz-config obj/peer-config obj/*.build-config obj/*config.tmp
+	rm -f libfch.a libfch.a.tmp obj/test_vectors_installed obj/test_vectors_installed.exe
+	rm -f obj/build-config obj/fuzz-config obj/peer-config obj/archive-config obj/*.build-config obj/*config.tmp
+	rm -rf obj/install-check
 
 CURRENT_DEPS = $(shell for dependency in $(DEPS); do \
 	if [ -f "$$dependency" ] && [ ! Makefile -nt "$$dependency" ]; then \
@@ -371,3 +415,4 @@ CURRENT_DEPS = $(shell for dependency in $(DEPS); do \
 -include $(CURRENT_DEPS)
 
 .PHONY: check-full-rounds check-interoperability check-research-native check-research check-all all test check-cli check check-diffusion sanitizer-check check-reference check-trails check-characteristics reduced-round-report check-reduced-rounds second-preimage-report check-second-preimage-bounds test-extended check-extended bench bench-check bench-baseline bench-compare bench-baseline-check timing-check fuzz-smoke fuzz-campaign analyze clean
+.PHONY: lib install check-library check-install

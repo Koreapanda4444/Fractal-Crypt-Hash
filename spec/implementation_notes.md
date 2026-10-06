@@ -23,6 +23,13 @@ byte range. Root status is added only by output finalization.
 headers, including research hooks, live beside their sources in `src/` and
 are not a supported external interface.
 
+`make lib` archives the seven core objects in `build/libfch.a`; `make all`
+also builds the CLI. The archive is replaced from the current object list so
+removed implementation objects cannot survive a rebuild. Compiler settings
+and archive command/flags have separate change tracking. `make install`
+supports `PREFIX`, `LIBDIR`, `INCLUDEDIR`, and `DESTDIR` and installs only the
+archive and two public headers.
+
 - `src/mix.c` implements initialization, the 16-round ARX compression core,
   and output finalization.
 - `src/fractal_split.c` computes and validates canonical range descriptors and
@@ -130,6 +137,9 @@ reviewed inputs to verification and are not generated build artifacts.
 
 `make check` runs seven existing C correctness programs and CLI regression.
 The canonical KAT reader is part of `test_vectors.c`, not another test file.
+`check-library` links that same source against the archive with only public
+include paths; `check-install` repeats it using the staged installation. Both
+run the complete corpus, including streaming plans and overlapping outputs.
 `check-reference` retains 384 differential cases; `check-interoperability`
 checks all 54 fixed corpus inputs through C one-shot, eleven streaming plans,
 two overlapping output offsets per variant, C CLI, and Python.

@@ -2,6 +2,8 @@
 /build/*.d
 /build/*.d.tmp
 /build/*.exe
+/build/libfch.a
+/build/libfch.a.tmp
 /build/fch
 /build/test_*
 /build/fch_diffusion

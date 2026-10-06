@@ -22,6 +22,12 @@ C 구현과 `tools/fch_reference.py`는 모두 트리 인코딩 버전 2를 구�
 `include/fch.h`와 `include/fch_stream.h`만 공개 API입니다. 연구용 hook을 포함한
 내부 헤더는 `src/`의 구현 옆에 있으며 외부 사용자를 위한 지원 인터페이스가 아닙니다.
 
+`make lib`은 핵심 object 7개를 `build/libfch.a`에 담고 `make all`은 CLI도
+빌드합니다. archive를 현재 object 목록으로 새로 만들어 제거된 구현 object가
+남지 않게 합니다. compiler 설정과 archive 명령·옵션 변경을 따로 추적합니다.
+`make install`은 `PREFIX`, `LIBDIR`, `INCLUDEDIR`, `DESTDIR`를 지원하고
+archive와 공개 헤더 두 개만 설치합니다.
+
 - `src/mix.c`: 초기화, 16라운드 ARX 압축 코어, 출력 마무리
 - `src/fractal_split.c`: 정규 범위 구조와 이진 자식 경계 계산 및 검증
 - `src/leaf.c`: 리프 헤더와 데이터 레코드 인코딩
@@ -117,6 +123,9 @@ fuzz 생성물은 `build/` 안에 둡니다. Make는 Python bytecode 생성을 �
 
 `make check`는 기존 C correctness 프로그램 7개와 CLI 회귀를 실행합니다.
 정식 KAT reader는 새 테스트 파일 대신 `test_vectors.c`에 넣었습니다.
+`check-library`는 같은 소스를 공개 include 경로만으로 archive에 링크하고,
+`check-install`은 staging 설치로 반복합니다. 두 검사 모두 스트리밍 계획과
+겹치는 출력을 포함한 전체 corpus를 실행합니다.
 `check-reference`의 차등 입력 384개를 유지하며 `check-interoperability`는 고정
 입력 54개를 C 원샷·스트리밍 계획 11개·각 출력 크기에서 겹치는 출력 위치
 2개·C CLI·Python에서 검사합니다.

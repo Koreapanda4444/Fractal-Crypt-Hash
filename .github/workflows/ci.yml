@@ -36,7 +36,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check CC="$CC"
+          make all check check-library check-install CC="$CC"
 
       - name: Set up Python
         if: matrix.reference
@@ -58,7 +58,7 @@ jobs:
 
       - name: Run ASan and UBSan suites
         working-directory: build
-        run: make sanitizer-check SANITIZER_TARGETS=check
+        run: make sanitizer-check SANITIZER_TARGETS="check check-library check-install"
 
   static-analysis:
     runs-on: ubuntu-latest
@@ -91,7 +91,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check CC=gcc
+          make all check check-library check-install CC=gcc
 
       - name: Verify native Windows binary stdin
         shell: pwsh
@@ -176,7 +176,7 @@ jobs:
         working-directory: build
         run: |
           make clean
-          make all check \
+          make all check check-library check-install \
             CC=gcc \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2 -m32" \
             LDFLAGS="-m32"
@@ -198,8 +198,9 @@ jobs:
           make clean
           make fch test_boundaries test_invariants \
             test_stream_equivalence test_portability \
-            test_vectors test_tree_encoding test_failures \
+            test_vectors test_tree_encoding test_failures test_vectors_library \
             CC=powerpc64-linux-gnu-gcc \
+            AR=powerpc64-linux-gnu-ar \
             CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
 
       - name: Run under qemu
@@ -212,7 +213,8 @@ jobs:
             test_portability \
             test_vectors \
             test_tree_encoding \
-            test_failures
+            test_failures \
+            test_vectors_library
           do
             qemu-ppc64 -L /usr/powerpc64-linux-gnu "./$test_bin"
           done

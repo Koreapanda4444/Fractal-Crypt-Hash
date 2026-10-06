@@ -105,6 +105,30 @@ fch256_free(&ctx);
 An active context has a single owner. Updates after finalization and repeated
 finalization are rejected.
 
+## Library build and installation
+
+From the repository root:
+
+```sh
+make -C build lib
+cc -Iinclude consumer.c -Lbuild -lfch -o consumer
+make -C build check-library check-install
+```
+
+`make all` builds the CLI and `libfch.a`. The static library has no OpenSSL
+dependency. `check-library` reuses the existing vector test as an external
+consumer; `check-install` runs it using only staged headers and the archive.
+
+```sh
+make -C build install PREFIX=/usr/local
+make -C build install PREFIX=/usr DESTDIR="$PWD/build/obj/package"
+```
+
+Installation copies `libfch.a`, `fch.h`, and `fch_stream.h`. `LIBDIR` and
+`INCLUDEDIR` can override the prefix-derived locations. Use an `AR` matching
+the target toolchain for cross compilation. This is a research-candidate build,
+not a production cryptography release.
+
 ## Command-line tool
 
 Build the tool:
@@ -159,7 +183,8 @@ records and invariants, one-shot/streaming equivalence, invalid input, reader
 and allocation failures, portability, and CLI behavior. The fixed
 [interoperability corpus](analysis/interoperability-v1.tsv) contains 54 inputs
 for both variants. C checks 1,296 one-shot/streaming digests across eleven
-update plans; Python and the C CLI each check 108 expected digests. The separate
+update plans and 216 overlapping-input/output digests, for 1,512 total; Python
+and the C CLI each check 108 expected digests. The separate
 reference comparison retains 384 cases with three fixed seeds.
 
 Research and stress checks are separate:
