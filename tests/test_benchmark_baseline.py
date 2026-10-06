@@ -19,12 +19,13 @@ benchmark = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(benchmark)
 
 
-def make_results() -> list[dict[str, object]]:
+def make_results(profile: str = "baseline-v1") -> list[dict[str, object]]:
     results = []
     for index, (key, iterations) in enumerate(
-        benchmark.expected_cases().items()
+        benchmark.expected_cases(profile).items()
     ):
         algorithm, length, chunk = key
+        peer = (algorithm, chunk) in benchmark.PEER_TARGETS
         throughput = 40.0 + index
         seconds = length * iterations / 1000000.0 / throughput
         results.append(
@@ -35,18 +36,18 @@ def make_results() -> list[dict[str, object]]:
                 "iterations": iterations,
                 "median_seconds": seconds,
                 "mb_per_second": throughput,
-                "peak_heap_bytes": 8208 if chunk else length + 73,
-                "allocations_per_hash": 1 if chunk else 2,
+                "peak_heap_bytes": None if peer else (8208 if chunk else length + 73),
+                "allocations_per_hash": None if peer else (1 if chunk else 2),
             }
         )
     return results
 
 
-def make_document() -> dict[str, object]:
-    return {
+def make_document(profile: str = "baseline-v1") -> dict[str, object]:
+    document = {
         "schema": benchmark.SCHEMA,
         "captured_at_utc": "2026-09-21T00:00:00Z",
-        "profile": dict(benchmark.PROFILE),
+        "profile": dict(benchmark.profile_definition(profile)),
         "source": {"revision": "abc", "dirty": False},
         "environment": {
             "system": "TestOS",
@@ -59,30 +60,36 @@ def make_document() -> dict[str, object]:
             "cflags": "-O2",
             "python": "3.12.0",
         },
-        "results": make_results(),
+        "results": make_results(profile),
     }
+    if profile == "peers-v1":
+        document["peer_library"] = {"name": "OpenSSL", "version": "test version"}
+    return document
 
 
-def make_csv() -> str:
+def make_csv(profile_name: str = "baseline-v1") -> str:
+    profile = benchmark.profile_definition(profile_name)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=benchmark.CSV_FIELDS)
     writer.writeheader()
-    for result in make_results():
+    for result in make_results(profile_name):
         writer.writerow(
             {
-                "profile": benchmark.PROFILE["name"],
-                "input_seed": benchmark.PROFILE["input_seed"],
-                "timer": benchmark.PROFILE["timer"],
-                "warmups": benchmark.PROFILE["warmups"],
-                "trials": benchmark.PROFILE["trials"],
+                "profile": profile["name"],
+                "input_seed": profile["input_seed"],
+                "timer": profile["timer"],
+                "warmups": profile["warmups"],
+                "trials": profile["trials"],
                 "algorithm": result["algorithm"],
                 "bytes": result["bytes"],
                 "chunk_bytes": result["chunk_bytes"],
                 "iterations": result["iterations"],
                 "median_seconds": f"{result['median_seconds']:.12f}",
                 "mb_per_second": f"{result['mb_per_second']:.3f}",
-                "peak_heap_bytes": result["peak_heap_bytes"],
-                "allocations_per_hash": result["allocations_per_hash"],
+                "peak_heap_bytes": ("unmeasured" if result["peak_heap_bytes"] is None
+                                    else result["peak_heap_bytes"]),
+                "allocations_per_hash": ("unmeasured" if result["allocations_per_hash"] is None
+                                         else result["allocations_per_hash"]),
             }
         )
     return output.getvalue()
@@ -111,6 +118,30 @@ class BenchmarkBaselineTests(unittest.TestCase):
         self.assertEqual(len(results), 48)
         self.assertEqual(results[0]["algorithm"], "fch256-one-shot")
         self.assertEqual(results[-1]["chunk_bytes"], 65536)
+
+    def test_peer_profile_keeps_unknown_resources_explicit(self) -> None:
+        results = benchmark.parse_profile_csv(make_csv("peers-v1"), "peers-v1")
+        self.assertEqual(len(results), 66)
+        self.assertTrue(all(row["peak_heap_bytes"] is None for row in results[48:]))
+        with self.assertRaises(benchmark.BenchmarkError):
+            benchmark.parse_profile_csv(make_csv("peers-v1"))
+        with self.assertRaises(benchmark.BenchmarkError):
+            benchmark.parse_profile_csv(
+                make_csv("peers-v1").replace("unmeasured,unmeasured", "0,0"),
+                "peers-v1"
+            )
+        document = benchmark.validate_document(make_document("peers-v1"))
+        self.assertIsNone(document["results"][-1]["allocations_per_hash"])
+
+    def test_compare_rejects_profile_and_peer_library_changes(self) -> None:
+        baseline = benchmark.validate_document(make_document())
+        peers = benchmark.validate_document(make_document("peers-v1"))
+        with self.assertRaises(benchmark.BenchmarkError):
+            benchmark.compare_results(baseline, peers, 20.0)
+        current = copy.deepcopy(peers)
+        current["peer_library"]["version"] = "different version"
+        with self.assertRaises(benchmark.BenchmarkError):
+            benchmark.compare_results(peers, current, 20.0)
 
     def test_parse_rejects_missing_case(self) -> None:
         lines = make_csv().splitlines()

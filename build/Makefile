@@ -6,6 +6,10 @@ BENCHMARK_TOOL ?= ../tools/fch_benchmark.py
 BASELINE ?= benchmark-baseline.json
 CURRENT ?= benchmark-current.json
 MAX_REGRESSION ?= 20
+PEER_BASELINE ?= benchmark-peers.json
+BENCH_OPENSSL_CFLAGS ?=
+BENCH_OPENSSL_LIBS ?= -lcrypto
+MATRIX_DIR ?= obj/bench-matrix
 REDUCED_ROUND_TOOL ?= ../tools/fch_reduced_round_analysis.py
 REDUCED_ROUND_BASELINE ?= ../analysis/reduced-round-v1.json
 SECOND_PREIMAGE_TOOL ?= ../tools/fch_second_preimage_bounds.py
@@ -91,6 +95,7 @@ DEPS = $(OBJ:.o=.d) \
        $(addsuffix .d,$(EXTENDED_TESTS)) \
        fch_diffusion.d \
        bench_hash.d \
+       bench_hash_peers.d \
        $(addsuffix .d,$(FUZZ_TARGETS))
 
 define generate-dependencies
@@ -103,10 +108,10 @@ shell-quote = '$(subst ','"'"',$(1))'
 define write-build-config
 	@{ printf '%s\n' $(call shell-quote,CC=$(1)) \
 		$(call shell-quote,CFLAGS=$(2)) \
-		$(call shell-quote,CPPFLAGS=$(CPPFLAGS)) \
+		$(call shell-quote,CPPFLAGS=$(if $(3),$(3),$(CPPFLAGS))) \
 		$(call shell-quote,DEPFLAGS=$(DEPFLAGS)) \
 		$(call shell-quote,LDFLAGS=$(LDFLAGS)) \
-		$(call shell-quote,LDLIBS=$(LDLIBS)); \
+		$(call shell-quote,LDLIBS=$(if $(4),$(4),$(LDLIBS))); \
 		$(1) --version; } > $@.tmp
 	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
 endef
@@ -116,6 +121,9 @@ obj/build-config: FORCE | obj
 
 obj/fuzz-config: FORCE | obj
 	$(call write-build-config,$(FUZZ_CC),$(FUZZ_CFLAGS))
+
+obj/peer-config: FORCE | obj
+	$(call write-build-config,$(CC),$(CFLAGS),$(CPPFLAGS) -DFCH_BENCH_OPENSSL $(BENCH_OPENSSL_CFLAGS),$(LDLIBS) $(BENCH_OPENSSL_LIBS))
 
 obj:
 	mkdir -p $@
@@ -258,6 +266,24 @@ bench_hash: ../bench/bench_hash.c $(SRC)
 bench-check: bench_hash
 	./bench_hash --quick
 
+bench_hash_peers: ../bench/bench_hash.c $(SRC) obj/peer-config
+	$(call generate-dependencies,$(CC),$(CFLAGS) -DFCH_BENCH_OPENSSL $(BENCH_OPENSSL_CFLAGS))
+	$(CC) $(CPPFLAGS) -DFCH_BENCH_OPENSSL $(BENCH_OPENSSL_CFLAGS) $(CFLAGS) \
+		-Dmalloc=fch_bench_malloc -Dcalloc=fch_bench_calloc \
+		-Dfree=fch_bench_free -o $@ $< $(SRC) \
+		$(LDFLAGS) $(LDLIBS) $(BENCH_OPENSSL_LIBS)
+	cp obj/peer-config obj/$@.build-config
+
+bench-peers: bench_hash_peers
+	$(PYTHON) $(BENCHMARK_TOOL) capture --profile peers-v1 \
+		--binary ./bench_hash_peers --compiler "$(CC)" --cflags "$(CFLAGS)" \
+		--output "$(PEER_BASELINE)"
+
+bench-matrix:
+	$(PYTHON) $(BENCHMARK_TOOL) matrix --compiler "$(CC)" \
+		--cflags "$(CFLAGS)" --cflags "$(CFLAGS) -flto" \
+		--output-dir "$(MATRIX_DIR)"
+
 bench-baseline: bench_hash
 	$(PYTHON) $(BENCHMARK_TOOL) capture \
 		--binary ./bench_hash \
@@ -322,18 +348,18 @@ analyze:
 			-c "$$source" -o /dev/null; \
 	done
 
-BINARIES = fch $(TESTS) $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash $(FUZZ_TARGETS)
+BINARIES = fch $(TESTS) $(RESEARCH_TESTS) $(EXTENDED_TESTS) fch_diffusion bench_hash bench_hash_peers $(FUZZ_TARGETS)
 
-$(filter-out $(FUZZ_TARGETS),$(BINARIES)): obj/build-config
+$(filter-out $(FUZZ_TARGETS) bench_hash_peers,$(BINARIES)): obj/build-config
 $(FUZZ_TARGETS): obj/fuzz-config
 
 FORCE:
 
-.PHONY: FORCE
+.PHONY: FORCE bench-peers bench-matrix
 
 clean:
 	rm -f $(OBJ) $(DEPS) $(addsuffix .tmp,$(DEPS)) $(BINARIES) $(addsuffix .exe,$(BINARIES)) test_vectors_ubsan test_vectors_san
-	rm -f obj/build-config obj/fuzz-config obj/*.build-config obj/*config.tmp
+	rm -f obj/build-config obj/fuzz-config obj/peer-config obj/*.build-config obj/*config.tmp
 
 -include $(DEPS)
 

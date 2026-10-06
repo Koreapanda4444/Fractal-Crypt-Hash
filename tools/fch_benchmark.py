@@ -25,6 +25,7 @@ PROFILE = {
     "warmups": 1,
     "trials": 5,
 }
+PEER_PROFILE = dict(PROFILE, name="peers-v1")
 CSV_FIELDS = (
     "profile",
     "input_seed",
@@ -51,6 +52,11 @@ TARGETS = (
     ("fch512-stream", 1024),
     ("fch512-stream", 65536),
 )
+PEER_TARGETS = (
+    ("openssl-sha256", 0),
+    ("openssl-sha512", 0),
+    ("openssl-blake2b512", 0),
+)
 ITERATIONS = {
     64: 65536,
     1024: 8192,
@@ -76,10 +82,20 @@ class BenchmarkError(RuntimeError):
     pass
 
 
-def expected_cases() -> dict[tuple[str, int, int], int]:
+def profile_definition(name: str) -> dict[str, Any]:
+    if name == PROFILE["name"]:
+        return PROFILE
+    if name == PEER_PROFILE["name"]:
+        return PEER_PROFILE
+    raise BenchmarkError(f"unknown benchmark profile: {name}")
+
+
+def expected_cases(profile_name: str = "baseline-v1") -> dict[tuple[str, int, int], int]:
+    profile_definition(profile_name)
+    targets = TARGETS + PEER_TARGETS if profile_name == "peers-v1" else TARGETS
     return {
         (algorithm, length, chunk): ITERATIONS[length]
-        for algorithm, chunk in TARGETS
+        for algorithm, chunk in targets
         for length in LENGTHS
     }
 
@@ -104,13 +120,13 @@ def parse_float(row: dict[str, str], field: str, line: int) -> float:
     return value
 
 
-def validate_profile_row(row: dict[str, str], line: int) -> None:
+def validate_profile_row(row: dict[str, str], line: int, profile: dict[str, Any]) -> None:
     expected = {
-        "profile": PROFILE["name"],
-        "input_seed": PROFILE["input_seed"],
-        "timer": PROFILE["timer"],
-        "warmups": str(PROFILE["warmups"]),
-        "trials": str(PROFILE["trials"]),
+        "profile": profile["name"],
+        "input_seed": profile["input_seed"],
+        "timer": profile["timer"],
+        "warmups": str(profile["warmups"]),
+        "trials": str(profile["trials"]),
     }
     for field, value in expected.items():
         if row.get(field) != value:
@@ -119,26 +135,32 @@ def validate_profile_row(row: dict[str, str], line: int) -> None:
             )
 
 
-def parse_profile_csv(text: str) -> list[dict[str, Any]]:
+def parse_profile_csv(text: str, profile_name: str = "baseline-v1") -> list[dict[str, Any]]:
+    profile = profile_definition(profile_name)
     reader = csv.DictReader(io.StringIO(text))
     if tuple(reader.fieldnames or ()) != CSV_FIELDS:
-        raise BenchmarkError("benchmark CSV header does not match baseline-v1")
+        raise BenchmarkError("benchmark CSV header does not match the profile")
 
-    expected = expected_cases()
+    expected = expected_cases(profile_name)
     results: list[dict[str, Any]] = []
     seen: set[tuple[str, int, int]] = set()
     for line, row in enumerate(reader, start=2):
         if None in row or any(value is None for value in row.values()):
             raise BenchmarkError(f"line {line}: malformed benchmark row")
-        validate_profile_row(row, line)
+        validate_profile_row(row, line, profile)
         algorithm = row["algorithm"]
         length = parse_integer(row, "bytes", line)
         chunk = parse_integer(row, "chunk_bytes", line)
         iterations = parse_integer(row, "iterations", line)
         seconds = parse_float(row, "median_seconds", line)
         throughput = parse_float(row, "mb_per_second", line)
-        peak_heap = parse_integer(row, "peak_heap_bytes", line)
-        allocations = parse_integer(row, "allocations_per_hash", line)
+        if (algorithm, chunk) in PEER_TARGETS:
+            if row["peak_heap_bytes"] != "unmeasured" or row["allocations_per_hash"] != "unmeasured":
+                raise BenchmarkError(f"line {line}: peer resources must be unmeasured")
+            peak_heap = allocations = None
+        else:
+            peak_heap = parse_integer(row, "peak_heap_bytes", line)
+            allocations = parse_integer(row, "allocations_per_hash", line)
         key = (algorithm, length, chunk)
         if key in seen:
             raise BenchmarkError(f"line {line}: duplicate benchmark case {key}")
@@ -180,13 +202,13 @@ def parse_profile_csv(text: str) -> list[dict[str, Any]]:
     return results
 
 
-def run_profile(binary: Path) -> list[dict[str, Any]]:
+def run_profile(binary: Path, profile_name: str = "baseline-v1") -> list[dict[str, Any]]:
     executable = binary.expanduser().resolve()
     if not executable.is_file():
         raise BenchmarkError(f"benchmark binary not found: {executable}")
     try:
         completed = subprocess.run(
-            [str(executable), "--baseline"],
+            [str(executable), "--peers" if profile_name == "peers-v1" else "--baseline"],
             check=False,
             capture_output=True,
             text=True,
@@ -199,7 +221,7 @@ def run_profile(binary: Path) -> list[dict[str, Any]]:
         raise BenchmarkError(
             f"benchmark exited with status {completed.returncode}: {detail}"
         )
-    return parse_profile_csv(completed.stdout)
+    return parse_profile_csv(completed.stdout, profile_name)
 
 
 def cpu_name() -> str:
@@ -315,7 +337,7 @@ def build_record(binary: Path, compiler: str, cflags: str) -> dict[str, Any]:
 
 
 def capture_document(
-    binary: Path, compiler: str, cflags: str
+    binary: Path, compiler: str, cflags: str, profile_name: str = "baseline-v1"
 ) -> dict[str, Any]:
     build = build_record(binary, compiler, cflags)
     environment = environment_record(compiler, cflags)
@@ -325,18 +347,29 @@ def capture_document(
         field.lower(): build["settings"][field]
         for field in ("CPPFLAGS", "LDFLAGS", "LDLIBS")
     })
-    return {
+    document = {
         "schema": SCHEMA,
         "captured_at_utc": datetime.now(timezone.utc)
         .replace(microsecond=0)
         .isoformat()
         .replace("+00:00", "Z"),
-        "profile": dict(PROFILE),
+        "profile": dict(profile_definition(profile_name)),
         "source": source_record(),
         "environment": environment,
         "build": build,
-        "results": run_profile(binary),
+        "results": run_profile(binary, profile_name),
     }
+    if build_record(binary, compiler, cflags) != build:
+        raise BenchmarkError("benchmark binary or configuration changed during capture")
+    if profile_name == "peers-v1":
+        version = subprocess.run(
+            [str(binary.expanduser().resolve()), "--peer-version"],
+            check=False, capture_output=True, text=True, encoding="utf-8"
+        )
+        if version.returncode != 0 or not version.stdout.strip():
+            raise BenchmarkError("could not identify peer library")
+        document["peer_library"] = {"name": "OpenSSL", "version": version.stdout.strip()}
+    return document
 
 
 def normalize_result(raw: Any, index: int) -> dict[str, Any]:
@@ -355,6 +388,9 @@ def normalize_result(raw: Any, index: int) -> dict[str, Any]:
     if set(raw) != fields:
         raise BenchmarkError(f"result {index} has an invalid field set")
     try:
+        peer = (str(raw["algorithm"]), int(raw["chunk_bytes"])) in PEER_TARGETS
+        if peer and (raw["peak_heap_bytes"] is not None or raw["allocations_per_hash"] is not None):
+            raise BenchmarkError(f"result {index}: peer resources must be unmeasured")
         result = {
             "algorithm": str(raw["algorithm"]),
             "bytes": int(raw["bytes"]),
@@ -362,8 +398,8 @@ def normalize_result(raw: Any, index: int) -> dict[str, Any]:
             "iterations": int(raw["iterations"]),
             "median_seconds": float(raw["median_seconds"]),
             "mb_per_second": float(raw["mb_per_second"]),
-            "peak_heap_bytes": int(raw["peak_heap_bytes"]),
-            "allocations_per_hash": int(raw["allocations_per_hash"]),
+            "peak_heap_bytes": None if peer else int(raw["peak_heap_bytes"]),
+            "allocations_per_hash": None if peer else int(raw["allocations_per_hash"]),
         }
     except (TypeError, ValueError) as error:
         raise BenchmarkError(f"result {index} contains an invalid value") from error
@@ -371,8 +407,8 @@ def normalize_result(raw: Any, index: int) -> dict[str, Any]:
         result["bytes"] < 0
         or result["chunk_bytes"] < 0
         or result["iterations"] <= 0
-        or result["peak_heap_bytes"] < 0
-        or result["allocations_per_hash"] < 0
+        or (not peer and result["peak_heap_bytes"] < 0)
+        or (not peer and result["allocations_per_hash"] < 0)
         or not math.isfinite(result["median_seconds"])
         or result["median_seconds"] <= 0.0
         or not math.isfinite(result["mb_per_second"])
@@ -387,8 +423,9 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise BenchmarkError("baseline root is not an object")
     if document.get("schema") != SCHEMA:
         raise BenchmarkError(f"baseline schema must be {SCHEMA}")
-    if document.get("profile") != PROFILE:
-        raise BenchmarkError("baseline profile does not match baseline-v1")
+    profile = document.get("profile")
+    if not isinstance(profile, dict) or profile != profile_definition(profile.get("name", "")):
+        raise BenchmarkError("baseline profile is invalid")
     environment = document.get("environment")
     if not isinstance(environment, dict):
         raise BenchmarkError("baseline environment is missing")
@@ -401,6 +438,26 @@ def validate_document(document: Any) -> dict[str, Any]:
     }
     if not required_environment.issubset(environment):
         raise BenchmarkError("baseline environment is incomplete")
+    build = document.get("build")
+    if build is not None:
+        if not isinstance(build, dict) or not isinstance(build.get("settings"), dict):
+            raise BenchmarkError("invalid benchmark build record")
+        for setting, field in (("CC", "compiler_command"), ("CFLAGS", "cflags"),
+                               ("CPPFLAGS", "cppflags"), ("LDFLAGS", "ldflags"),
+                               ("LDLIBS", "ldlibs")):
+            if build["settings"].get(setting) != environment.get(field):
+                raise BenchmarkError(f"build and environment disagree: {setting}")
+        if build.get("compiler_version") != environment.get("compiler_version"):
+            raise BenchmarkError("build and environment compiler versions disagree")
+        for field in ("binary_sha256", "config_sha256"):
+            value = build.get(field)
+            if (not isinstance(value, str) or len(value) != 64 or
+                    any(c not in "0123456789abcdef" for c in value)):
+                raise BenchmarkError(f"invalid build digest: {field}")
+    if profile["name"] == "peers-v1":
+        library = document.get("peer_library")
+        if not isinstance(library, dict) or library.get("name") != "OpenSSL" or not library.get("version"):
+            raise BenchmarkError("peer library metadata is missing")
     raw_results = document.get("results")
     if not isinstance(raw_results, list):
         raise BenchmarkError("baseline results are missing")
@@ -408,7 +465,7 @@ def validate_document(document: Any) -> dict[str, Any]:
         normalize_result(raw, index)
         for index, raw in enumerate(raw_results)
     ]
-    expected = expected_cases()
+    expected = expected_cases(profile["name"])
     indexed: dict[tuple[str, int, int], dict[str, Any]] = {}
     for result in results:
         key = (
@@ -496,6 +553,10 @@ def compare_results(
     current: dict[str, Any],
     max_regression: float,
 ) -> tuple[list[dict[str, Any]], bool]:
+    if baseline["profile"] != current["profile"]:
+        raise BenchmarkError("cannot compare different measurement profiles")
+    if baseline.get("peer_library") != current.get("peer_library"):
+        raise BenchmarkError("peer library version changed")
     baseline_results = result_index(baseline)
     current_results = result_index(current)
     rows: list[dict[str, Any]] = []
@@ -545,6 +606,7 @@ def add_capture_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--binary", type=Path, default=Path("./bench_hash"))
     parser.add_argument("--compiler", default=os.environ.get("CC", "cc"))
     parser.add_argument("--cflags", default=os.environ.get("CFLAGS", ""))
+    parser.add_argument("--profile", choices=("baseline-v1", "peers-v1"), default="baseline-v1")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -566,11 +628,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = subparsers.add_parser("validate")
     validate.add_argument("--file", type=Path, required=True)
+
+    matrix = subparsers.add_parser("matrix")
+    matrix.add_argument("--compiler", action="append", required=True)
+    matrix.add_argument("--cflags", action="append", required=True)
+    matrix.add_argument("--peers", action="store_true")
+    matrix.add_argument("--output-dir", type=Path, required=True)
     return parser
 
 
 def command_capture(args: argparse.Namespace) -> int:
-    document = capture_document(args.binary, args.compiler, args.cflags)
+    document = capture_document(args.binary, args.compiler, args.cflags, args.profile)
     write_document(args.output, document)
     print(
         f"captured {len(document['results'])} cases to "
@@ -584,7 +652,7 @@ def command_compare(args: argparse.Namespace) -> int:
         raise BenchmarkError("max regression must be at least 0 and below 100")
     baseline = load_document(args.baseline)
     current = validate_document(
-        capture_document(args.binary, args.compiler, args.cflags)
+        capture_document(args.binary, args.compiler, args.cflags, args.profile)
     )
     if args.output_current:
         write_document(args.output_current, current)
@@ -629,6 +697,46 @@ def command_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_matrix(args: argparse.Namespace) -> int:
+    build_dir = Path(__file__).resolve().parent.parent / "build"
+    output_dir = args.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = "bench_hash_peers" if args.peers else "bench_hash"
+    profile = "peers-v1" if args.peers else "baseline-v1"
+    records = []
+    for compiler in args.compiler:
+        for flags in args.cflags:
+            index = len(records) + 1
+            try:
+                completed = subprocess.run(
+                    ["make", target, f"CC={compiler}", f"CFLAGS={flags}"],
+                    cwd=build_dir, check=False, capture_output=True, text=True,
+                    encoding="utf-8"
+                )
+            except OSError as error:
+                raise BenchmarkError(f"could not run matrix build: {error}") from error
+            (output_dir / f"profile-{index:02d}.log").write_text(
+                completed.stdout + completed.stderr, encoding="utf-8"
+            )
+            if completed.returncode != 0:
+                raise BenchmarkError(f"matrix build {index} failed; see its build log")
+            document = validate_document(capture_document(
+                build_dir / target, compiler, flags, profile
+            ))
+            filename = f"profile-{index:02d}.json"
+            write_document(output_dir / filename, document)
+            records.append({
+                "file": filename, "compiler": compiler, "cflags": flags,
+                "binary_sha256": document["build"]["binary_sha256"]
+            })
+            print(f"captured matrix profile {index}: {compiler} {flags}", flush=True)
+    write_document(output_dir / "manifest.json", {
+        "schema": "fch-benchmark-matrix-v1", "profile": profile,
+        "profiles": records
+    })
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -637,6 +745,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_capture(args)
         if args.command == "compare":
             return command_compare(args)
+        if args.command == "matrix":
+            return command_matrix(args)
         return command_validate(args)
     except BenchmarkError as error:
         print(f"error: {error}", file=sys.stderr)

@@ -231,6 +231,32 @@ require the same recorded environment, reject resource-profile changes, and
 use a 20 percent per-case throughput regression limit by default. Set
 `MAX_REGRESSION` to choose another limit.
 
+Build-setting changes trigger recompilation without `make clean`. Captures
+include the binary and configuration hashes and reject compiler/flag labels
+that disagree with the build record.
+
+Optional OpenSSL comparisons use the separate 66-case `peers-v1` profile:
+
+```sh
+make bench-peers PEER_BASELINE=benchmark-peers.json
+make bench-matrix MATRIX_DIR=obj/bench-matrix
+python3 ../tools/fch_benchmark.py matrix --compiler gcc --compiler clang \
+  --cflags "-std=c11 -Wall -Wextra -Wpedantic -O2" \
+  --cflags "-std=c11 -Wall -Wextra -Wpedantic -O2 -flto" \
+  --peers --output-dir obj/bench-peers-matrix
+```
+
+OpenSSL development headers and libcrypto are required only for peer runs;
+custom paths can be supplied with `BENCH_OPENSSL_CFLAGS` and
+`BENCH_OPENSSL_LIBS`. Peer hashes use the same payloads, iteration counts,
+warmup, interleaved trials and timer as FCH. Their heap/allocation fields are
+`unmeasured`, since library allocations are not instrumented. Comparisons
+include library and CPU optimizations and describe these implementations,
+not intrinsic construction costs. Compiler matrices rebuild sequentially and
+save each capture and build log; they do not apply regression gates across
+different compilers or flags. Ordinary regression comparisons still require
+matching profiles, environments and peer-library versions.
+
 Run the four retained sanitizer-backed libFuzzer targets with Clang:
 
 ```sh

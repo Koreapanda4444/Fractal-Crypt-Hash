@@ -15,6 +15,11 @@
 #include "fch_stream.h"
 #include "params.h"
 
+#ifdef FCH_BENCH_OPENSSL
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
+#endif
+
 typedef union {
     max_align_t alignment;
     size_t size;
@@ -97,7 +102,8 @@ typedef int (*bench_fn)(
 
 typedef enum {
     BENCH_ONE_SHOT,
-    BENCH_STREAM
+    BENCH_STREAM,
+    BENCH_PEER
 } bench_kind_t;
 
 typedef struct {
@@ -117,7 +123,7 @@ typedef struct {
 enum {
     BASELINE_LENGTH_COUNT = 6,
     BASELINE_TARGET_COUNT = 8,
-    BASELINE_CASE_COUNT = BASELINE_LENGTH_COUNT * BASELINE_TARGET_COUNT,
+    PROFILE_TARGET_LIMIT = BASELINE_TARGET_COUNT + 3,
     BASELINE_WARMUPS = 1,
     BASELINE_TRIALS = 5,
     TIMING_PATTERN_COUNT = 4,
@@ -217,6 +223,70 @@ static int hash_512_stream(
     fch512_free(&context);
     return ok;
 }
+
+#ifdef FCH_BENCH_OPENSSL
+static int hash_peer(
+    const uint8_t *input, size_t length, uint8_t output[64],
+    const EVP_MD *algorithm, unsigned int expected_length
+) {
+    unsigned int output_length = 0u;
+    return EVP_Digest(input, length, output, &output_length, algorithm, NULL) == 1 &&
+        output_length == expected_length;
+}
+
+static int hash_sha256_once(
+    const uint8_t *input, size_t length, size_t chunk_size, uint8_t output[64]
+) {
+    (void)chunk_size;
+    return hash_peer(input, length, output, EVP_sha256(), 32u);
+}
+
+static int hash_sha512_once(
+    const uint8_t *input, size_t length, size_t chunk_size, uint8_t output[64]
+) {
+    (void)chunk_size;
+    return hash_peer(input, length, output, EVP_sha512(), 64u);
+}
+
+static int hash_blake2b_once(
+    const uint8_t *input, size_t length, size_t chunk_size, uint8_t output[64]
+) {
+    (void)chunk_size;
+    return hash_peer(input, length, output, EVP_blake2b512(), 64u);
+}
+
+static int check_peer_vectors(void) {
+    static const struct {
+        bench_fn hash;
+        const char *hex;
+    } vectors[] = {
+        {hash_sha256_once,
+         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
+        {hash_sha512_once,
+         "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2"
+         "192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"},
+        {hash_blake2b_once,
+         "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d1"
+         "7d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"}
+    };
+    static const char hex_digits[] = "0123456789abcdef";
+    for (size_t i = 0u; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        uint8_t output[64];
+        char hex[129];
+        if (!vectors[i].hash((const uint8_t *)"abc", 3u, 0u, output))
+            return 0;
+        size_t length = strlen(vectors[i].hex) / 2u;
+        for (size_t j = 0u; j < length; j++) {
+            hex[j * 2u] = hex_digits[output[j] >> 4u];
+            hex[j * 2u + 1u] = hex_digits[output[j] & 15u];
+        }
+        hex[length * 2u] = '\0';
+        if (strcmp(hex, vectors[i].hex) != 0)
+            return 0;
+    }
+    return 1;
+}
+#endif
 
 static unsigned int iterations_for_length(size_t length, int quick) {
     if (quick)
@@ -473,6 +543,9 @@ static int validate_scaling(
     if (!target || !result || !stream_peak)
         return 0;
 
+    if (target->kind == BENCH_PEER)
+        return 1;
+
     if (target->kind == BENCH_ONE_SHOT) {
         size_t padded_length = length + 9u;
         if (padded_length < FCH_PADDING_MIN_BYTES)
@@ -515,11 +588,13 @@ static void print_baseline_result(
     const bench_target_t *target,
     size_t length,
     unsigned int iterations,
-    const bench_result_t *result
+    const bench_result_t *result,
+    const char *profile
 ) {
     printf(
-        "baseline-v1,%08" PRIx32 ",process_cpu,%u,%u,"
-        "%s,%zu,%zu,%u,%.6f,%.3f,%zu,%zu\n",
+        "%s,%08" PRIx32 ",process_cpu,%u,%u,"
+        "%s,%zu,%zu,%u,%.6f,%.3f,",
+        profile,
         BENCH_INPUT_SEED,
         BASELINE_WARMUPS,
         BASELINE_TRIALS,
@@ -528,35 +603,43 @@ static void print_baseline_result(
         target->chunk_size,
         iterations,
         result->seconds,
-        result->throughput,
-        result->peak_heap,
-        result->allocations_per_hash
+        result->throughput
     );
+    if (target->kind == BENCH_PEER)
+        puts("unmeasured,unmeasured");
+    else
+        printf("%zu,%zu\n", result->peak_heap, result->allocations_per_hash);
 }
 
 static int run_baseline_profile(
-    const bench_target_t targets[BASELINE_TARGET_COUNT],
+    const bench_target_t *targets,
+    size_t target_count,
     const size_t lengths[BASELINE_LENGTH_COUNT],
     const uint8_t *buffer,
     volatile uint32_t *sink,
-    size_t *stream_peak
+    size_t *stream_peak,
+    const char *profile
 ) {
     double samples
-        [BASELINE_TARGET_COUNT]
+        [PROFILE_TARGET_LIMIT]
         [BASELINE_LENGTH_COUNT]
         [BASELINE_TRIALS];
     size_t expected_peak
-        [BASELINE_TARGET_COUNT]
+        [PROFILE_TARGET_LIMIT]
         [BASELINE_LENGTH_COUNT];
     size_t expected_allocations
-        [BASELINE_TARGET_COUNT]
+        [PROFILE_TARGET_LIMIT]
         [BASELINE_LENGTH_COUNT];
+
+    if (target_count == 0u || target_count > PROFILE_TARGET_LIMIT)
+        return 0;
+    size_t case_count = target_count * BASELINE_LENGTH_COUNT;
 
     for (unsigned int warmup = 0u;
          warmup < BASELINE_WARMUPS;
          warmup++) {
         for (size_t case_index = 0u;
-             case_index < BASELINE_CASE_COUNT;
+             case_index < case_count;
              case_index++) {
             size_t target_index = case_index / BASELINE_LENGTH_COUNT;
             size_t length_index = case_index % BASELINE_LENGTH_COUNT;
@@ -598,10 +681,10 @@ static int run_baseline_profile(
 
     for (unsigned int trial = 0u; trial < BASELINE_TRIALS; trial++) {
         for (size_t position = 0u;
-             position < BASELINE_CASE_COUNT;
+             position < case_count;
              position++) {
             size_t case_index =
-                (position + (size_t)trial * 13u) % BASELINE_CASE_COUNT;
+                (position + (size_t)trial * 13u) % case_count;
             size_t target_index = case_index / BASELINE_LENGTH_COUNT;
             size_t length_index = case_index % BASELINE_LENGTH_COUNT;
             bench_result_t current;
@@ -633,7 +716,7 @@ static int run_baseline_profile(
     }
 
     for (size_t target_index = 0u;
-         target_index < BASELINE_TARGET_COUNT;
+         target_index < target_count;
          target_index++) {
         for (size_t length_index = 0u;
              length_index < BASELINE_LENGTH_COUNT;
@@ -680,7 +763,8 @@ static int run_baseline_profile(
                 &targets[target_index],
                 lengths[length_index],
                 iterations,
-                &result
+                &result,
+                profile
             );
         }
     }
@@ -690,7 +774,7 @@ static int run_baseline_profile(
 static void usage(const char *program) {
     fprintf(
         stderr,
-        "Usage: %s [--quick|--baseline|--timing-check]\n",
+        "Usage: %s [--quick|--baseline|--timing-check|--peers|--peer-version]\n",
         program
     );
 }
@@ -718,11 +802,18 @@ int main(int argc, char **argv) {
         {"fch256-stream", hash_256_stream, 1024u, BENCH_STREAM},
         {"fch256-stream", hash_256_stream, 65536u, BENCH_STREAM},
         {"fch512-stream", hash_512_stream, 1024u, BENCH_STREAM},
-        {"fch512-stream", hash_512_stream, 65536u, BENCH_STREAM}
+        {"fch512-stream", hash_512_stream, 65536u, BENCH_STREAM},
+#ifdef FCH_BENCH_OPENSSL
+        {"openssl-sha256", hash_sha256_once, 0u, BENCH_PEER},
+        {"openssl-sha512", hash_sha512_once, 0u, BENCH_PEER},
+        {"openssl-blake2b512", hash_blake2b_once, 0u, BENCH_PEER},
+#endif
     };
 
     int quick = 0;
     int baseline = 0;
+    size_t target_count = BASELINE_TARGET_COUNT;
+    const char *profile = "baseline-v1";
     if (argc == 2 && strcmp(argv[1], "--quick") == 0) {
         quick = 1;
     } else if (argc == 2 && strcmp(argv[1], "--baseline") == 0) {
@@ -730,6 +821,19 @@ int main(int argc, char **argv) {
     } else if (argc == 2 &&
                strcmp(argv[1], "--timing-check") == 0) {
         return run_timing_check() ? 0 : 1;
+#ifdef FCH_BENCH_OPENSSL
+    } else if (argc == 2 && strcmp(argv[1], "--peer-version") == 0) {
+        puts(OpenSSL_version(OPENSSL_VERSION));
+        return 0;
+    } else if (argc == 2 && strcmp(argv[1], "--peers") == 0) {
+        if (!check_peer_vectors()) {
+            fprintf(stderr, "peer digest verification failed\n");
+            return 1;
+        }
+        baseline = 1;
+        target_count = sizeof(targets) / sizeof(targets[0]);
+        profile = "peers-v1";
+#endif
     } else if (argc != 1) {
         usage(argv[0]);
         return 2;
@@ -766,10 +870,12 @@ int main(int argc, char **argv) {
     if (baseline) {
         int ok = run_baseline_profile(
             targets,
+            target_count,
             full_lengths,
             buffer,
             &sink,
-            &stream_peak
+            &stream_peak,
+            profile
         );
         fprintf(
             stderr,
@@ -782,7 +888,7 @@ int main(int argc, char **argv) {
     }
 
     for (size_t target_index = 0u;
-         target_index < sizeof(targets) / sizeof(targets[0]);
+         target_index < target_count;
          target_index++) {
         for (size_t length_index = 0u;
              length_index < length_count;

@@ -6,6 +6,7 @@
 /build/test_*
 /build/fch_diffusion
 /build/bench_hash
+/build/bench_hash_peers
 /build/fuzz_*
 /build/*.json
 /build/fuzz/

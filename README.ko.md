@@ -221,6 +221,29 @@ make bench-compare BASELINE=benchmark-local.json
 변화를 거부하고, 기본적으로 각 조합에서 20%를 넘는 처리량 하락을 실패로
 판정합니다. 다른 한계는 `MAX_REGRESSION`으로 지정할 수 있습니다.
 
+빌드 설정을 바꾸면 `make clean` 없이 다시 컴파일합니다. 측정에는 바이너리와
+설정 해시를 포함하며, 실제 빌드와 다른 컴파일러·플래그 표기는 거부합니다.
+
+OpenSSL 비교는 별도의 66개 조합 `peers-v1` 프로필로 선택해 실행합니다.
+
+```sh
+make bench-peers PEER_BASELINE=benchmark-peers.json
+make bench-matrix MATRIX_DIR=obj/bench-matrix
+python3 ../tools/fch_benchmark.py matrix --compiler gcc --compiler clang \
+  --cflags "-std=c11 -Wall -Wextra -Wpedantic -O2" \
+  --cflags "-std=c11 -Wall -Wextra -Wpedantic -O2 -flto" \
+  --peers --output-dir obj/bench-peers-matrix
+```
+
+OpenSSL 개발 헤더와 libcrypto는 비교 실행에만 필요합니다. 별도 경로는
+`BENCH_OPENSSL_CFLAGS`, `BENCH_OPENSSL_LIBS`로 지정할 수 있습니다.
+동일 입력·반복 횟수·워밍업·교차 측정·타이머를 사용하며, 라이브러리 할당을
+계측하지 않으므로 해당 힙·할당 필드는 `unmeasured`로 표시합니다.
+비교에는 라이브러리와 CPU 최적화 차이도 포함됩니다. 컴파일러별 측정은
+순차적으로 다시 빌드하여 결과와 로그를 저장하고, 다른 컴파일러·옵션 사이에
+regression 판정을 적용하지 않습니다. 일반 regression 비교는 프로필·실행
+환경·비교 라이브러리 버전이 일치해야 합니다.
+
 Clang과 sanitizer로 기존 libFuzzer 대상 4개를 실행합니다.
 
 ```sh
