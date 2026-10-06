@@ -552,6 +552,7 @@ def compare_results(
     baseline: dict[str, Any],
     current: dict[str, Any],
     max_regression: float,
+    allow_resource_improvement: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
     if baseline["profile"] != current["profile"]:
         raise BenchmarkError("cannot compare different measurement profiles")
@@ -569,10 +570,13 @@ def compare_results(
         issues = []
         if delta < -max_regression:
             issues.append("throughput")
-        if new["peak_heap_bytes"] != old["peak_heap_bytes"]:
-            issues.append("peak-heap")
-        if new["allocations_per_hash"] != old["allocations_per_hash"]:
-            issues.append("allocations")
+        for field, issue in (("peak_heap_bytes", "peak-heap"),
+                             ("allocations_per_hash", "allocations")):
+            if new[field] != old[field]:
+                decreased = (new[field] is not None and old[field] is not None and
+                             new[field] < old[field])
+                if not (allow_resource_improvement and decreased):
+                    issues.append(issue)
         if issues:
             failed = True
         rows.append(
@@ -625,6 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--output-current", type=Path)
     compare.add_argument("--max-regression", type=float, default=20.0)
     compare.add_argument("--allow-environment-mismatch", action="store_true")
+    compare.add_argument("--allow-resource-improvement", action="store_true")
 
     validate = subparsers.add_parser("validate")
     validate.add_argument("--file", type=Path, required=True)
@@ -672,7 +677,11 @@ def command_compare(args: argparse.Namespace) -> int:
             )
             return 2
 
-    rows, failed = compare_results(baseline, current, args.max_regression)
+    rows, failed = compare_results(
+        baseline, current, args.max_regression, args.allow_resource_improvement
+    )
+    if args.allow_resource_improvement:
+        print("resource decreases explicitly allowed; increases remain failures", file=sys.stderr)
     print_comparison(rows)
     if failed:
         print(

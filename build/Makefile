@@ -6,6 +6,7 @@ BENCHMARK_TOOL ?= ../tools/fch_benchmark.py
 BASELINE ?= benchmark-baseline.json
 CURRENT ?= benchmark-current.json
 MAX_REGRESSION ?= 20
+ALLOW_RESOURCE_IMPROVEMENT ?= 0
 PEER_BASELINE ?= benchmark-peers.json
 BENCH_OPENSSL_CFLAGS ?=
 BENCH_OPENSSL_LIBS ?= -lcrypto
@@ -297,7 +298,8 @@ bench-compare: bench_hash
 		--cflags "$(CFLAGS)" \
 		--baseline "$(BASELINE)" \
 		--output-current "$(CURRENT)" \
-		--max-regression "$(MAX_REGRESSION)"
+		--max-regression "$(MAX_REGRESSION)" \
+		$(if $(filter 1,$(ALLOW_RESOURCE_IMPROVEMENT)),--allow-resource-improvement,)
 
 bench-baseline-check:
 	$(PYTHON) -m unittest discover \

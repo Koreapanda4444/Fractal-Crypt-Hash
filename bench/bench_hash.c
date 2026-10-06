@@ -547,12 +547,9 @@ static int validate_scaling(
         return 1;
 
     if (target->kind == BENCH_ONE_SHOT) {
-        size_t padded_length = length + 9u;
-        if (padded_length < FCH_PADDING_MIN_BYTES)
-            padded_length = FCH_PADDING_MIN_BYTES;
-        size_t expected_peak = padded_length +
-            FCH_INTERNAL_STATE_WORDS * sizeof(uint64_t);
-        return result->allocations_per_hash == 2u &&
+        (void)length;
+        size_t expected_peak = FCH_INTERNAL_STATE_WORDS * sizeof(uint64_t);
+        return result->allocations_per_hash == 1u &&
             result->peak_heap == expected_peak;
     }
 

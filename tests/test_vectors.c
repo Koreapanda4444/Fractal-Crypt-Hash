@@ -153,6 +153,32 @@ static int corpus_streams(
 	return 1;
 }
 
+static int corpus_aliases(
+	const uint8_t *input, size_t length,
+	const char *expected256, const char *expected512
+) {
+	uint8_t *overlap = (uint8_t *)malloc(length + 71u);
+	if (!overlap) return 0;
+	int ok = 1;
+	for (size_t offset = 0u; ok && offset <= 7u; offset += 7u) {
+		char hex[129];
+		memcpy(overlap, input, length);
+		ok = fch_hash_256_checked(overlap, length, overlap + offset);
+		if (ok) {
+			to_hex(overlap + offset, 32u, hex);
+			ok = strcmp(hex, expected256) == 0;
+		}
+		memcpy(overlap, input, length);
+		ok = ok && fch_hash_512_checked(overlap, length, overlap + offset);
+		if (ok) {
+			to_hex(overlap + offset, 64u, hex);
+			ok = strcmp(hex, expected512) == 0;
+		}
+	}
+	free(overlap);
+	return ok;
+}
+
 static int check_corpus(const char *path) {
 	FILE *file = fopen(path, "r");
 	if (!file) {
@@ -191,14 +217,15 @@ static int check_corpus(const char *path) {
 			!decode_hex(hex256, expected256, sizeof(expected256)) ||
 			!decode_hex(hex512, expected512, sizeof(expected512))) { ok = 0; break; }
 		ok = check_256(input, length, hex256) && check_512(input, length, hex512) &&
-			corpus_streams(input, length, expected256, expected512, chunks, chunk_count);
+			corpus_streams(input, length, expected256, expected512, chunks, chunk_count) &&
+			corpus_aliases(input, length, hex256, hex512);
 		if (!ok) fprintf(stderr, "FAIL: KAT case %s\n", name);
 		cases++;
 	}
 	if (ferror(file) || cases != 54u || chunk_count != 10u) ok = 0;
 	fclose(file);
-	if (ok) printf("PASS: canonical KAT corpus (%zu cases, %zu C digests, 11 streaming plans)\n",
-		cases, cases * (chunk_count + 2u) * 2u);
+	if (ok) printf("PASS: canonical KAT corpus (%zu cases, %zu C digests, 11 streaming plans, 2 overlap offsets)\n",
+		cases, cases * (chunk_count + 4u) * 2u);
 	else fprintf(stderr, "FAIL: invalid or mismatching KAT corpus\n");
 	return ok;
 }

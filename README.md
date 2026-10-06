@@ -230,6 +230,9 @@ compiler, flags, throughput, peak heap, and allocation count. Comparisons
 require the same recorded environment, reject resource-profile changes, and
 use a 20 percent per-case throughput regression limit by default. Set
 `MAX_REGRESSION` to choose another limit.
+After reviewing an intentional heap/allocation reduction, compare with
+`ALLOW_RESOURCE_IMPROVEMENT=1`; this still rejects increases. One-shot hashing
+now uses a single 64-byte internal heap allocation independent of input length.
 
 Build-setting changes trigger recompilation without `make clean`. Captures
 include the binary and configuration hashes and reject compiler/flag labels

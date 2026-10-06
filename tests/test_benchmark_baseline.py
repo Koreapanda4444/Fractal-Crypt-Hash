@@ -36,8 +36,8 @@ def make_results(profile: str = "baseline-v1") -> list[dict[str, object]]:
                 "iterations": iterations,
                 "median_seconds": seconds,
                 "mb_per_second": throughput,
-                "peak_heap_bytes": None if peer else (8208 if chunk else length + 73),
-                "allocations_per_hash": None if peer else (1 if chunk else 2),
+                "peak_heap_bytes": None if peer else (8208 if chunk else 64),
+                "allocations_per_hash": None if peer else 1,
             }
         )
     return results
@@ -174,6 +174,17 @@ class BenchmarkBaselineTests(unittest.TestCase):
         rows, failed = benchmark.compare_results(baseline, current, 15.0)
         self.assertTrue(failed)
         self.assertEqual(rows[0]["status"], "peak-heap+allocations")
+
+    def test_resource_decreases_require_review_and_never_allow_increases(self) -> None:
+        baseline = benchmark.validate_document(make_document())
+        data = copy.deepcopy(baseline)
+        data["results"][0]["peak_heap_bytes"] -= 1
+        current = benchmark.validate_document(data)
+        self.assertTrue(benchmark.compare_results(baseline, current, 20.0)[1])
+        self.assertFalse(benchmark.compare_results(baseline, current, 20.0, True)[1])
+        data["results"][0]["allocations_per_hash"] += 1
+        current = benchmark.validate_document(data)
+        self.assertTrue(benchmark.compare_results(baseline, current, 20.0, True)[1])
 
     def test_environment_mismatch_is_reported(self) -> None:
         baseline = benchmark.validate_document(make_document())

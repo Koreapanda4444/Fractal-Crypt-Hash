@@ -70,18 +70,21 @@ static int test_one_shot_allocation_failures(void) {
         return 0;
 
     for (size_t failure = 1u; failure <= 2u; failure++) {
+        int expected_success = failure > 1u;
         memset(output256, 0xA5, sizeof(output256));
         fail_allocation(failure);
-        if (fch_hash_256_checked(input, sizeof(input), output256) ||
-            allocation_calls != failure ||
-            !all_zero(output256, sizeof(output256)))
+        if (fch_hash_256_checked(input, sizeof(input), output256) != expected_success ||
+            allocation_calls != 1u ||
+            (expected_success ? memcmp(expected256, output256, sizeof(output256)) != 0
+                              : !all_zero(output256, sizeof(output256))))
             return 0;
 
         memset(output512, 0xA5, sizeof(output512));
         fail_allocation(failure);
-        if (fch_hash_512_checked(input, sizeof(input), output512) ||
-            allocation_calls != failure ||
-            !all_zero(output512, sizeof(output512)))
+        if (fch_hash_512_checked(input, sizeof(input), output512) != expected_success ||
+            allocation_calls != 1u ||
+            (expected_success ? memcmp(expected512, output512, sizeof(output512)) != 0
+                              : !all_zero(output512, sizeof(output512))))
             return 0;
     }
 

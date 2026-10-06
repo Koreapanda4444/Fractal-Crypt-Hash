@@ -61,14 +61,17 @@ layouts.
 
 ## One-shot path
 
-The one-shot API allocates the complete padded message, exposes it through a
-memory reader, and processes leaves from left to right. A binary-carry
+The one-shot API exposes the original input, padding marker, zero fill and
+eight-byte length field through a bounded reader and processes leaves from
+left to right. It allocates only the 64-byte root state. A binary-carry
 workspace retains at most one completed subtree per level; internal-node
 construction uses only child states and descriptors.
 
-The padded buffer uses `O(L)` memory. The tree workspace has a fixed number of
-slots derived from the width of `size_t`. Tree work is linear in the padded
-input plus the number of nodes.
+No complete padded-message buffer is allocated. The reader borrows the input
+until hashing finishes; digest serialization follows all input reads, preserving
+overlapping input/output behavior. The tree workspace has a fixed number of
+slots derived from the width of `size_t`. Auxiliary storage is bounded for a
+given platform; tree work is linear in the padded input plus the number of nodes.
 
 ## Streaming path
 
@@ -110,7 +113,8 @@ clears the destination and fails. Active contexts have single-owner semantics
 and must not be copied or accessed concurrently.
 
 The failure-path test replaces `malloc` and `calloc` at build time, rejects each
-one-shot allocation in turn, rejects stream-context allocation, verifies that
+one-shot root allocation, verifies that no second one-shot allocation occurs,
+rejects stream-context allocation, verifies that
 stream finalization performs no new allocation, and checks output clearing and
 context cleanup after every failure.
 
@@ -125,7 +129,8 @@ reviewed inputs to verification and are not generated build artifacts.
 The canonical KAT reader is part of `test_vectors.c`, not another test file.
 `check-reference` retains 384 differential cases; `check-interoperability`
 checks all 54 fixed corpus inputs through C one-shot, eleven streaming plans,
-C CLI, and Python. `check-extended` runs `test_stress.c`.
+two overlapping output offsets per variant, C CLI, and Python.
+`check-extended` runs `test_stress.c`.
 
 Native cryptanalysis and tree attack sources live in `analysis/`. The
 consolidated `fch_diffusion.c` implements avalanche, length, pattern, and
@@ -165,7 +170,7 @@ and 64 KiB updates.
 The benchmark replaces the implementation allocator only for this executable.
 Its input buffer and allocator metadata are excluded from the reported heap
 total. Each result records peak requested heap and allocation count per hash.
-The run fails if one-shot memory does not follow the padded input size, if a
+The run fails unless one-shot hashing uses one 64-byte root allocation, if a
 streaming hash performs more than its context allocation, if streaming peak
 memory changes with input or chunk size, or if any allocation remains live.
 `--quick` uses a smaller matrix for CI while preserving the scaling checks.
@@ -176,8 +181,9 @@ for a sustained sample, then interleaves one warmup and five measured passes.
 It emits the median processor time with the deterministic resource counts.
 `tools/fch_benchmark.py` stores those rows with source and environment metadata
 and compares later runs only when their CPU, platform, compiler, and flags
-match. Throughput limits are configurable; heap and allocation changes always
-require explicit review.
+match. Throughput limits are configurable; heap and allocation changes require
+explicit review. `ALLOW_RESOURCE_IMPROVEMENT=1` permits reviewed decreases while
+still rejecting any increase; the default rejects all resource-profile changes.
 
 The four existing `tests/fuzz_*.c` targets are driven by
 `tools/fch_fuzz.py`. It maintains 456 named seed files, fixed seeds, bounded
